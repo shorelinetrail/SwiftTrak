@@ -48,61 +48,59 @@ export default function DashboardPage() {
   const [pendingQueries, setPendingQueries] = useState<(TechnicalQuery & { assignee?: User })[]>([]);
   const [upcomingMilestones, setUpcomingMilestones] = useState<(Milestone & { workstream?: Workstream })[]>([]);
 
-  // Direct data fetch - no dependency on app store user
+  // Direct data fetch with timeout protection
   useEffect(() => {
     let mounted = true;
+    let failsafeTimeoutId: NodeJS.Timeout;
 
     const fetchAllData = async () => {
       const supabase = createClient();
 
       try {
         // Get current user for user-specific queries (with timeout)
-        // Don't redirect on timeout - middleware already checked cookies
         let userId: string | null = null;
 
         try {
-          const authPromise = supabase.auth.getUser();
-          const timeoutPromise = new Promise<{ data: { user: null }; timedOut: true }>((resolve) =>
-            setTimeout(() => resolve({ data: { user: null }, timedOut: true }), 5000)
-          );
-          const result = await Promise.race([authPromise, timeoutPromise]);
-          const authUser = result.data?.user;
-          const timedOut = 'timedOut' in result;
+          const authResult = await Promise.race([
+            supabase.auth.getUser(),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+          ]);
 
-          if (authUser) {
-            const { data: profile } = await supabase
-              .from('users')
-              .select('*')
-              .eq('id', authUser.id)
-              .single();
-            if (profile && mounted) {
-              setCurrentUser(profile as User);
-              userId = profile.id;
+          if (authResult?.data?.user) {
+            const profileResult = await Promise.race([
+              supabase.from('users').select('*').eq('id', authResult.data.user.id).single(),
+              new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+            ]);
+            if (profileResult?.data && mounted) {
+              setCurrentUser(profileResult.data as User);
+              userId = profileResult.data.id;
             }
-          } else if (timedOut) {
-            // Auth timed out but user has cookies (middleware let them through)
-            // Don't redirect - just continue without user-specific data
-            console.log('[Dashboard] Auth timed out - continuing without user context');
-          } else {
-            // No user and didn't time out - likely not authenticated
-            // Still don't redirect - middleware handles this
-            console.log('[Dashboard] No auth user found');
           }
         } catch (authErr) {
-          // Auth error - continue without user context
           console.error('[Dashboard] Auth error:', authErr);
         }
 
-        // Fetch all dashboard data
-        const [actionsRes, threatsRes, queriesRes, milestonesRes, workstreamsRes] = await Promise.all([
-          supabase.from('actions').select('id, status, priority, due_date'),
-          supabase.from('threats').select('id, current_risk'),
-          supabase.from('technical_queries').select('id, responded_at'),
-          supabase.from('milestones').select('id, target_date, status'),
-          supabase.from('workstreams').select('*').order('order_index'),
+        // Fetch all dashboard data with timeout
+        const dataResult = await Promise.race([
+          Promise.all([
+            supabase.from('actions').select('id, status, priority, due_date'),
+            supabase.from('threats').select('id, current_risk'),
+            supabase.from('technical_queries').select('id, responded_at'),
+            supabase.from('milestones').select('id, target_date, status'),
+            supabase.from('workstreams').select('*').order('order_index'),
+          ]),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
         ]);
 
         if (!mounted) return;
+
+        // Handle timeout case
+        if (!dataResult) {
+          console.warn('[Dashboard] Data fetch timed out');
+          return;
+        }
+
+        const [actionsRes, threatsRes, queriesRes, milestonesRes, workstreamsRes] = dataResult;
 
         // Set workstreams in store
         if (workstreamsRes.data) {
@@ -128,69 +126,66 @@ export default function DashboardPage() {
           upcomingMilestones: milestonesData.filter(m => new Date(m.target_date) <= oneWeekFromNow && m.status === 'pending').length,
         });
 
-        // Fetch recent actions with relations
-        const { data: recentActionsData } = await supabase
-          .from('actions')
-          .select(`
-            *,
-            owner:users!actions_owner_id_fkey(id, full_name, avatar_url),
-            workstream:workstreams(id, name, color)
-          `)
-          .in('status', ['pending', 'in_progress'])
-          .order('updated_at', { ascending: false })
-          .limit(5);
+        // Fetch detailed data in parallel with timeout
+        const detailResult = await Promise.race([
+          Promise.all([
+            supabase
+              .from('actions')
+              .select(`*, owner:users!actions_owner_id_fkey(id, full_name, avatar_url), workstream:workstreams(id, name, color)`)
+              .in('status', ['pending', 'in_progress'])
+              .order('updated_at', { ascending: false })
+              .limit(5)
+              .then(r => r.data),
+            supabase
+              .from('threats')
+              .select(`*, workstream:workstreams(id, name, color)`)
+              .in('current_risk', ['high', 'medium'])
+              .order('updated_at', { ascending: false })
+              .limit(5)
+              .then(r => r.data),
+            supabase
+              .from('milestones')
+              .select(`*, workstream:workstreams(id, name, color)`)
+              .eq('status', 'pending')
+              .gte('target_date', now.toISOString())
+              .order('target_date', { ascending: true })
+              .limit(5)
+              .then(r => r.data),
+          ]),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+        ]);
 
-        if (recentActionsData && mounted) {
-          setRecentActions(recentActionsData as unknown as (Action & { owner?: User; workstream?: Workstream })[]);
-        }
+        if (!mounted) return;
 
-        // Fetch recent threats
-        const { data: recentThreatsData } = await supabase
-          .from('threats')
-          .select(`
-            *,
-            workstream:workstreams(id, name, color)
-          `)
-          .in('current_risk', ['high', 'medium'])
-          .order('updated_at', { ascending: false })
-          .limit(5);
-
-        if (recentThreatsData && mounted) {
-          setRecentThreats(recentThreatsData as unknown as (Threat & { workstream?: Workstream })[]);
-        }
-
-        // Fetch pending queries assigned to current user
-        if (userId) {
-          const { data: pendingQueriesData } = await supabase
-            .from('technical_queries')
-            .select(`
-              *,
-              submitter:users!technical_queries_submitted_by_fkey(id, full_name, avatar_url)
-            `)
-            .eq('assigned_to', userId)
-            .is('responded_at', null)
-            .order('created_at', { ascending: false })
-            .limit(5);
-
-          if (pendingQueriesData && mounted) {
-            setPendingQueries(pendingQueriesData as unknown as (TechnicalQuery & { assignee?: User })[]);
+        if (detailResult) {
+          const [recentActionsData, recentThreatsData, upcomingMilestonesData] = detailResult;
+          if (recentActionsData) {
+            setRecentActions(recentActionsData as unknown as (Action & { owner?: User; workstream?: Workstream })[]);
+          }
+          if (recentThreatsData) {
+            setRecentThreats(recentThreatsData as unknown as (Threat & { workstream?: Workstream })[]);
+          }
+          if (upcomingMilestonesData) {
+            setUpcomingMilestones(upcomingMilestonesData as unknown as (Milestone & { workstream?: Workstream })[]);
           }
         }
 
-        // Fetch upcoming milestones
-        const { data: upcomingMilestonesData } = await supabase
-          .from('milestones')
-          .select(`
-            *,
-            workstream:workstreams(id, name, color)
-          `)
-          .eq('status', 'pending')
-          .gte('target_date', now.toISOString())
-          .order('target_date', { ascending: true })
-          .limit(5);
+        // Fetch pending queries if we have a user
+        if (userId && mounted) {
+          const pendingQueriesResult = await Promise.race([
+            supabase
+              .from('technical_queries')
+              .select(`*, submitter:users!technical_queries_submitted_by_fkey(id, full_name, avatar_url)`)
+              .eq('assigned_to', userId)
+              .is('responded_at', null)
+              .order('created_at', { ascending: false })
+              .limit(5),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+          ]);
 
-        if (upcomingMilestonesData && mounted) {
-          setUpcomingMilestones(upcomingMilestonesData as unknown as (Milestone & { workstream?: Workstream })[]);
+          if (pendingQueriesResult?.data && mounted) {
+            setPendingQueries(pendingQueriesResult.data as unknown as (TechnicalQuery & { assignee?: User })[]);
+          }
         }
 
       } catch (error) {
@@ -203,10 +198,19 @@ export default function DashboardPage() {
       }
     };
 
+    // FAILSAFE: Always stop loading after 15 seconds no matter what
+    failsafeTimeoutId = setTimeout(() => {
+      if (mounted) {
+        console.warn('[Dashboard] Failsafe timeout triggered - forcing loading to stop');
+        setLoading(false);
+      }
+    }, 15000);
+
     fetchAllData();
 
     return () => {
       mounted = false;
+      clearTimeout(failsafeTimeoutId);
     };
   }, [setWorkstreams]);
 
@@ -603,22 +607,34 @@ function WorkstreamProgress({ workstream }: { workstream: Workstream }) {
   const [stats, setStats] = useState({ total: 0, completed: 0 });
 
   useEffect(() => {
+    let mounted = true;
+
     const fetchStats = async () => {
       const supabase = createClient();
-      const { data } = await supabase
-        .from('actions')
-        .select('status')
-        .eq('workstream_id', workstream.id);
 
-      if (data) {
-        setStats({
-          total: data.length,
-          completed: data.filter(a => a.status === 'complete').length,
-        });
+      try {
+        // Add timeout to prevent hanging
+        const result = await Promise.race([
+          supabase.from('actions').select('status').eq('workstream_id', workstream.id),
+          new Promise<{ data: null }>((resolve) => setTimeout(() => resolve({ data: null }), 5000)),
+        ]);
+
+        if (result.data && mounted) {
+          setStats({
+            total: result.data.length,
+            completed: result.data.filter(a => a.status === 'complete').length,
+          });
+        }
+      } catch (error) {
+        console.error('[WorkstreamProgress] Error:', error);
       }
     };
 
     fetchStats();
+
+    return () => {
+      mounted = false;
+    };
   }, [workstream.id]);
 
   const percentage = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;

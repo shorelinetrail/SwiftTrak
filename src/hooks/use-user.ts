@@ -50,24 +50,48 @@ export function useUser() {
     initializedRef.current = true;
 
     const supabase = createClient();
+    let mounted = true;
+    let failsafeTimeout: NodeJS.Timeout;
+
+    // Helper to wrap any promise with a timeout
+    const withTimeout = <T,>(promise: Promise<T>, ms: number, fallback: T): Promise<T> => {
+      return Promise.race([
+        promise,
+        new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+      ]);
+    };
 
     // Get initial session
     const initializeAuth = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const sessionResult = await withTimeout(
+          supabase.auth.getSession(),
+          5000,
+          { data: { session: null }, error: null }
+        );
 
-        if (session?.user) {
-          await fetchUserProfile(session.user);
+        if (!mounted) return;
+
+        if (sessionResult.data?.session?.user) {
+          await fetchUserProfile(sessionResult.data.session.user);
         } else {
           setUser(null);
         }
       } catch (error) {
         console.error('[useUser] Error getting session:', error);
-        setUser(null);
+        if (mounted) setUser(null);
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     };
+
+    // FAILSAFE: Always stop loading after 8 seconds
+    failsafeTimeout = setTimeout(() => {
+      if (mounted) {
+        console.warn('[useUser] Failsafe timeout - forcing loading to stop');
+        setLoading(false);
+      }
+    }, 8000);
 
     initializeAuth();
 
@@ -83,6 +107,8 @@ export function useUser() {
     );
 
     return () => {
+      mounted = false;
+      clearTimeout(failsafeTimeout);
       subscription.unsubscribe();
     };
   }, [setUser, fetchUserProfile]);
