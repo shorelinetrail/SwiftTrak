@@ -8,36 +8,46 @@ import { useAppStore } from '@/stores/app-store';
 import { createClient } from '@/lib/supabase/client';
 import type { Workstream, Notification } from '@/types/database';
 
+// Module-level state to track workstream fetch across all MainLayout instances
+let workstreamsFetchInProgress = false;
+
 interface MainLayoutProps {
   children: React.ReactNode;
 }
 
 export function MainLayout({ children }: MainLayoutProps) {
   const { user } = useUser();
-  const { setWorkstreams, setNotifications, sidebarOpen } = useAppStore();
-  const workstreamsFetchedRef = useRef(false);
+  const { workstreams, setWorkstreams, setNotifications, sidebarOpen } = useAppStore();
   const lastUserIdRef = useRef<string | null>(null);
 
-  // Fetch workstreams once on mount - with timeout protection
+  // Fetch workstreams once globally - only if not already loaded or in progress
   useEffect(() => {
-    if (workstreamsFetchedRef.current) return;
-    workstreamsFetchedRef.current = true;
+    // Already have workstreams in store - nothing to do
+    if (workstreams.length > 0) return;
+    // Another fetch is in progress - wait for it
+    if (workstreamsFetchInProgress) return;
+
+    workstreamsFetchInProgress = true;
     let mounted = true;
 
     const fetchWorkstreams = async () => {
       const supabase = createClient();
       try {
-        // CRITICAL: Wrap with timeout to prevent hanging
         const result = await Promise.race([
           supabase.from('workstreams').select('*').order('order_index'),
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
         ]);
 
-        if (mounted && result?.data) {
+        if (mounted && result?.data && result.data.length > 0) {
           setWorkstreams(result.data as Workstream[]);
+        } else {
+          // Fetch failed or timed out - allow retry
+          workstreamsFetchInProgress = false;
         }
       } catch (error) {
         console.error('[MainLayout] Error fetching workstreams:', error);
+        // Allow retry on error
+        workstreamsFetchInProgress = false;
       }
     };
 
@@ -46,7 +56,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     return () => {
       mounted = false;
     };
-  }, [setWorkstreams]);
+  }, [workstreams.length, setWorkstreams]);
 
   // Fetch notifications when user changes - with timeout protection
   useEffect(() => {

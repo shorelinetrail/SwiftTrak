@@ -34,7 +34,7 @@ export default function ThreatDetailPage() {
   const threatId = params.id as string;
 
   const { workstreams } = useAppStore();
-  const { canEdit, canAdmin } = usePermission();
+  const { canEdit, canAdmin, loading: permissionLoading } = usePermission();
   const [loading, setLoading] = useState(true);
   const [threat, setThreat] = useState<ThreatWithRelations | null>(null);
 
@@ -149,7 +149,12 @@ export default function ThreatDetailPage() {
     { value: 'high', label: 'High' },
   ];
 
-  const workstreamOptions = workstreams.map(w => ({ value: w.id, label: w.name }));
+  // Build workstream options - ensure current threat's workstream is always included
+  const workstreamOptions = workstreams.length > 0
+    ? workstreams.map(w => ({ value: w.id, label: w.name }))
+    : threat?.workstream
+      ? [{ value: threat.workstream.id, label: threat.workstream.name }]
+      : [];
 
   return (
     <div className="min-h-screen">
@@ -157,19 +162,21 @@ export default function ThreatDetailPage() {
         title={threat.title}
         subtitle={threat.workstream?.name}
         actions={
-          <div className="flex gap-2">
-            {canEdit && (
-              <Button variant="outline" size="sm" onClick={() => setEditModalOpen(true)}>
-                <PencilIcon className="w-4 h-4 mr-2" />
-                Edit
-              </Button>
-            )}
-            {canAdmin && (
-              <Button variant="danger" size="sm" onClick={() => setDeleteModalOpen(true)}>
-                <TrashIcon className="w-4 h-4" />
-              </Button>
-            )}
-          </div>
+          !permissionLoading && (
+            <div className="flex gap-2">
+              {canEdit && (
+                <Button variant="outline" size="sm" onClick={() => setEditModalOpen(true)}>
+                  <PencilIcon className="w-4 h-4 mr-2" />
+                  Edit
+                </Button>
+              )}
+              {canAdmin && (
+                <Button variant="danger" size="sm" onClick={() => setDeleteModalOpen(true)}>
+                  <TrashIcon className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
+          )
         }
       />
 
