@@ -41,7 +41,12 @@ export default function NewMilestonePage() {
     try {
       const supabase = createClient();
 
-      const { data, error } = await supabase
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Request timeout')), 10000)
+      );
+
+      const insertPromise = supabase
         .from('milestones')
         .insert({
           title: formData.title.trim(),
@@ -53,6 +58,8 @@ export default function NewMilestonePage() {
         })
         .select()
         .single();
+
+      const { data, error } = await Promise.race([insertPromise, timeoutPromise]) as Awaited<typeof insertPromise>;
 
       if (error) throw error;
 
