@@ -7,75 +7,44 @@ import type { User } from '@/types/database';
 
 export function useUser() {
   const { user, setUser } = useAppStore();
-  // Start loading as false if we already have a user in store
-  const [loading, setLoading] = useState(!user);
+  const [loading, setLoading] = useState(false);
   const fetchedRef = useRef(false);
 
   useEffect(() => {
-    // If we already have a user, don't refetch
-    if (user && fetchedRef.current) {
-      setLoading(false);
-      return;
-    }
+    // If we already fetched, skip
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
 
     const supabase = createClient();
-    let mounted = true;
-    let timeoutId: NodeJS.Timeout;
 
+    // Don't block rendering - fetch in background
     const fetchUser = async () => {
-      // Set a hard timeout to prevent infinite loading
-      timeoutId = setTimeout(() => {
-        if (mounted) {
-          console.warn('Auth check timed out');
-          setLoading(false);
-        }
-      }, 5000);
-
       try {
-        const { data: { user: authUser }, error } = await supabase.auth.getUser();
-
-        if (!mounted) return;
-        clearTimeout(timeoutId);
-
-        if (error) {
-          console.error('Auth error:', error);
-          setLoading(false);
-          return;
-        }
+        const { data: { user: authUser } } = await supabase.auth.getUser();
 
         if (authUser) {
-          fetchedRef.current = true;
-          // Try to get profile
           const { data: profile } = await supabase
             .from('users')
             .select('*')
             .eq('id', authUser.id)
             .single();
 
-          if (mounted) {
-            if (profile) {
-              setUser(profile as User);
-            } else {
-              // Create minimal user from auth data
-              setUser({
-                id: authUser.id,
-                email: authUser.email || '',
-                full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
-                role: 'view',
-                avatar_url: undefined,
-                created_at: authUser.created_at,
-                updated_at: authUser.created_at,
-              } as User);
-            }
+          if (profile) {
+            setUser(profile as User);
+          } else {
+            setUser({
+              id: authUser.id,
+              email: authUser.email || '',
+              full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
+              role: 'view',
+              avatar_url: undefined,
+              created_at: authUser.created_at,
+              updated_at: authUser.created_at,
+            } as User);
           }
         }
       } catch (error) {
         console.error('Error fetching user:', error);
-      } finally {
-        clearTimeout(timeoutId);
-        if (mounted) {
-          setLoading(false);
-        }
       }
     };
 
@@ -85,9 +54,8 @@ export function useUser() {
       async (event, session) => {
         if (event === 'SIGNED_OUT') {
           setUser(null);
-          fetchedRef.current = false;
+          window.location.href = '/auth/login';
         } else if (session?.user && event === 'SIGNED_IN') {
-          fetchedRef.current = true;
           const { data: profile } = await supabase
             .from('users')
             .select('*')
@@ -112,11 +80,9 @@ export function useUser() {
     );
 
     return () => {
-      mounted = false;
-      clearTimeout(timeoutId);
       subscription.unsubscribe();
     };
-  }, [user, setUser]);
+  }, [setUser]);
 
   return { user, loading };
 }

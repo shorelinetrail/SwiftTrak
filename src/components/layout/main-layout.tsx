@@ -1,14 +1,11 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { Toaster } from 'react-hot-toast';
 import { Sidebar } from './sidebar';
 import { useUser } from '@/hooks/use-user';
 import { useAppStore } from '@/stores/app-store';
-import { useNotificationsRealtime } from '@/hooks/use-realtime';
 import { createClient } from '@/lib/supabase/client';
-import { LoadingPage } from '../ui/loading';
 import type { Workstream, Notification } from '@/types/database';
 
 interface MainLayoutProps {
@@ -16,17 +13,11 @@ interface MainLayoutProps {
 }
 
 export function MainLayout({ children }: MainLayoutProps) {
-  const router = useRouter();
-  const { user, loading } = useUser();
+  const { user } = useUser();
   const { setWorkstreams, setNotifications, sidebarOpen } = useAppStore();
-
-  // Set up real-time notifications if user is logged in
-  useNotificationsRealtime(user?.id || '');
 
   // Fetch workstreams and notifications on mount
   useEffect(() => {
-    if (!user) return;
-
     const fetchData = async () => {
       const supabase = createClient();
 
@@ -40,34 +31,25 @@ export function MainLayout({ children }: MainLayoutProps) {
         setWorkstreams(workstreams as Workstream[]);
       }
 
-      // Fetch notifications
-      const { data: notifications } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(50);
+      // Fetch notifications if user exists
+      if (user) {
+        const { data: notifications } = await supabase
+          .from('notifications')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(50);
 
-      if (notifications) {
-        setNotifications(notifications as Notification[]);
+        if (notifications) {
+          setNotifications(notifications as Notification[]);
+        }
       }
     };
 
     fetchData();
   }, [user, setWorkstreams, setNotifications]);
 
-  if (loading) {
-    return <LoadingPage message="Loading SwiftTrak..." />;
-  }
-
-  if (!user) {
-    // Use window.location for more reliable redirect
-    if (typeof window !== 'undefined') {
-      window.location.href = '/auth/login';
-    }
-    return <LoadingPage message="Redirecting to login..." />;
-  }
-
+  // Don't block rendering - middleware handles auth
   return (
     <div className="min-h-screen bg-gray-50">
       <Toaster
