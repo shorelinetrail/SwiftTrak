@@ -31,14 +31,24 @@ export default function DiagnosticsPage() {
     const supabase = createClient();
     const testResults: TestResult[] = [];
 
+    // Helper to add timeout to promises
+    const withTimeout = <T,>(promise: Promise<T>, ms: number, name: string): Promise<T> => {
+      return Promise.race([
+        promise,
+        new Promise<T>((_, reject) =>
+          setTimeout(() => reject(new Error(`${name} timed out after ${ms}ms`)), ms)
+        ),
+      ]);
+    };
+
     // Helper to run a test
-    const runTest = async (name: string, testFn: () => Promise<unknown>) => {
+    const runTest = async (name: string, testFn: () => Promise<unknown>, timeoutMs = 10000) => {
       const test: TestResult = { name, status: 'running' };
       setTests(prev => [...prev.filter(t => t.name !== name), test]);
 
       const start = Date.now();
       try {
-        const result = await testFn();
+        const result = await withTimeout(testFn(), timeoutMs, name);
         test.status = 'success';
         test.result = result;
         test.duration = Date.now() - start;
@@ -212,6 +222,27 @@ export default function DiagnosticsPage() {
       />
 
       <div className="p-6 space-y-6">
+        {/* Auth Warning */}
+        {!storeUser && !userLoading && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <XCircleIcon className="w-6 h-6 text-yellow-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <h3 className="font-semibold text-yellow-800">Not Authenticated</h3>
+                <p className="text-sm text-yellow-700 mt-1">
+                  No user session detected. You need to log in first.
+                </p>
+                <a
+                  href="/auth/login"
+                  className="inline-block mt-2 text-sm font-medium text-yellow-800 underline hover:text-yellow-900"
+                >
+                  Go to Login Page →
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Hook States */}
         <Card>
           <CardHeader>
