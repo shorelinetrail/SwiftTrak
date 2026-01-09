@@ -25,6 +25,7 @@ export default function NewMilestonePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('Form submitted!');
 
     if (!formData.title.trim()) {
       toast.error('Title is required');
@@ -37,9 +38,11 @@ export default function NewMilestonePage() {
     }
 
     setLoading(true);
+    console.log('Loading set, creating supabase client...');
 
     try {
       const supabase = createClient();
+      console.log('Calling getUser...');
 
       // Get current user directly from auth
       const { data: { user: authUser } } = await supabase.auth.getUser();
