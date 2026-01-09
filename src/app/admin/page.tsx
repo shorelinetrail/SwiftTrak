@@ -29,7 +29,7 @@ import type { User, Workstream, StakeholderLink, UserRole } from '@/types/databa
 
 export default function AdminPage() {
   const router = useRouter();
-  const { canAdmin } = usePermission();
+  const { canAdmin, loading: permissionLoading } = usePermission();
   const { workstreams, setWorkstreams } = useAppStore();
 
   const [loading, setLoading] = useState(true);
@@ -61,12 +61,16 @@ export default function AdminPage() {
   }, [setWorkstreams]);
 
   useEffect(() => {
+    // Wait for permission check to complete
+    if (permissionLoading) return;
+
+    // Only redirect if we've confirmed user is not admin
     if (!canAdmin) {
       router.push('/dashboard');
       return;
     }
     fetchData();
-  }, [canAdmin, router, fetchData]);
+  }, [canAdmin, permissionLoading, router, fetchData]);
 
   const handleUpdateUserRole = async (userId: string, role: UserRole) => {
     const supabase = createClient();

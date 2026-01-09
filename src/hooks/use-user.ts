@@ -93,12 +93,21 @@ export function usePermission(workstreamId?: string) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+
     const checkPermission = async () => {
+      // If no user yet, wait a bit for user fetch to complete
       if (!user) {
-        setPermission(null);
-        setLoading(false);
+        timeoutId = setTimeout(() => {
+          // After timeout, if still no user, set loading false
+          setPermission(null);
+          setLoading(false);
+        }, 3000);
         return;
       }
+
+      // Clear timeout if user exists
+      clearTimeout(timeoutId);
 
       // Admin has full access everywhere
       if (user.role === 'admin') {
@@ -132,6 +141,10 @@ export function usePermission(workstreamId?: string) {
     };
 
     checkPermission();
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
   }, [user, workstreamId]);
 
   const canView = permission !== null;
