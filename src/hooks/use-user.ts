@@ -11,10 +11,19 @@ export function useUser() {
 
   useEffect(() => {
     const supabase = createClient();
+    let mounted = true;
 
     const fetchUser = async () => {
       try {
-        const { data: { user: authUser } } = await supabase.auth.getUser();
+        // Add timeout to prevent hanging
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Auth timeout')), 10000)
+        );
+
+        const authPromise = supabase.auth.getUser();
+        const { data: { user: authUser } } = await Promise.race([authPromise, timeoutPromise]) as Awaited<typeof authPromise>;
+
+        if (!mounted) return;
 
         if (authUser) {
           // Try to get profile, but don't block if table doesn't exist
@@ -25,9 +34,9 @@ export function useUser() {
               .eq('id', authUser.id)
               .single();
 
-            if (profile) {
+            if (mounted && profile) {
               setUser(profile as User);
-            } else {
+            } else if (mounted) {
               // Create minimal user from auth data
               setUser({
                 id: authUser.id,
@@ -41,21 +50,25 @@ export function useUser() {
             }
           } catch {
             // Table might not exist yet - use auth data
-            setUser({
-              id: authUser.id,
-              email: authUser.email || '',
-              full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
-              role: 'view',
-              avatar_url: undefined,
-              created_at: authUser.created_at,
-              updated_at: authUser.created_at,
-            } as User);
+            if (mounted) {
+              setUser({
+                id: authUser.id,
+                email: authUser.email || '',
+                full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
+                role: 'view',
+                avatar_url: undefined,
+                created_at: authUser.created_at,
+                updated_at: authUser.created_at,
+              } as User);
+            }
           }
         }
       } catch (error) {
         console.error('Error fetching user:', error);
       } finally {
-        setLoading(false);
+        if (mounted) {
+          setLoading(false);
+        }
       }
     };
 
@@ -102,6 +115,7 @@ export function useUser() {
     );
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
   }, [setUser]);
