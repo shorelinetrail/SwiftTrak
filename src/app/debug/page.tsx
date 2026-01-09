@@ -168,7 +168,7 @@ export default function DebugPage() {
             {result.error && (
               <p className="text-red-300 text-sm mt-1">{result.error}</p>
             )}
-            {result.data && (
+            {result.data !== undefined && (
               <pre className="text-xs text-gray-300 mt-1 overflow-auto">
                 {JSON.stringify(result.data, null, 2)}
               </pre>
