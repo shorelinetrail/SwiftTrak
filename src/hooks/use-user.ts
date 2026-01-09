@@ -14,25 +14,35 @@ export function useUser() {
   const fetchUserProfile = useCallback(async (authUser: AuthUser) => {
     const supabase = createClient();
 
-    try {
-      const { data: profile, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', authUser.id)
-        .single();
+    // Create default user from auth data (used as fallback)
+    const defaultUser: User = {
+      id: authUser.id,
+      email: authUser.email || '',
+      full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
+      role: 'view',
+      avatar_url: authUser.user_metadata?.avatar_url,
+      created_at: authUser.created_at,
+      updated_at: authUser.created_at,
+    };
 
-      if (error) {
+    try {
+      // CRITICAL: Wrap database query with timeout to prevent hanging
+      const result = await Promise.race([
+        supabase.from('users').select('*').eq('id', authUser.id).single(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+      ]);
+
+      // Timeout occurred - use default user
+      if (!result) {
+        console.warn('[useUser] Profile fetch timed out - using default user');
+        setUser(defaultUser);
+        return defaultUser;
+      }
+
+      const { data: profile, error } = result;
+
+      if (error || !profile) {
         console.error('[useUser] Profile fetch error:', error);
-        // Create a default user from auth data if no profile exists
-        const defaultUser: User = {
-          id: authUser.id,
-          email: authUser.email || '',
-          full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
-          role: 'view',
-          avatar_url: authUser.user_metadata?.avatar_url,
-          created_at: authUser.created_at,
-          updated_at: authUser.created_at,
-        };
         setUser(defaultUser);
         return defaultUser;
       }
@@ -41,7 +51,8 @@ export function useUser() {
       return profile as User;
     } catch (error) {
       console.error('[useUser] Error fetching profile:', error);
-      return null;
+      setUser(defaultUser);
+      return defaultUser;
     }
   }, [setUser]);
 
@@ -157,18 +168,22 @@ export function usePermission(workstreamId?: string) {
         return;
       }
 
-      // Check workstream-specific permission
+      // Check workstream-specific permission - with timeout
       try {
         const supabase = createClient();
-        const { data: workstreamPermission } = await supabase
-          .from('user_workstream_permissions')
-          .select('permission')
-          .eq('user_id', user.id)
-          .eq('workstream_id', workstreamId)
-          .single();
+        const result = await Promise.race([
+          supabase
+            .from('user_workstream_permissions')
+            .select('permission')
+            .eq('user_id', user.id)
+            .eq('workstream_id', workstreamId)
+            .single(),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+        ]);
 
         if (mounted) {
-          setPermission(workstreamPermission?.permission as 'view' | 'edit' | 'admin' || user.role);
+          const perm = result?.data?.permission as 'view' | 'edit' | 'admin' | undefined;
+          setPermission(perm || user.role);
           setLoading(false);
         }
       } catch {
