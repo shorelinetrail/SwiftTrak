@@ -7,6 +7,24 @@ type CookieToSet = {
   options?: CookieOptions;
 };
 
+// Auth check with timeout to prevent blocking page loads
+async function getAuthUserWithTimeout(
+  supabase: ReturnType<typeof createServerClient>,
+  timeoutMs: number = 3000
+): Promise<{ user: { id: string } | null }> {
+  try {
+    const result = await Promise.race([
+      supabase.auth.getUser(),
+      new Promise<{ data: { user: null }; error: null }>((resolve) =>
+        setTimeout(() => resolve({ data: { user: null }, error: null }), timeoutMs)
+      ),
+    ]);
+    return { user: result.data.user };
+  } catch {
+    return { user: null };
+  }
+}
+
 export async function updateSession(request: NextRequest) {
   // Create an unmodified response
   let supabaseResponse = NextResponse.next({
@@ -38,15 +56,8 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // IMPORTANT: Do not remove this line - it refreshes the auth token
-  // and ensures the session stays active. The getUser() call triggers
-  // token refresh if needed and the setAll callback updates cookies.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
   // Define public routes that don't require authentication
-  const publicRoutes = ['/auth/login', '/auth/callback', '/auth/signup', '/stakeholder'];
+  const publicRoutes = ['/auth/login', '/auth/callback', '/auth/signup', '/stakeholder', '/debug'];
   const isPublicRoute = publicRoutes.some((route) =>
     request.nextUrl.pathname.startsWith(route)
   );
@@ -57,15 +68,24 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/api/health') ||
     request.nextUrl.pathname === '/favicon.ico';
 
-  // Redirect to login if not authenticated and not on a public route
-  if (!user && !isPublicRoute && !isStaticOrApi) {
+  // Skip auth check for public routes and static assets
+  if (isPublicRoute || isStaticOrApi) {
+    return supabaseResponse;
+  }
+
+  // Get user with timeout - don't block page loads if auth is slow
+  // The getUser() call also refreshes tokens and updates cookies via setAll
+  const { user } = await getAuthUserWithTimeout(supabase, 3000);
+
+  // Redirect to login if not authenticated
+  if (!user) {
     const url = request.nextUrl.clone();
     url.pathname = '/auth/login';
     return NextResponse.redirect(url);
   }
 
   // Redirect to dashboard if authenticated and trying to access login
-  if (user && request.nextUrl.pathname === '/auth/login') {
+  if (request.nextUrl.pathname === '/auth/login') {
     const url = request.nextUrl.clone();
     url.pathname = '/dashboard';
     return NextResponse.redirect(url);
