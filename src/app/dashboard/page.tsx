@@ -49,69 +49,101 @@ export default function DashboardPage() {
   const fetchDashboardData = useCallback(async () => {
     try {
       const supabase = createClient();
+      console.log('[Dashboard] Starting data fetch...');
 
-      // Fetch stats with timeout
-      const timeout = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Fetch timeout')), 15000)
-      );
+      // Helper to wrap queries with individual timeouts
+      const fetchWithTimeout = async <T,>(
+        name: string,
+        query: PromiseLike<{ data: T | null; error: { message: string } | null }>
+      ): Promise<T | null> => {
+        const start = Date.now();
+        try {
+          const result = await Promise.race([
+            Promise.resolve(query),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error(`${name} timeout`)), 8000)
+            ),
+          ]);
+          console.log(`[Dashboard] ${name} completed in ${Date.now() - start}ms`);
+          if (result.error) {
+            console.error(`[Dashboard] ${name} error:`, result.error.message);
+            return null;
+          }
+          return result.data;
+        } catch (err) {
+          console.error(`[Dashboard] ${name} failed:`, err);
+          return null;
+        }
+      };
 
-      const fetchPromise = Promise.all([
-        supabase.from('actions').select('id, status, priority, due_date'),
-        supabase.from('threats').select('id, current_risk'),
-        supabase.from('technical_queries').select('id, responded_at'),
-        supabase.from('milestones').select('id, target_date, status'),
+      // Fetch all stats concurrently with individual timeouts
+      const [actions, threats, queries, milestones] = await Promise.all([
+        fetchWithTimeout('actions', supabase.from('actions').select('id, status, priority, due_date')),
+        fetchWithTimeout('threats', supabase.from('threats').select('id, current_risk')),
+        fetchWithTimeout('queries', supabase.from('technical_queries').select('id, responded_at')),
+        fetchWithTimeout('milestones', supabase.from('milestones').select('id, target_date, status')),
       ]);
 
-      const [actionsResult, threatsResult, queriesResult, milestonesResult] = await Promise.race([
-        fetchPromise,
-        timeout
-      ]) as Awaited<typeof fetchPromise>;
+      console.log('[Dashboard] Stats fetched:', {
+        actions: actions?.length || 0,
+        threats: threats?.length || 0,
+        queries: queries?.length || 0,
+        milestones: milestones?.length || 0
+      });
 
-    const actions = actionsResult.data || [];
-    const threats = threatsResult.data || [];
-    const queries = queriesResult.data || [];
-    const milestones = milestonesResult.data || [];
+    const actionsData = actions || [];
+    const threatsData = threats || [];
+    const queriesData = queries || [];
+    const milestonesData = milestones || [];
 
     const now = new Date();
     const oneWeekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
     setStats({
-      totalActions: actions.length,
-      completedActions: actions.filter(a => a.status === 'complete').length,
-      overdueActions: actions.filter(a => a.due_date && new Date(a.due_date) < now && a.status !== 'complete' && a.status !== 'cancelled').length,
-      criticalActions: actions.filter(a => a.priority === 'critical' && a.status !== 'complete' && a.status !== 'cancelled').length,
-      totalThreats: threats.length,
-      highRiskThreats: threats.filter(t => t.current_risk === 'high').length,
-      pendingQueries: queries.filter(q => !q.responded_at).length,
-      upcomingMilestones: milestones.filter(m => new Date(m.target_date) <= oneWeekFromNow && m.status === 'pending').length,
+      totalActions: actionsData.length,
+      completedActions: actionsData.filter(a => a.status === 'complete').length,
+      overdueActions: actionsData.filter(a => a.due_date && new Date(a.due_date) < now && a.status !== 'complete' && a.status !== 'cancelled').length,
+      criticalActions: actionsData.filter(a => a.priority === 'critical' && a.status !== 'complete' && a.status !== 'cancelled').length,
+      totalThreats: threatsData.length,
+      highRiskThreats: threatsData.filter(t => t.current_risk === 'high').length,
+      pendingQueries: queriesData.filter(q => !q.responded_at).length,
+      upcomingMilestones: milestonesData.filter(m => new Date(m.target_date) <= oneWeekFromNow && m.status === 'pending').length,
     });
 
+    console.log('[Dashboard] Fetching detail data...');
+
     // Fetch recent actions with relations
-    const { data: recentActionsData } = await supabase
-      .from('actions')
-      .select(`
-        *,
-        owner:users!actions_owner_id_fkey(id, full_name, avatar_url),
-        workstream:workstreams(id, name, color)
-      `)
-      .in('status', ['pending', 'in_progress'])
-      .order('updated_at', { ascending: false })
-      .limit(5);
+    const recentActionsData = await fetchWithTimeout(
+      'recentActions',
+      supabase
+        .from('actions')
+        .select(`
+          *,
+          owner:users!actions_owner_id_fkey(id, full_name, avatar_url),
+          workstream:workstreams(id, name, color)
+        `)
+        .in('status', ['pending', 'in_progress'])
+        .order('updated_at', { ascending: false })
+        .limit(5)
+    );
 
     if (recentActionsData) {
       setRecentActions(recentActionsData as unknown as (Action & { owner?: User; workstream?: Workstream })[]);
     }
 
     // Fetch recent threats
-    const { data: recentThreatsData } = await supabase
-      .from('threats')
-      .select(`
-        *,
-        workstream:workstreams(id, name, color)
-      `)
-      .in('current_risk', ['high', 'medium'])
-      .order('updated_at', { ascending: false })
-      .limit(5);
+    const recentThreatsData = await fetchWithTimeout(
+      'recentThreats',
+      supabase
+        .from('threats')
+        .select(`
+          *,
+          workstream:workstreams(id, name, color)
+        `)
+        .in('current_risk', ['high', 'medium'])
+        .order('updated_at', { ascending: false })
+        .limit(5)
+    );
 
     if (recentThreatsData) {
       setRecentThreats(recentThreatsData as unknown as (Threat & { workstream?: Workstream })[]);
@@ -119,16 +151,19 @@ export default function DashboardPage() {
 
     // Fetch pending queries assigned to current user
     if (user) {
-      const { data: pendingQueriesData } = await supabase
-        .from('technical_queries')
-        .select(`
-          *,
-          submitter:users!technical_queries_submitted_by_fkey(id, full_name, avatar_url)
-        `)
-        .eq('assigned_to', user.id)
-        .is('responded_at', null)
-        .order('created_at', { ascending: false })
-        .limit(5);
+      const pendingQueriesData = await fetchWithTimeout(
+        'pendingQueries',
+        supabase
+          .from('technical_queries')
+          .select(`
+            *,
+            submitter:users!technical_queries_submitted_by_fkey(id, full_name, avatar_url)
+          `)
+          .eq('assigned_to', user.id)
+          .is('responded_at', null)
+          .order('created_at', { ascending: false })
+          .limit(5)
+      );
 
       if (pendingQueriesData) {
         setPendingQueries(pendingQueriesData as unknown as (TechnicalQuery & { assignee?: User })[]);
@@ -136,20 +171,25 @@ export default function DashboardPage() {
     }
 
     // Fetch upcoming milestones
-    const { data: upcomingMilestonesData } = await supabase
-      .from('milestones')
-      .select(`
-        *,
-        workstream:workstreams(id, name, color)
-      `)
-      .eq('status', 'pending')
-      .gte('target_date', now.toISOString())
-      .order('target_date', { ascending: true })
-      .limit(5);
+    const upcomingMilestonesData = await fetchWithTimeout(
+      'upcomingMilestones',
+      supabase
+        .from('milestones')
+        .select(`
+          *,
+          workstream:workstreams(id, name, color)
+        `)
+        .eq('status', 'pending')
+        .gte('target_date', now.toISOString())
+        .order('target_date', { ascending: true })
+        .limit(5)
+    );
 
     if (upcomingMilestonesData) {
       setUpcomingMilestones(upcomingMilestonesData as unknown as (Milestone & { workstream?: Workstream })[]);
     }
+
+    console.log('[Dashboard] All data fetch complete');
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
