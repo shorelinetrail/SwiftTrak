@@ -227,6 +227,25 @@ export default function DebugPage() {
     const fetchFailed = results[1] && !results[1].success;
     const authFailed = results[4] && !results[4].success && results[4].error?.includes('Timeout');
 
+    // Check for AbortError pattern (raw fetch works but library calls fail)
+    const hasAbortError = results.some(r => r.error?.includes('AbortError') || r.error?.includes('aborted'));
+    const rawFetchWorks = results[1]?.success;
+    const libraryFails = results[2] && !results[2].success;
+
+    if (hasAbortError && rawFetchWorks && libraryFails) {
+      return {
+        title: 'Supabase Client State Corrupted',
+        message: 'The Supabase client library has entered a corrupted state (AbortError). This happens when:',
+        items: [
+          'A previous request was aborted or timed out',
+          'The client\'s internal connection was interrupted',
+          'Running tests multiple times without page reload',
+        ],
+        action: 'Reload the page to reset the client state. This fix has been applied to the app - the browser client now creates fresh instances.',
+        showReload: true,
+      };
+    }
+
     if (connFailed) {
       return {
         title: 'Supabase Project Unreachable',
@@ -314,6 +333,14 @@ export default function DebugPage() {
             ))}
           </ul>
           <p className="text-orange-200 font-medium">{diagnosis.action}</p>
+          {'showReload' in diagnosis && diagnosis.showReload && (
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-3 px-4 py-2 bg-orange-600 rounded hover:bg-orange-500"
+            >
+              Reload Page
+            </button>
+          )}
         </div>
       )}
 
