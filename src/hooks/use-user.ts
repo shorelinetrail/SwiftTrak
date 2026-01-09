@@ -1,102 +1,110 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
 import type { User } from '@/types/database';
 
 export function useUser() {
   const { user, setUser } = useAppStore();
-  const [loading, setLoading] = useState(false);
-  const fetchedRef = useRef(false);
+  const [loading, setLoading] = useState(true);
+  const initializedRef = useRef(false);
 
-  useEffect(() => {
-    // If we already fetched, skip
-    if (fetchedRef.current) {
-      console.log('[useUser] Already fetched, skipping');
-      return;
-    }
-    fetchedRef.current = true;
-    console.log('[useUser] Starting user fetch...');
-
+  const fetchUserProfile = useCallback(async (authUserId: string) => {
+    console.log('[useUser] Fetching profile for:', authUserId);
     const supabase = createClient();
 
-    // Don't block rendering - fetch in background
-    const fetchUser = async () => {
+    try {
+      const { data: profile, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', authUserId)
+        .single();
+
+      console.log('[useUser] Profile result:', { profileId: profile?.id, role: profile?.role, error: error?.message });
+
+      if (profile) {
+        setUser(profile as User);
+        return profile as User;
+      }
+    } catch (error) {
+      console.error('[useUser] Error fetching profile:', error);
+    }
+    return null;
+  }, [setUser]);
+
+  useEffect(() => {
+    // Prevent double initialization in React Strict Mode
+    if (initializedRef.current) {
+      console.log('[useUser] Already initialized');
+      return;
+    }
+    initializedRef.current = true;
+
+    console.log('[useUser] Initializing auth listener...');
+    const supabase = createClient();
+
+    // Initial auth check
+    const initializeAuth = async () => {
       try {
-        console.log('[useUser] Calling supabase.auth.getUser()...');
+        console.log('[useUser] Getting initial session...');
         const startTime = Date.now();
-        const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
-        console.log('[useUser] getUser completed in', Date.now() - startTime, 'ms', { authUser: authUser?.id, authError });
 
-        if (authUser) {
-          console.log('[useUser] Auth user found, fetching profile...');
-          const profileStart = Date.now();
-          const { data: profile, error: profileError } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', authUser.id)
-            .single();
-          console.log('[useUser] Profile fetch completed in', Date.now() - profileStart, 'ms', { profile: profile?.id, role: profile?.role, profileError });
+        const { data: { session }, error } = await supabase.auth.getSession();
+        console.log('[useUser] getSession completed in', Date.now() - startTime, 'ms', {
+          hasSession: !!session,
+          userId: session?.user?.id,
+          error: error?.message
+        });
 
-          if (profile) {
-            console.log('[useUser] Setting user from profile:', profile.id, profile.role);
-            setUser(profile as User);
-          } else {
-            console.log('[useUser] No profile, creating default user');
-            setUser({
-              id: authUser.id,
-              email: authUser.email || '',
-              full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
-              role: 'view',
-              avatar_url: undefined,
-              created_at: authUser.created_at,
-              updated_at: authUser.created_at,
-            } as User);
-          }
+        if (session?.user) {
+          await fetchUserProfile(session.user.id);
         } else {
-          console.log('[useUser] No auth user found');
+          console.log('[useUser] No session found');
+          setUser(null);
         }
       } catch (error) {
-        console.error('[useUser] Error fetching user:', error);
+        console.error('[useUser] Error in initializeAuth:', error);
+        setUser(null);
+      } finally {
+        setLoading(false);
       }
     };
 
-    fetchUser();
+    initializeAuth();
 
+    // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        if (event === 'SIGNED_OUT') {
-          setUser(null);
-          window.location.href = '/auth/login';
-        } else if (session?.user && event === 'SIGNED_IN') {
-          const { data: profile } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
+        console.log('[useUser] Auth state changed:', event, { userId: session?.user?.id });
 
-          if (profile) {
-            setUser(profile as User);
-          } else {
-            setUser({
-              id: session.user.id,
-              email: session.user.email || '',
-              full_name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User',
-              role: 'view',
-              avatar_url: undefined,
-              created_at: session.user.created_at,
-              updated_at: session.user.created_at,
-            } as User);
-          }
+        switch (event) {
+          case 'SIGNED_IN':
+          case 'TOKEN_REFRESHED':
+          case 'USER_UPDATED':
+            if (session?.user) {
+              await fetchUserProfile(session.user.id);
+            }
+            break;
+          case 'SIGNED_OUT':
+            console.log('[useUser] User signed out, clearing state');
+            setUser(null);
+            // Don't redirect here - let middleware handle it
+            break;
+          case 'INITIAL_SESSION':
+            // Already handled by initializeAuth
+            break;
+          default:
+            console.log('[useUser] Unhandled auth event:', event);
         }
       }
     );
 
     return () => {
+      console.log('[useUser] Cleaning up auth listener');
       subscription.unsubscribe();
     };
-  }, [setUser]);
+  }, [setUser, fetchUserProfile]);
 
   return { user, loading };
 }
@@ -126,7 +134,6 @@ export function usePermission(workstreamId?: string) {
         console.log('[usePermission] No user, starting 3s timeout...');
         timeoutId = setTimeout(() => {
           console.log('[usePermission] Timeout fired, still no user');
-          // Only update state if still mounted
           if (mountedRef.current) {
             setPermission(null);
             setLoading(false);

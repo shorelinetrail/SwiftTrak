@@ -1,25 +1,12 @@
 import { createBrowserClient } from '@supabase/ssr';
 
-let client: ReturnType<typeof createBrowserClient> | null = null;
-
+// Create a new client for each call - this ensures fresh cookie reading
+// The @supabase/ssr library handles connection pooling internally
 export function createClient() {
-  if (client) {
-    return client;
-  }
+  console.log('[Supabase] Creating browser client');
 
-  console.log('[Supabase] Creating new browser client...');
-
-  client = createBrowserClient(
+  return createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
-
-  console.log('[Supabase] Client created');
-
-  return client;
-}
-
-// Helper to reset client (useful for testing)
-export function resetClient() {
-  client = null;
 }
