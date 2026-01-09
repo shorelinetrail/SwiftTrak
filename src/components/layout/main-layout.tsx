@@ -61,8 +61,11 @@ export function MainLayout({ children }: MainLayoutProps) {
   }
 
   if (!user) {
-    router.push('/auth/login');
-    return null;
+    // Use window.location for more reliable redirect
+    if (typeof window !== 'undefined') {
+      window.location.href = '/auth/login';
+    }
+    return <LoadingPage message="Redirecting to login..." />;
   }
 
   return (
