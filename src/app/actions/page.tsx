@@ -108,13 +108,13 @@ function ActionsPageContent() {
     setFilteredActions(filtered);
   }, [actions, statusFilter, workstreamFilter, priorityFilter, activeTab]);
 
-  // Real-time updates
-  useRealtime({
-    table: 'actions',
-    onInsert: () => fetchActions(),
-    onUpdate: () => fetchActions(),
-    onDelete: () => fetchActions(),
-  });
+  // Real-time updates disabled for stability
+  // useRealtime({
+  //   table: 'actions',
+  //   onInsert: () => fetchActions(),
+  //   onUpdate: () => fetchActions(),
+  //   onDelete: () => fetchActions(),
+  // });
 
   const tabs = [
     { id: 'all', label: 'All Actions', count: actions.length },
