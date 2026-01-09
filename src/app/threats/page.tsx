@@ -26,7 +26,7 @@ type ThreatWithRelations = Threat & {
 };
 
 export default function ThreatsPage() {
-  const { workstreams } = useAppStore();
+  const { workstreams, setWorkstreams } = useAppStore();
   const [loading, setLoading] = useState(true);
   const [threats, setThreats] = useState<ThreatWithRelations[]>([]);
   const [filteredThreats, setFilteredThreats] = useState<ThreatWithRelations[]>([]);
@@ -34,24 +34,57 @@ export default function ThreatsPage() {
   const [workstreamFilter, setWorkstreamFilter] = useState<string>('all');
   const [riskFilter, setRiskFilter] = useState<string>('all');
 
+  // Ensure workstreams are loaded
+  useEffect(() => {
+    if (workstreams.length > 0) return;
+    let mounted = true;
+
+    const fetchWorkstreams = async () => {
+      const supabase = createClient();
+      try {
+        const result = await Promise.race([
+          supabase.from('workstreams').select('*').order('order_index'),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+        ]);
+        if (mounted && result?.data) {
+          setWorkstreams(result.data as Workstream[]);
+        }
+      } catch (error) {
+        console.error('[Threats] Error fetching workstreams:', error);
+      }
+    };
+    fetchWorkstreams();
+
+    return () => { mounted = false; };
+  }, [workstreams.length, setWorkstreams]);
+
   const fetchThreats = useCallback(async () => {
     const supabase = createClient();
 
-    const { data, error } = await supabase
-      .from('threats')
-      .select(`
-        *,
-        workstream:workstreams(id, name, color),
-        creator:users!threats_created_by_fkey(id, full_name)
-      `)
-      .order('created_at', { ascending: false });
+    try {
+      // Add timeout to prevent hanging
+      const result = await Promise.race([
+        supabase
+          .from('threats')
+          .select(`
+            *,
+            workstream:workstreams(id, name, color),
+            creator:users!threats_created_by_fkey(id, full_name)
+          `)
+          .order('created_at', { ascending: false }),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+      ]);
 
-    if (error) {
-      console.error('Error fetching threats:', error);
-    } else {
-      setThreats(data as unknown as ThreatWithRelations[]);
+      if (result?.data) {
+        setThreats(result.data as unknown as ThreatWithRelations[]);
+      } else if (result?.error) {
+        console.error('Error fetching threats:', result.error);
+      }
+    } catch (error) {
+      console.error('[Threats] Error:', error);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => {

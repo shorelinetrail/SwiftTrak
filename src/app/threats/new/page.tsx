@@ -17,21 +17,28 @@ export default function NewThreatPage() {
   const { user, workstreams, setWorkstreams } = useAppStore();
   const [loading, setLoading] = useState(false);
 
-  // Fetch workstreams if not already loaded
+  // Fetch workstreams if not already loaded - with timeout
   useEffect(() => {
-    if (workstreams.length === 0) {
-      const fetchWorkstreams = async () => {
-        const supabase = createClient();
-        const { data } = await supabase
-          .from('workstreams')
-          .select('*')
-          .order('order_index');
-        if (data) {
-          setWorkstreams(data as Workstream[]);
+    if (workstreams.length > 0) return;
+    let mounted = true;
+
+    const fetchWorkstreams = async () => {
+      const supabase = createClient();
+      try {
+        const result = await Promise.race([
+          supabase.from('workstreams').select('*').order('order_index'),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+        ]);
+        if (mounted && result?.data) {
+          setWorkstreams(result.data as Workstream[]);
         }
-      };
-      fetchWorkstreams();
-    }
+      } catch (error) {
+        console.error('[NewThreat] Error fetching workstreams:', error);
+      }
+    };
+    fetchWorkstreams();
+
+    return () => { mounted = false; };
   }, [workstreams.length, setWorkstreams]);
 
   const [formData, setFormData] = useState({

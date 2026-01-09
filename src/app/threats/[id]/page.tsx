@@ -45,25 +45,35 @@ export default function ThreatDetailPage() {
   const fetchThreat = useCallback(async () => {
     const supabase = createClient();
 
-    const { data, error } = await supabase
-      .from('threats')
-      .select(`
-        *,
-        workstream:workstreams(id, name, color),
-        creator:users!threats_created_by_fkey(id, full_name)
-      `)
-      .eq('id', threatId)
-      .single();
+    try {
+      // Add timeout to prevent hanging
+      const result = await Promise.race([
+        supabase
+          .from('threats')
+          .select(`
+            *,
+            workstream:workstreams(id, name, color),
+            creator:users!threats_created_by_fkey(id, full_name)
+          `)
+          .eq('id', threatId)
+          .single(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+      ]);
 
-    if (error || !data) {
-      toast.error('Threat not found');
-      router.push('/threats');
-      return;
+      if (!result || result.error || !result.data) {
+        toast.error('Threat not found');
+        router.push('/threats');
+        return;
+      }
+
+      setThreat(result.data as unknown as ThreatWithRelations);
+      setEditForm(result.data);
+    } catch (error) {
+      console.error('[ThreatDetail] Error:', error);
+      toast.error('Failed to load threat');
+    } finally {
+      setLoading(false);
     }
-
-    setThreat(data as unknown as ThreatWithRelations);
-    setEditForm(data);
-    setLoading(false);
   }, [threatId, router]);
 
   useEffect(() => {

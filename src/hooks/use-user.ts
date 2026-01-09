@@ -8,7 +8,8 @@ import type { User as AuthUser } from '@supabase/supabase-js';
 
 export function useUser() {
   const { user, setUser } = useAppStore();
-  const [loading, setLoading] = useState(true);
+  // If user already exists in store, we're not "loading"
+  const [loading, setLoading] = useState(!user);
   const initializedRef = useRef(false);
 
   const fetchUserProfile = useCallback(async (authUser: AuthUser) => {
@@ -57,40 +58,46 @@ export function useUser() {
   }, [setUser]);
 
   useEffect(() => {
-    if (initializedRef.current) return;
+    // CRITICAL: Skip re-initialization if user already exists in store
+    // This prevents losing auth on navigation between pages
+    if (initializedRef.current || user) {
+      initializedRef.current = true;
+      setLoading(false);
+      return;
+    }
     initializedRef.current = true;
 
     const supabase = createClient();
     let mounted = true;
     let failsafeTimeout: NodeJS.Timeout;
 
-    // Helper to wrap any promise with a timeout
-    const withTimeout = <T,>(promise: Promise<T>, ms: number, fallback: T): Promise<T> => {
-      return Promise.race([
-        promise,
-        new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
-      ]);
-    };
-
     // Get initial session
     const initializeAuth = async () => {
       try {
-        const sessionResult = await withTimeout(
+        const sessionResult = await Promise.race([
           supabase.auth.getSession(),
-          5000,
-          { data: { session: null }, error: null }
-        );
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+        ]);
 
         if (!mounted) return;
+
+        // CRITICAL: Only clear user if session explicitly returned no user
+        // Don't clear on timeout if user already exists
+        if (sessionResult === null) {
+          // Timed out - keep existing user if any
+          console.warn('[useUser] Auth session timed out');
+          return;
+        }
 
         if (sessionResult.data?.session?.user) {
           await fetchUserProfile(sessionResult.data.session.user);
         } else {
+          // Explicitly no session - clear user
           setUser(null);
         }
       } catch (error) {
         console.error('[useUser] Error getting session:', error);
-        if (mounted) setUser(null);
+        // Don't clear user on error - keep existing state
       } finally {
         if (mounted) setLoading(false);
       }
@@ -122,7 +129,7 @@ export function useUser() {
       clearTimeout(failsafeTimeout);
       subscription.unsubscribe();
     };
-  }, [setUser, fetchUserProfile]);
+  }, [setUser, fetchUserProfile, user]);
 
   return { user, loading };
 }
