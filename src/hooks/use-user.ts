@@ -91,17 +91,21 @@ export function usePermission(workstreamId?: string) {
   const { user } = useAppStore();
   const [permission, setPermission] = useState<'view' | 'edit' | 'admin' | null>(null);
   const [loading, setLoading] = useState(true);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
+    mountedRef.current = true;
     let timeoutId: NodeJS.Timeout;
 
     const checkPermission = async () => {
       // If no user yet, wait a bit for user fetch to complete
       if (!user) {
         timeoutId = setTimeout(() => {
-          // After timeout, if still no user, set loading false
-          setPermission(null);
-          setLoading(false);
+          // Only update state if still mounted
+          if (mountedRef.current) {
+            setPermission(null);
+            setLoading(false);
+          }
         }, 3000);
         return;
       }
@@ -111,38 +115,53 @@ export function usePermission(workstreamId?: string) {
 
       // Admin has full access everywhere
       if (user.role === 'admin') {
-        setPermission('admin');
-        setLoading(false);
+        if (mountedRef.current) {
+          setPermission('admin');
+          setLoading(false);
+        }
         return;
       }
 
       // If no workstream specified, use global role
       if (!workstreamId) {
-        setPermission(user.role);
-        setLoading(false);
+        if (mountedRef.current) {
+          setPermission(user.role);
+          setLoading(false);
+        }
         return;
       }
 
       // Check workstream-specific permission
-      const supabase = createClient();
-      const { data: workstreamPermission } = await supabase
-        .from('user_workstream_permissions')
-        .select('permission')
-        .eq('user_id', user.id)
-        .eq('workstream_id', workstreamId)
-        .single();
+      try {
+        const supabase = createClient();
+        const { data: workstreamPermission } = await supabase
+          .from('user_workstream_permissions')
+          .select('permission')
+          .eq('user_id', user.id)
+          .eq('workstream_id', workstreamId)
+          .single();
 
-      if (workstreamPermission) {
-        setPermission(workstreamPermission.permission as 'view' | 'edit' | 'admin');
-      } else {
-        setPermission(user.role);
+        if (mountedRef.current) {
+          if (workstreamPermission) {
+            setPermission(workstreamPermission.permission as 'view' | 'edit' | 'admin');
+          } else {
+            setPermission(user.role);
+          }
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error('Error checking permission:', error);
+        if (mountedRef.current) {
+          setPermission(user.role);
+          setLoading(false);
+        }
       }
-      setLoading(false);
     };
 
     checkPermission();
 
     return () => {
+      mountedRef.current = false;
       clearTimeout(timeoutId);
     };
   }, [user, workstreamId]);

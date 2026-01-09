@@ -19,6 +19,7 @@ import {
 } from '@heroicons/react/24/outline';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import toast from 'react-hot-toast';
 import type { Action, Threat, Milestone, Workstream } from '@/types/database';
 
 interface ExecutiveStats {
@@ -421,5 +422,3 @@ function MetricCard({
     </Card>
   );
 }
-
-import toast from 'react-hot-toast';

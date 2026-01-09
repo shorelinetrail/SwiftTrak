@@ -57,12 +57,7 @@ export default function GanttPage() {
     try {
       const supabase = createClient();
 
-      // Add timeout to prevent hanging
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Fetch timeout')), 15000)
-      );
-
-      const fetchPromise = supabase
+      const { data: tasksData, error } = await supabase
         .from('gantt_tasks')
         .select(`
           *,
@@ -71,10 +66,9 @@ export default function GanttPage() {
         `)
         .order('order_index');
 
-      const { data: tasksData, error } = await Promise.race([fetchPromise, timeoutPromise]) as Awaited<typeof fetchPromise>;
-
       if (error) {
         console.error('Error fetching tasks:', error);
+        toast.error('Failed to load Gantt data');
       } else {
         // Fetch dependencies
         const { data: depsData } = await supabase
@@ -111,6 +105,7 @@ export default function GanttPage() {
       }
     } catch (error) {
       console.error('Error loading gantt data:', error);
+      toast.error('Failed to load Gantt chart');
     } finally {
       setLoading(false);
     }

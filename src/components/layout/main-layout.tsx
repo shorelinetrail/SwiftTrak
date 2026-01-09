@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Toaster } from 'react-hot-toast';
 import { Sidebar } from './sidebar';
 import { useUser } from '@/hooks/use-user';
@@ -15,13 +15,16 @@ interface MainLayoutProps {
 export function MainLayout({ children }: MainLayoutProps) {
   const { user } = useUser();
   const { setWorkstreams, setNotifications, sidebarOpen } = useAppStore();
+  const workstreamsFetchedRef = useRef(false);
+  const lastUserIdRef = useRef<string | null>(null);
 
-  // Fetch workstreams and notifications on mount
+  // Fetch workstreams once on mount
   useEffect(() => {
-    const fetchData = async () => {
-      const supabase = createClient();
+    if (workstreamsFetchedRef.current) return;
+    workstreamsFetchedRef.current = true;
 
-      // Fetch workstreams
+    const fetchWorkstreams = async () => {
+      const supabase = createClient();
       const { data: workstreams } = await supabase
         .from('workstreams')
         .select('*')
@@ -30,24 +33,32 @@ export function MainLayout({ children }: MainLayoutProps) {
       if (workstreams) {
         setWorkstreams(workstreams as Workstream[]);
       }
+    };
 
-      // Fetch notifications if user exists
-      if (user) {
-        const { data: notifications } = await supabase
-          .from('notifications')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(50);
+    fetchWorkstreams();
+  }, [setWorkstreams]);
 
-        if (notifications) {
-          setNotifications(notifications as Notification[]);
-        }
+  // Fetch notifications when user changes
+  useEffect(() => {
+    if (!user || user.id === lastUserIdRef.current) return;
+    lastUserIdRef.current = user.id;
+
+    const fetchNotifications = async () => {
+      const supabase = createClient();
+      const { data: notifications } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (notifications) {
+        setNotifications(notifications as Notification[]);
       }
     };
 
-    fetchData();
-  }, [user, setWorkstreams, setNotifications]);
+    fetchNotifications();
+  }, [user, setNotifications]);
 
   // Don't block rendering - middleware handles auth
   return (

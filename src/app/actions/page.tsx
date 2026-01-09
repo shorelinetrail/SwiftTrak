@@ -40,7 +40,7 @@ export default function ActionsPage() {
 
 function ActionsPageContent() {
   const searchParams = useSearchParams();
-  const { workstreams } = useAppStore();
+  const { workstreams, user } = useAppStore();
   const [loading, setLoading] = useState(true);
   const [actions, setActions] = useState<ActionWithRelations[]>([]);
   const [filteredActions, setFilteredActions] = useState<ActionWithRelations[]>([]);
@@ -94,7 +94,6 @@ function ActionsPageContent() {
 
     // Tab filters
     if (activeTab === 'my') {
-      const { user } = useAppStore.getState();
       filtered = filtered.filter(a => a.owner_id === user?.id);
     } else if (activeTab === 'overdue') {
       filtered = filtered.filter(a =>
@@ -106,7 +105,7 @@ function ActionsPageContent() {
     }
 
     setFilteredActions(filtered);
-  }, [actions, statusFilter, workstreamFilter, priorityFilter, activeTab]);
+  }, [actions, statusFilter, workstreamFilter, priorityFilter, activeTab, user]);
 
   // Real-time updates disabled for stability
   // useRealtime({
@@ -118,7 +117,7 @@ function ActionsPageContent() {
 
   const tabs = [
     { id: 'all', label: 'All Actions', count: actions.length },
-    { id: 'my', label: 'My Actions', count: actions.filter(a => a.owner_id === useAppStore.getState().user?.id).length },
+    { id: 'my', label: 'My Actions', count: actions.filter(a => a.owner_id === user?.id).length },
     { id: 'overdue', label: 'Overdue', count: actions.filter(a => a.due_date && isOverdue(a.due_date) && a.status !== 'complete' && a.status !== 'cancelled').length },
     { id: 'critical', label: 'Critical', count: actions.filter(a => a.priority === 'critical' && a.status !== 'complete').length },
   ];

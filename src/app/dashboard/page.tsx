@@ -24,6 +24,7 @@ import {
   ExclamationCircleIcon,
   PlusIcon,
 } from '@heroicons/react/24/outline';
+import toast from 'react-hot-toast';
 import type { Action, Threat, TechnicalQuery, Milestone, Workstream, User } from '@/types/database';
 
 interface DashboardStats {
@@ -160,6 +161,7 @@ export default function DashboardPage() {
     console.log('[Dashboard] All data fetch complete');
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
+      toast.error('Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
