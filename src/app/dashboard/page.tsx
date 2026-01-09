@@ -39,137 +39,155 @@ interface DashboardStats {
 }
 
 export default function DashboardPage() {
-  const { workstreams, user } = useAppStore();
+  const { workstreams, setWorkstreams } = useAppStore();
   const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentActions, setRecentActions] = useState<(Action & { owner?: User; workstream?: Workstream })[]>([]);
   const [recentThreats, setRecentThreats] = useState<(Threat & { workstream?: Workstream })[]>([]);
   const [pendingQueries, setPendingQueries] = useState<(TechnicalQuery & { assignee?: User })[]>([]);
   const [upcomingMilestones, setUpcomingMilestones] = useState<(Milestone & { workstream?: Workstream })[]>([]);
 
-  const fetchDashboardData = useCallback(async () => {
-    try {
-      const supabase = createClient();
-      console.log('[Dashboard] Starting data fetch...');
-
-      // Fetch stats directly - simpler approach that matches debug page
-      const [actionsRes, threatsRes, queriesRes, milestonesRes] = await Promise.all([
-        supabase.from('actions').select('id, status, priority, due_date'),
-        supabase.from('threats').select('id, current_risk'),
-        supabase.from('technical_queries').select('id, responded_at'),
-        supabase.from('milestones').select('id, target_date, status'),
-      ]);
-
-      console.log('[Dashboard] Stats fetched:', {
-        actions: actionsRes.data?.length || 0,
-        threats: threatsRes.data?.length || 0,
-        queries: queriesRes.data?.length || 0,
-        milestones: milestonesRes.data?.length || 0
-      });
-
-      const actions = actionsRes.data;
-      const threats = threatsRes.data;
-      const queries = queriesRes.data;
-      const milestones = milestonesRes.data;
-
-    const actionsData = actions || [];
-    const threatsData = threats || [];
-    const queriesData = queries || [];
-    const milestonesData = milestones || [];
-
-    const now = new Date();
-    const oneWeekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-
-    setStats({
-      totalActions: actionsData.length,
-      completedActions: actionsData.filter(a => a.status === 'complete').length,
-      overdueActions: actionsData.filter(a => a.due_date && new Date(a.due_date) < now && a.status !== 'complete' && a.status !== 'cancelled').length,
-      criticalActions: actionsData.filter(a => a.priority === 'critical' && a.status !== 'complete' && a.status !== 'cancelled').length,
-      totalThreats: threatsData.length,
-      highRiskThreats: threatsData.filter(t => t.current_risk === 'high').length,
-      pendingQueries: queriesData.filter(q => !q.responded_at).length,
-      upcomingMilestones: milestonesData.filter(m => new Date(m.target_date) <= oneWeekFromNow && m.status === 'pending').length,
-    });
-
-    console.log('[Dashboard] Fetching detail data...');
-
-    // Fetch recent actions with relations
-    const { data: recentActionsData } = await supabase
-      .from('actions')
-      .select(`
-        *,
-        owner:users!actions_owner_id_fkey(id, full_name, avatar_url),
-        workstream:workstreams(id, name, color)
-      `)
-      .in('status', ['pending', 'in_progress'])
-      .order('updated_at', { ascending: false })
-      .limit(5);
-
-    if (recentActionsData) {
-      setRecentActions(recentActionsData as unknown as (Action & { owner?: User; workstream?: Workstream })[]);
-    }
-
-    // Fetch recent threats
-    const { data: recentThreatsData } = await supabase
-      .from('threats')
-      .select(`
-        *,
-        workstream:workstreams(id, name, color)
-      `)
-      .in('current_risk', ['high', 'medium'])
-      .order('updated_at', { ascending: false })
-      .limit(5);
-
-    if (recentThreatsData) {
-      setRecentThreats(recentThreatsData as unknown as (Threat & { workstream?: Workstream })[]);
-    }
-
-    // Fetch pending queries assigned to current user
-    if (user) {
-      const { data: pendingQueriesData } = await supabase
-        .from('technical_queries')
-        .select(`
-          *,
-          submitter:users!technical_queries_submitted_by_fkey(id, full_name, avatar_url)
-        `)
-        .eq('assigned_to', user.id)
-        .is('responded_at', null)
-        .order('created_at', { ascending: false })
-        .limit(5);
-
-      if (pendingQueriesData) {
-        setPendingQueries(pendingQueriesData as unknown as (TechnicalQuery & { assignee?: User })[]);
-      }
-    }
-
-    // Fetch upcoming milestones
-    const { data: upcomingMilestonesData } = await supabase
-      .from('milestones')
-      .select(`
-        *,
-        workstream:workstreams(id, name, color)
-      `)
-      .eq('status', 'pending')
-      .gte('target_date', now.toISOString())
-      .order('target_date', { ascending: true })
-      .limit(5);
-
-    if (upcomingMilestonesData) {
-      setUpcomingMilestones(upcomingMilestonesData as unknown as (Milestone & { workstream?: Workstream })[]);
-    }
-
-    console.log('[Dashboard] All data fetch complete');
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error);
-      toast.error('Failed to load dashboard data');
-    } finally {
-      setLoading(false);
-    }
-  }, [user]);
-
+  // Direct data fetch - no dependency on app store user
   useEffect(() => {
-    fetchDashboardData().catch(console.error);
-  }, [fetchDashboardData]);
+    let mounted = true;
+
+    const fetchAllData = async () => {
+      const supabase = createClient();
+
+      try {
+        // Get current user for user-specific queries
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        let userId: string | null = null;
+
+        if (authUser) {
+          const { data: profile } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', authUser.id)
+            .single();
+          if (profile && mounted) {
+            setCurrentUser(profile as User);
+            userId = profile.id;
+          }
+        }
+
+        // Fetch all dashboard data
+        const [actionsRes, threatsRes, queriesRes, milestonesRes, workstreamsRes] = await Promise.all([
+          supabase.from('actions').select('id, status, priority, due_date'),
+          supabase.from('threats').select('id, current_risk'),
+          supabase.from('technical_queries').select('id, responded_at'),
+          supabase.from('milestones').select('id, target_date, status'),
+          supabase.from('workstreams').select('*').order('order_index'),
+        ]);
+
+        if (!mounted) return;
+
+        // Set workstreams in store
+        if (workstreamsRes.data) {
+          setWorkstreams(workstreamsRes.data as Workstream[]);
+        }
+
+        const actionsData = actionsRes.data || [];
+        const threatsData = threatsRes.data || [];
+        const queriesData = queriesRes.data || [];
+        const milestonesData = milestonesRes.data || [];
+
+        const now = new Date();
+        const oneWeekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+        setStats({
+          totalActions: actionsData.length,
+          completedActions: actionsData.filter(a => a.status === 'complete').length,
+          overdueActions: actionsData.filter(a => a.due_date && new Date(a.due_date) < now && a.status !== 'complete' && a.status !== 'cancelled').length,
+          criticalActions: actionsData.filter(a => a.priority === 'critical' && a.status !== 'complete' && a.status !== 'cancelled').length,
+          totalThreats: threatsData.length,
+          highRiskThreats: threatsData.filter(t => t.current_risk === 'high').length,
+          pendingQueries: queriesData.filter(q => !q.responded_at).length,
+          upcomingMilestones: milestonesData.filter(m => new Date(m.target_date) <= oneWeekFromNow && m.status === 'pending').length,
+        });
+
+        // Fetch recent actions with relations
+        const { data: recentActionsData } = await supabase
+          .from('actions')
+          .select(`
+            *,
+            owner:users!actions_owner_id_fkey(id, full_name, avatar_url),
+            workstream:workstreams(id, name, color)
+          `)
+          .in('status', ['pending', 'in_progress'])
+          .order('updated_at', { ascending: false })
+          .limit(5);
+
+        if (recentActionsData && mounted) {
+          setRecentActions(recentActionsData as unknown as (Action & { owner?: User; workstream?: Workstream })[]);
+        }
+
+        // Fetch recent threats
+        const { data: recentThreatsData } = await supabase
+          .from('threats')
+          .select(`
+            *,
+            workstream:workstreams(id, name, color)
+          `)
+          .in('current_risk', ['high', 'medium'])
+          .order('updated_at', { ascending: false })
+          .limit(5);
+
+        if (recentThreatsData && mounted) {
+          setRecentThreats(recentThreatsData as unknown as (Threat & { workstream?: Workstream })[]);
+        }
+
+        // Fetch pending queries assigned to current user
+        if (userId) {
+          const { data: pendingQueriesData } = await supabase
+            .from('technical_queries')
+            .select(`
+              *,
+              submitter:users!technical_queries_submitted_by_fkey(id, full_name, avatar_url)
+            `)
+            .eq('assigned_to', userId)
+            .is('responded_at', null)
+            .order('created_at', { ascending: false })
+            .limit(5);
+
+          if (pendingQueriesData && mounted) {
+            setPendingQueries(pendingQueriesData as unknown as (TechnicalQuery & { assignee?: User })[]);
+          }
+        }
+
+        // Fetch upcoming milestones
+        const { data: upcomingMilestonesData } = await supabase
+          .from('milestones')
+          .select(`
+            *,
+            workstream:workstreams(id, name, color)
+          `)
+          .eq('status', 'pending')
+          .gte('target_date', now.toISOString())
+          .order('target_date', { ascending: true })
+          .limit(5);
+
+        if (upcomingMilestonesData && mounted) {
+          setUpcomingMilestones(upcomingMilestonesData as unknown as (Milestone & { workstream?: Workstream })[]);
+        }
+
+      } catch (error) {
+        console.error('[Dashboard] Error:', error);
+        toast.error('Failed to load dashboard data');
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchAllData();
+
+    return () => {
+      mounted = false;
+    };
+  }, [setWorkstreams]);
 
   // Real-time updates disabled temporarily for stability
   // TODO: Re-enable with proper memoization
