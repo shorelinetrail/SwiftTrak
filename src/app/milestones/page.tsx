@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
-import { useRealtime } from '@/hooks/use-realtime';
+// import { useRealtime } from '@/hooks/use-realtime';
 import { usePermission } from '@/hooks/use-user';
 import { Header } from '@/components/layout/header';
 import { Card, CardContent } from '@/components/ui/card';
@@ -58,12 +58,12 @@ export default function MilestonesPage() {
     fetchMilestones();
   }, [fetchMilestones]);
 
-  useRealtime({
-    table: 'milestones',
-    onInsert: () => fetchMilestones(),
-    onUpdate: () => fetchMilestones(),
-    onDelete: () => fetchMilestones(),
-  });
+  // useRealtime({
+  //   table: 'milestones',
+  //   onInsert: () => fetchMilestones(),
+  //   onUpdate: () => fetchMilestones(),
+  //   onDelete: () => fetchMilestones(),
+  // });
 
   const handleToggleComplete = async (milestone: MilestoneWithRelations) => {
     const supabase = createClient();

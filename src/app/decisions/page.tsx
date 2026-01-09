@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
-import { useRealtime } from '@/hooks/use-realtime';
+// import { useRealtime } from '@/hooks/use-realtime';
 import { Header } from '@/components/layout/header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -55,10 +55,10 @@ export default function DecisionsPage() {
     fetchDecisions();
   }, [fetchDecisions]);
 
-  useRealtime({
-    table: 'decisions',
-    onInsert: () => fetchDecisions(),
-  });
+  // useRealtime({
+  //   table: 'decisions',
+  //   onInsert: () => fetchDecisions(),
+  // });
 
   const filteredDecisions = workstreamFilter === 'all'
     ? decisions

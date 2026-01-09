@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
-import { useRealtime } from '@/hooks/use-realtime';
+// import { useRealtime } from '@/hooks/use-realtime';
 import { usePermission } from '@/hooks/use-user';
 import { Header } from '@/components/layout/header';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
@@ -147,18 +147,18 @@ export default function ActionDetailPage() {
     fetchAction();
   }, [fetchAction]);
 
-  // Real-time updates
-  useRealtime({
-    table: 'actions',
-    filter: `id=eq.${actionId}`,
-    onUpdate: () => fetchAction(),
-  });
+  // Real-time updates disabled for stability
+  // useRealtime({
+  //   table: 'actions',
+  //   filter: `id=eq.${actionId}`,
+  //   onUpdate: () => fetchAction(),
+  // });
 
-  useRealtime({
-    table: 'action_updates',
-    filter: `action_id=eq.${actionId}`,
-    onInsert: () => fetchAction(),
-  });
+  // useRealtime({
+  //   table: 'action_updates',
+  //   filter: `action_id=eq.${actionId}`,
+  //   onInsert: () => fetchAction(),
+  // });
 
   const handleAddUpdate = async () => {
     if (!newUpdate.trim()) return;

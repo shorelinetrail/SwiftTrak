@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
-import { useRealtime } from '@/hooks/use-realtime';
+// import { useRealtime } from '@/hooks/use-realtime';
 import { usePermission } from '@/hooks/use-user';
 import { Header } from '@/components/layout/header';
 import { Card, CardContent } from '@/components/ui/card';
@@ -109,12 +109,12 @@ export default function GanttPage() {
     fetchTasks();
   }, [fetchTasks]);
 
-  useRealtime({
-    table: 'gantt_tasks',
-    onInsert: () => fetchTasks(),
-    onUpdate: () => fetchTasks(),
-    onDelete: () => fetchTasks(),
-  });
+  // useRealtime({
+  //   table: 'gantt_tasks',
+  //   onInsert: () => fetchTasks(),
+  //   onUpdate: () => fetchTasks(),
+  //   onDelete: () => fetchTasks(),
+  // });
 
   const criticalPath = useMemo(() => {
     if (!showCriticalPath || tasks.length === 0) return [];

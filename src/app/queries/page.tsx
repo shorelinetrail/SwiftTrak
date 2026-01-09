@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
-import { useRealtime } from '@/hooks/use-realtime';
+// import { useRealtime } from '@/hooks/use-realtime';
 import { Header } from '@/components/layout/header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -59,11 +59,11 @@ export default function QueriesPage() {
     fetchQueries();
   }, [fetchQueries]);
 
-  useRealtime({
-    table: 'technical_queries',
-    onInsert: () => fetchQueries(),
-    onUpdate: () => fetchQueries(),
-  });
+  // useRealtime({
+  //   table: 'technical_queries',
+  //   onInsert: () => fetchQueries(),
+  //   onUpdate: () => fetchQueries(),
+  // });
 
   const filteredQueries = queries.filter(q => {
     if (activeTab === 'pending') return !q.responded_at;

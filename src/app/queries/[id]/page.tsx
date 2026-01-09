@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
-import { useRealtime } from '@/hooks/use-realtime';
+// import { useRealtime } from '@/hooks/use-realtime';
 import { usePermission } from '@/hooks/use-user';
 import { Header } from '@/components/layout/header';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -67,11 +67,11 @@ export default function QueryDetailPage() {
     fetchQuery();
   }, [fetchQuery]);
 
-  useRealtime({
-    table: 'technical_queries',
-    filter: `id=eq.${queryId}`,
-    onUpdate: () => fetchQuery(),
-  });
+  // useRealtime({
+  //   table: 'technical_queries',
+  //   filter: `id=eq.${queryId}`,
+  //   onUpdate: () => fetchQuery(),
+  // });
 
   const handleSubmitResponse = async () => {
     if (!response.trim()) {
