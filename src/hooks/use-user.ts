@@ -17,14 +17,39 @@ export function useUser() {
         const { data: { user: authUser } } = await supabase.auth.getUser();
 
         if (authUser) {
-          const { data: profile } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', authUser.id)
-            .single();
+          // Try to get profile, but don't block if table doesn't exist
+          try {
+            const { data: profile } = await supabase
+              .from('users')
+              .select('*')
+              .eq('id', authUser.id)
+              .single();
 
-          if (profile) {
-            setUser(profile as User);
+            if (profile) {
+              setUser(profile as User);
+            } else {
+              // Create minimal user from auth data
+              setUser({
+                id: authUser.id,
+                email: authUser.email || '',
+                full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
+                role: 'view',
+                avatar_url: null,
+                created_at: authUser.created_at,
+                updated_at: authUser.created_at,
+              } as User);
+            }
+          } catch {
+            // Table might not exist yet - use auth data
+            setUser({
+              id: authUser.id,
+              email: authUser.email || '',
+              full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
+              role: 'view',
+              avatar_url: null,
+              created_at: authUser.created_at,
+              updated_at: authUser.created_at,
+            } as User);
           }
         }
       } catch (error) {
@@ -41,14 +66,36 @@ export function useUser() {
         if (event === 'SIGNED_OUT') {
           setUser(null);
         } else if (session?.user) {
-          const { data: profile } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
+          try {
+            const { data: profile } = await supabase
+              .from('users')
+              .select('*')
+              .eq('id', session.user.id)
+              .single();
 
-          if (profile) {
-            setUser(profile as User);
+            if (profile) {
+              setUser(profile as User);
+            } else {
+              setUser({
+                id: session.user.id,
+                email: session.user.email || '',
+                full_name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User',
+                role: 'view',
+                avatar_url: null,
+                created_at: session.user.created_at,
+                updated_at: session.user.created_at,
+              } as User);
+            }
+          } catch {
+            setUser({
+              id: session.user.id,
+              email: session.user.email || '',
+              full_name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User',
+              role: 'view',
+              avatar_url: null,
+              created_at: session.user.created_at,
+              updated_at: session.user.created_at,
+            } as User);
           }
         }
       }
