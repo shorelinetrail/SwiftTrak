@@ -7,21 +7,32 @@ type CookieToSet = {
   options?: CookieOptions;
 };
 
-// Auth check with timeout to prevent blocking page loads
+// Check if auth cookies exist (fast, no network)
+function hasAuthCookies(request: NextRequest): boolean {
+  const cookies = request.cookies.getAll();
+  return cookies.some(c => c.name.startsWith('sb-') && c.name.includes('auth-token'));
+}
+
+// Get user with timeout to prevent blocking page loads
 async function getAuthUserWithTimeout(
   supabase: ReturnType<typeof createServerClient>,
-  timeoutMs: number = 3000
-): Promise<{ user: { id: string } | null }> {
+  timeoutMs: number
+): Promise<{ user: { id: string } | null; timedOut: boolean }> {
   try {
     const result = await Promise.race([
       supabase.auth.getUser(),
-      new Promise<{ data: { user: null }; error: null }>((resolve) =>
-        setTimeout(() => resolve({ data: { user: null }, error: null }), timeoutMs)
+      new Promise<{ data: { user: null }; error: null; timedOut: true }>((resolve) =>
+        setTimeout(() => resolve({ data: { user: null }, error: null, timedOut: true }), timeoutMs)
       ),
     ]);
-    return { user: result.data.user };
+
+    if ('timedOut' in result && result.timedOut) {
+      return { user: null, timedOut: true };
+    }
+
+    return { user: result.data?.user ?? null, timedOut: false };
   } catch {
-    return { user: null };
+    return { user: null, timedOut: false };
   }
 }
 
@@ -73,19 +84,30 @@ export async function updateSession(request: NextRequest) {
     return supabaseResponse;
   }
 
+  // First, do a fast check for auth cookies (no network call)
+  const hasCookies = hasAuthCookies(request);
+
   // Get user with timeout - don't block page loads if auth is slow
   // The getUser() call also refreshes tokens and updates cookies via setAll
-  const { user } = await getAuthUserWithTimeout(supabase, 3000);
+  const { user, timedOut } = await getAuthUserWithTimeout(supabase, 3000);
 
-  // Redirect to login if not authenticated
-  if (!user) {
+  // IMPORTANT: Don't redirect to login if user has auth cookies but getUser timed out
+  // This prevents losing valid sessions when auth is slow
+  if (!user && !hasCookies) {
+    // No cookies and no user - definitely not authenticated
     const url = request.nextUrl.clone();
     url.pathname = '/auth/login';
     return NextResponse.redirect(url);
   }
 
+  // If we have cookies but getUser failed/timed out, let them through
+  // The client-side will handle auth state
+  if (!user && hasCookies && timedOut) {
+    console.log('[Middleware] Auth timed out but cookies exist - allowing through');
+  }
+
   // Redirect to dashboard if authenticated and trying to access login
-  if (request.nextUrl.pathname === '/auth/login') {
+  if (user && request.nextUrl.pathname === '/auth/login') {
     const url = request.nextUrl.clone();
     url.pathname = '/dashboard';
     return NextResponse.redirect(url);

@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
 // import { useRealtime } from '@/hooks/use-realtime';
@@ -40,7 +39,6 @@ interface DashboardStats {
 }
 
 export default function DashboardPage() {
-  const router = useRouter();
   const { workstreams, setWorkstreams } = useAppStore();
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -59,36 +57,40 @@ export default function DashboardPage() {
 
       try {
         // Get current user for user-specific queries (with timeout)
+        // Don't redirect on timeout - middleware already checked cookies
         let userId: string | null = null;
 
         try {
           const authPromise = supabase.auth.getUser();
-          const timeoutPromise = new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Auth timeout')), 5000)
+          const timeoutPromise = new Promise<{ data: { user: null }; timedOut: true }>((resolve) =>
+            setTimeout(() => resolve({ data: { user: null }, timedOut: true }), 5000)
           );
           const result = await Promise.race([authPromise, timeoutPromise]);
           const authUser = result.data?.user;
+          const timedOut = 'timedOut' in result;
 
-          if (!authUser) {
-            // No user - redirect to login
-            router.push('/auth/login');
-            return;
-          }
-
-          const { data: profile } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', authUser.id)
-            .single();
-          if (profile && mounted) {
-            setCurrentUser(profile as User);
-            userId = profile.id;
+          if (authUser) {
+            const { data: profile } = await supabase
+              .from('users')
+              .select('*')
+              .eq('id', authUser.id)
+              .single();
+            if (profile && mounted) {
+              setCurrentUser(profile as User);
+              userId = profile.id;
+            }
+          } else if (timedOut) {
+            // Auth timed out but user has cookies (middleware let them through)
+            // Don't redirect - just continue without user-specific data
+            console.log('[Dashboard] Auth timed out - continuing without user context');
+          } else {
+            // No user and didn't time out - likely not authenticated
+            // Still don't redirect - middleware handles this
+            console.log('[Dashboard] No auth user found');
           }
         } catch (authErr) {
-          console.error('[Dashboard] Auth error/timeout:', authErr);
-          // Redirect to login on auth failure
-          router.push('/auth/login');
-          return;
+          // Auth error - continue without user context
+          console.error('[Dashboard] Auth error:', authErr);
         }
 
         // Fetch all dashboard data
@@ -206,7 +208,7 @@ export default function DashboardPage() {
     return () => {
       mounted = false;
     };
-  }, [setWorkstreams, router]);
+  }, [setWorkstreams]);
 
   // Real-time updates disabled temporarily for stability
   // TODO: Re-enable with proper memoization
