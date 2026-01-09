@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
 // import { useRealtime } from '@/hooks/use-realtime';
@@ -39,6 +40,7 @@ interface DashboardStats {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const { workstreams, setWorkstreams } = useAppStore();
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -67,20 +69,26 @@ export default function DashboardPage() {
           const result = await Promise.race([authPromise, timeoutPromise]);
           const authUser = result.data?.user;
 
-          if (authUser) {
-            const { data: profile } = await supabase
-              .from('users')
-              .select('*')
-              .eq('id', authUser.id)
-              .single();
-            if (profile && mounted) {
-              setCurrentUser(profile as User);
-              userId = profile.id;
-            }
+          if (!authUser) {
+            // No user - redirect to login
+            router.push('/auth/login');
+            return;
+          }
+
+          const { data: profile } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', authUser.id)
+            .single();
+          if (profile && mounted) {
+            setCurrentUser(profile as User);
+            userId = profile.id;
           }
         } catch (authErr) {
           console.error('[Dashboard] Auth error/timeout:', authErr);
-          // Continue without user - will skip user-specific queries
+          // Redirect to login on auth failure
+          router.push('/auth/login');
+          return;
         }
 
         // Fetch all dashboard data
@@ -198,7 +206,7 @@ export default function DashboardPage() {
     return () => {
       mounted = false;
     };
-  }, [setWorkstreams]);
+  }, [setWorkstreams, router]);
 
   // Real-time updates disabled temporarily for stability
   // TODO: Re-enable with proper memoization
