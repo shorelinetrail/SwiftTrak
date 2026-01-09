@@ -1,56 +1,62 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
 import type { User } from '@/types/database';
 
 export function useUser() {
   const { user, setUser } = useAppStore();
-  const [loading, setLoading] = useState(true);
+  // Start loading as false if we already have a user in store
+  const [loading, setLoading] = useState(!user);
+  const fetchedRef = useRef(false);
 
   useEffect(() => {
+    // If we already have a user, don't refetch
+    if (user && fetchedRef.current) {
+      setLoading(false);
+      return;
+    }
+
     const supabase = createClient();
     let mounted = true;
+    let timeoutId: NodeJS.Timeout;
 
     const fetchUser = async () => {
-      try {
-        // Add timeout to prevent hanging
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Auth timeout')), 10000)
-        );
+      // Set a hard timeout to prevent infinite loading
+      timeoutId = setTimeout(() => {
+        if (mounted) {
+          console.warn('Auth check timed out');
+          setLoading(false);
+        }
+      }, 5000);
 
-        const authPromise = supabase.auth.getUser();
-        const { data: { user: authUser } } = await Promise.race([authPromise, timeoutPromise]) as Awaited<typeof authPromise>;
+      try {
+        const { data: { user: authUser }, error } = await supabase.auth.getUser();
 
         if (!mounted) return;
+        clearTimeout(timeoutId);
+
+        if (error) {
+          console.error('Auth error:', error);
+          setLoading(false);
+          return;
+        }
 
         if (authUser) {
-          // Try to get profile, but don't block if table doesn't exist
-          try {
-            const { data: profile } = await supabase
-              .from('users')
-              .select('*')
-              .eq('id', authUser.id)
-              .single();
+          fetchedRef.current = true;
+          // Try to get profile
+          const { data: profile } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', authUser.id)
+            .single();
 
-            if (mounted && profile) {
+          if (mounted) {
+            if (profile) {
               setUser(profile as User);
-            } else if (mounted) {
+            } else {
               // Create minimal user from auth data
-              setUser({
-                id: authUser.id,
-                email: authUser.email || '',
-                full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
-                role: 'view',
-                avatar_url: undefined,
-                created_at: authUser.created_at,
-                updated_at: authUser.created_at,
-              } as User);
-            }
-          } catch {
-            // Table might not exist yet - use auth data
-            if (mounted) {
               setUser({
                 id: authUser.id,
                 email: authUser.email || '',
@@ -66,6 +72,7 @@ export function useUser() {
       } catch (error) {
         console.error('Error fetching user:', error);
       } finally {
+        clearTimeout(timeoutId);
         if (mounted) {
           setLoading(false);
         }
@@ -78,28 +85,18 @@ export function useUser() {
       async (event, session) => {
         if (event === 'SIGNED_OUT') {
           setUser(null);
-        } else if (session?.user) {
-          try {
-            const { data: profile } = await supabase
-              .from('users')
-              .select('*')
-              .eq('id', session.user.id)
-              .single();
+          fetchedRef.current = false;
+        } else if (session?.user && event === 'SIGNED_IN') {
+          fetchedRef.current = true;
+          const { data: profile } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
 
-            if (profile) {
-              setUser(profile as User);
-            } else {
-              setUser({
-                id: session.user.id,
-                email: session.user.email || '',
-                full_name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User',
-                role: 'view',
-                avatar_url: undefined,
-                created_at: session.user.created_at,
-                updated_at: session.user.created_at,
-              } as User);
-            }
-          } catch {
+          if (profile) {
+            setUser(profile as User);
+          } else {
             setUser({
               id: session.user.id,
               email: session.user.email || '',
@@ -116,9 +113,10 @@ export function useUser() {
 
     return () => {
       mounted = false;
+      clearTimeout(timeoutId);
       subscription.unsubscribe();
     };
-  }, [setUser]);
+  }, [user, setUser]);
 
   return { user, loading };
 }
