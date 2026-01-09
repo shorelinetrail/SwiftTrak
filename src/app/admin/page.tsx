@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
-import { usePermission } from '@/hooks/use-user';
 import { useRouter } from 'next/navigation';
 import { Header } from '@/components/layout/header';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -29,10 +28,10 @@ import type { User, Workstream, StakeholderLink, UserRole } from '@/types/databa
 
 export default function AdminPage() {
   const router = useRouter();
-  const { canAdmin, loading: permissionLoading, permission } = usePermission();
-  const { workstreams, setWorkstreams, user } = useAppStore();
+  const { workstreams, setWorkstreams } = useAppStore();
 
   const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [stakeholderLinks, setStakeholderLinks] = useState<StakeholderLink[]>([]);
   const [activeTab, setActiveTab] = useState('users');
@@ -44,17 +43,79 @@ export default function AdminPage() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedWorkstream, setSelectedWorkstream] = useState<Workstream | null>(null);
 
-  console.log('[AdminPage] Render state:', {
-    userId: user?.id,
-    userRole: user?.role,
-    canAdmin,
-    permissionLoading,
-    permission,
-    loading,
-  });
+  // Direct auth check and data fetch - bypasses complex hook chain
+  useEffect(() => {
+    let mounted = true;
+
+    const checkAuthAndFetch = async () => {
+      const supabase = createClient();
+
+      try {
+        // Step 1: Get auth user directly
+        const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+
+        if (authError || !authUser) {
+          console.log('[AdminPage] No auth user, redirecting to login');
+          router.push('/auth/login');
+          return;
+        }
+
+        // Step 2: Get user profile with role
+        const { data: profile, error: profileError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', authUser.id)
+          .single();
+
+        if (profileError || !profile) {
+          console.log('[AdminPage] No profile found, redirecting to dashboard');
+          router.push('/dashboard');
+          return;
+        }
+
+        // Step 3: Check if admin
+        if (profile.role !== 'admin') {
+          console.log('[AdminPage] User is not admin:', profile.role);
+          router.push('/dashboard');
+          return;
+        }
+
+        if (!mounted) return;
+
+        // User is admin, set current user and fetch data
+        setCurrentUser(profile as User);
+
+        // Step 4: Fetch admin data
+        const [usersResult, workstreamsResult, linksResult] = await Promise.all([
+          supabase.from('users').select('*').order('full_name'),
+          supabase.from('workstreams').select('*').order('order_index'),
+          supabase.from('stakeholder_links').select('*').order('created_at', { ascending: false }),
+        ]);
+
+        if (!mounted) return;
+
+        if (usersResult.data) setUsers(usersResult.data as User[]);
+        if (workstreamsResult.data) setWorkstreams(workstreamsResult.data as Workstream[]);
+        if (linksResult.data) setStakeholderLinks(linksResult.data as StakeholderLink[]);
+
+        setLoading(false);
+      } catch (error) {
+        console.error('[AdminPage] Error:', error);
+        if (mounted) {
+          toast.error('Failed to load admin page');
+          router.push('/dashboard');
+        }
+      }
+    };
+
+    checkAuthAndFetch();
+
+    return () => {
+      mounted = false;
+    };
+  }, [router, setWorkstreams]);
 
   const fetchData = useCallback(async () => {
-    console.log('[AdminPage] fetchData starting...');
     const supabase = createClient();
 
     try {
@@ -64,45 +125,14 @@ export default function AdminPage() {
         supabase.from('stakeholder_links').select('*').order('created_at', { ascending: false }),
       ]);
 
-      console.log('[AdminPage] fetchData results:', {
-        users: usersResult.data?.length,
-        usersError: usersResult.error,
-        workstreams: workstreamsResult.data?.length,
-        workstreamsError: workstreamsResult.error,
-        links: linksResult.data?.length,
-        linksError: linksResult.error,
-      });
-
       if (usersResult.data) setUsers(usersResult.data as User[]);
       if (workstreamsResult.data) setWorkstreams(workstreamsResult.data as Workstream[]);
       if (linksResult.data) setStakeholderLinks(linksResult.data as StakeholderLink[]);
     } catch (error) {
       console.error('[AdminPage] fetchData error:', error);
-      toast.error('Failed to load admin data');
+      toast.error('Failed to refresh data');
     }
-
-    setLoading(false);
   }, [setWorkstreams]);
-
-  useEffect(() => {
-    console.log('[AdminPage] useEffect check:', { permissionLoading, canAdmin });
-
-    // Wait for permission check to complete
-    if (permissionLoading) {
-      console.log('[AdminPage] Still loading permissions, waiting...');
-      return;
-    }
-
-    // Only redirect if we've confirmed user is not admin
-    if (!canAdmin) {
-      console.log('[AdminPage] Not admin, redirecting to dashboard');
-      router.push('/dashboard');
-      return;
-    }
-
-    console.log('[AdminPage] Permission granted, fetching data...');
-    fetchData();
-  }, [canAdmin, permissionLoading, router, fetchData]);
 
   const handleUpdateUserRole = async (userId: string, role: UserRole) => {
     const supabase = createClient();
@@ -187,17 +217,14 @@ export default function AdminPage() {
 
   const handleCreateStakeholderLink = async (name: string, workstreamIds: string[]) => {
     const supabase = createClient();
-    const { user } = useAppStore.getState();
 
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('stakeholder_links')
       .insert({
         name,
         workstream_ids: workstreamIds.length > 0 ? workstreamIds : null,
-        created_by: user?.id,
-      })
-      .select()
-      .single();
+        created_by: currentUser?.id,
+      });
 
     if (error) {
       toast.error('Failed to create stakeholder link');
