@@ -29,8 +29,8 @@ import type { User, Workstream, StakeholderLink, UserRole } from '@/types/databa
 
 export default function AdminPage() {
   const router = useRouter();
-  const { canAdmin, loading: permissionLoading } = usePermission();
-  const { workstreams, setWorkstreams } = useAppStore();
+  const { canAdmin, loading: permissionLoading, permission } = usePermission();
+  const { workstreams, setWorkstreams, user } = useAppStore();
 
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<User[]>([]);
@@ -44,31 +44,63 @@ export default function AdminPage() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedWorkstream, setSelectedWorkstream] = useState<Workstream | null>(null);
 
+  console.log('[AdminPage] Render state:', {
+    userId: user?.id,
+    userRole: user?.role,
+    canAdmin,
+    permissionLoading,
+    permission,
+    loading,
+  });
+
   const fetchData = useCallback(async () => {
+    console.log('[AdminPage] fetchData starting...');
     const supabase = createClient();
 
-    const [usersResult, workstreamsResult, linksResult] = await Promise.all([
-      supabase.from('users').select('*').order('full_name'),
-      supabase.from('workstreams').select('*').order('order_index'),
-      supabase.from('stakeholder_links').select('*').order('created_at', { ascending: false }),
-    ]);
+    try {
+      const [usersResult, workstreamsResult, linksResult] = await Promise.all([
+        supabase.from('users').select('*').order('full_name'),
+        supabase.from('workstreams').select('*').order('order_index'),
+        supabase.from('stakeholder_links').select('*').order('created_at', { ascending: false }),
+      ]);
 
-    if (usersResult.data) setUsers(usersResult.data as User[]);
-    if (workstreamsResult.data) setWorkstreams(workstreamsResult.data as Workstream[]);
-    if (linksResult.data) setStakeholderLinks(linksResult.data as StakeholderLink[]);
+      console.log('[AdminPage] fetchData results:', {
+        users: usersResult.data?.length,
+        usersError: usersResult.error,
+        workstreams: workstreamsResult.data?.length,
+        workstreamsError: workstreamsResult.error,
+        links: linksResult.data?.length,
+        linksError: linksResult.error,
+      });
+
+      if (usersResult.data) setUsers(usersResult.data as User[]);
+      if (workstreamsResult.data) setWorkstreams(workstreamsResult.data as Workstream[]);
+      if (linksResult.data) setStakeholderLinks(linksResult.data as StakeholderLink[]);
+    } catch (error) {
+      console.error('[AdminPage] fetchData error:', error);
+      toast.error('Failed to load admin data');
+    }
 
     setLoading(false);
   }, [setWorkstreams]);
 
   useEffect(() => {
+    console.log('[AdminPage] useEffect check:', { permissionLoading, canAdmin });
+
     // Wait for permission check to complete
-    if (permissionLoading) return;
+    if (permissionLoading) {
+      console.log('[AdminPage] Still loading permissions, waiting...');
+      return;
+    }
 
     // Only redirect if we've confirmed user is not admin
     if (!canAdmin) {
+      console.log('[AdminPage] Not admin, redirecting to dashboard');
       router.push('/dashboard');
       return;
     }
+
+    console.log('[AdminPage] Permission granted, fetching data...');
     fetchData();
   }, [canAdmin, permissionLoading, router, fetchData]);
 
@@ -89,18 +121,26 @@ export default function AdminPage() {
   };
 
   const handleCreateWorkstream = async (data: Partial<Workstream>) => {
+    console.log('[AdminPage] handleCreateWorkstream called with:', data);
     const supabase = createClient();
 
-    const { error } = await supabase.from('workstreams').insert({
+    const insertData = {
       name: data.name,
       description: data.description,
       color: data.color || '#dc2626',
       order_index: workstreams.length,
-    });
+    };
+    console.log('[AdminPage] Inserting workstream:', insertData);
+
+    const { data: result, error } = await supabase.from('workstreams').insert(insertData).select();
+
+    console.log('[AdminPage] Workstream insert result:', { result, error });
 
     if (error) {
-      toast.error('Failed to create workstream');
+      console.error('[AdminPage] Failed to create workstream:', error);
+      toast.error(`Failed to create workstream: ${error.message}`);
     } else {
+      console.log('[AdminPage] Workstream created successfully');
       toast.success('Workstream created');
       setWorkstreamModalOpen(false);
       fetchData();
