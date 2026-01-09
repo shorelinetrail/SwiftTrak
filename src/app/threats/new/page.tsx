@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
@@ -10,12 +10,29 @@ import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import toast from 'react-hot-toast';
-import type { RiskLevel } from '@/types/database';
+import type { RiskLevel, Workstream } from '@/types/database';
 
 export default function NewThreatPage() {
   const router = useRouter();
-  const { user, workstreams } = useAppStore();
+  const { user, workstreams, setWorkstreams } = useAppStore();
   const [loading, setLoading] = useState(false);
+
+  // Fetch workstreams if not already loaded
+  useEffect(() => {
+    if (workstreams.length === 0) {
+      const fetchWorkstreams = async () => {
+        const supabase = createClient();
+        const { data } = await supabase
+          .from('workstreams')
+          .select('*')
+          .order('order_index');
+        if (data) {
+          setWorkstreams(data as Workstream[]);
+        }
+      };
+      fetchWorkstreams();
+    }
+  }, [workstreams.length, setWorkstreams]);
 
   const [formData, setFormData] = useState({
     title: '',

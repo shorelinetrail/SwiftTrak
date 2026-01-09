@@ -10,11 +10,11 @@ import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import toast from 'react-hot-toast';
-import type { QueryPriority, User } from '@/types/database';
+import type { QueryPriority, User, Workstream } from '@/types/database';
 
 export default function NewQueryPage() {
   const router = useRouter();
-  const { user, workstreams } = useAppStore();
+  const { user, workstreams, setWorkstreams } = useAppStore();
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
 
@@ -27,20 +27,32 @@ export default function NewQueryPage() {
   });
 
   useEffect(() => {
-    const fetchUsers = async () => {
-      const supabase = createClient();
-      const { data } = await supabase
+    const supabase = createClient();
+
+    const fetchData = async () => {
+      // Fetch workstreams if not loaded
+      if (workstreams.length === 0) {
+        const { data: wsData } = await supabase
+          .from('workstreams')
+          .select('*')
+          .order('order_index');
+        if (wsData) {
+          setWorkstreams(wsData as Workstream[]);
+        }
+      }
+
+      // Fetch users
+      const { data: userData } = await supabase
         .from('users')
         .select('*')
         .order('full_name');
-
-      if (data) {
-        setUsers(data as User[]);
+      if (userData) {
+        setUsers(userData as User[]);
       }
     };
 
-    fetchUsers();
-  }, []);
+    fetchData();
+  }, [workstreams.length, setWorkstreams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
