@@ -51,10 +51,29 @@ export default function AdminPage() {
       const supabase = createClient();
 
       try {
-        // Step 1: Get auth user directly
-        const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+        // Step 1: Get auth user directly with timeout
+        const authPromise = supabase.auth.getUser();
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Auth timeout')), 5000)
+        );
 
-        if (authError || !authUser) {
+        let authUser;
+        try {
+          const result = await Promise.race([authPromise, timeoutPromise]);
+          authUser = result.data?.user;
+          if (result.error) {
+            console.error('[AdminPage] Auth error:', result.error);
+            router.push('/auth/login');
+            return;
+          }
+        } catch (timeoutErr) {
+          console.error('[AdminPage] Auth timed out');
+          toast.error('Authentication timed out. Please refresh.');
+          setLoading(false);
+          return;
+        }
+
+        if (!authUser) {
           console.log('[AdminPage] No auth user, redirecting to login');
           router.push('/auth/login');
           return;

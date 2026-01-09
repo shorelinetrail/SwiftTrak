@@ -56,20 +56,31 @@ export default function DashboardPage() {
       const supabase = createClient();
 
       try {
-        // Get current user for user-specific queries
-        const { data: { user: authUser } } = await supabase.auth.getUser();
+        // Get current user for user-specific queries (with timeout)
         let userId: string | null = null;
 
-        if (authUser) {
-          const { data: profile } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', authUser.id)
-            .single();
-          if (profile && mounted) {
-            setCurrentUser(profile as User);
-            userId = profile.id;
+        try {
+          const authPromise = supabase.auth.getUser();
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Auth timeout')), 5000)
+          );
+          const result = await Promise.race([authPromise, timeoutPromise]);
+          const authUser = result.data?.user;
+
+          if (authUser) {
+            const { data: profile } = await supabase
+              .from('users')
+              .select('*')
+              .eq('id', authUser.id)
+              .single();
+            if (profile && mounted) {
+              setCurrentUser(profile as User);
+              userId = profile.id;
+            }
           }
+        } catch (authErr) {
+          console.error('[Dashboard] Auth error/timeout:', authErr);
+          // Continue without user - will skip user-specific queries
         }
 
         // Fetch all dashboard data
