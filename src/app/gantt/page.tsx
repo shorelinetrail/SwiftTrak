@@ -54,55 +54,66 @@ export default function GanttPage() {
   });
 
   const fetchTasks = useCallback(async () => {
-    const supabase = createClient();
+    try {
+      const supabase = createClient();
 
-    const { data: tasksData, error } = await supabase
-      .from('gantt_tasks')
-      .select(`
-        *,
-        workstream:workstreams(id, name, color),
-        assignee:users!gantt_tasks_assigned_to_fkey(id, full_name, avatar_url)
-      `)
-      .order('order_index');
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Fetch timeout')), 15000)
+      );
 
-    if (error) {
-      console.error('Error fetching tasks:', error);
-    } else {
-      // Fetch dependencies
-      const { data: depsData } = await supabase
-        .from('gantt_dependencies')
-        .select('*');
+      const fetchPromise = supabase
+        .from('gantt_tasks')
+        .select(`
+          *,
+          workstream:workstreams(id, name, color),
+          assignee:users!gantt_tasks_assigned_to_fkey(id, full_name, avatar_url)
+        `)
+        .order('order_index');
 
-      const tasksWithDeps = (tasksData || []).map(task => ({
-        ...task,
-        dependencies: (depsData || []).filter(d => d.task_id === task.id),
-      }));
+      const { data: tasksData, error } = await Promise.race([fetchPromise, timeoutPromise]) as Awaited<typeof fetchPromise>;
 
-      setTasks(tasksWithDeps as unknown as GanttTaskWithRelations[]);
+      if (error) {
+        console.error('Error fetching tasks:', error);
+      } else {
+        // Fetch dependencies
+        const { data: depsData } = await supabase
+          .from('gantt_dependencies')
+          .select('*');
 
-      // Calculate date range from tasks
-      if (tasksWithDeps.length > 0) {
-        const allDates = tasksWithDeps.flatMap(t => [new Date(t.start_date), new Date(t.end_date)]);
-        const minDate = new Date(Math.min(...allDates.map(d => d.getTime())));
-        const maxDate = new Date(Math.max(...allDates.map(d => d.getTime())));
-        // Add some padding
-        minDate.setDate(minDate.getDate() - 2);
-        maxDate.setDate(maxDate.getDate() + 5);
-        setDateRange({ start: minDate, end: maxDate });
+        const tasksWithDeps = (tasksData || []).map(task => ({
+          ...task,
+          dependencies: (depsData || []).filter(d => d.task_id === task.id),
+        }));
+
+        setTasks(tasksWithDeps as unknown as GanttTaskWithRelations[]);
+
+        // Calculate date range from tasks
+        if (tasksWithDeps.length > 0) {
+          const allDates = tasksWithDeps.flatMap(t => [new Date(t.start_date), new Date(t.end_date)]);
+          const minDate = new Date(Math.min(...allDates.map(d => d.getTime())));
+          const maxDate = new Date(Math.max(...allDates.map(d => d.getTime())));
+          // Add some padding
+          minDate.setDate(minDate.getDate() - 2);
+          maxDate.setDate(maxDate.getDate() + 5);
+          setDateRange({ start: minDate, end: maxDate });
+        }
       }
+
+      // Fetch users
+      const { data: usersData } = await supabase
+        .from('users')
+        .select('*')
+        .order('full_name');
+
+      if (usersData) {
+        setUsers(usersData as User[]);
+      }
+    } catch (error) {
+      console.error('Error loading gantt data:', error);
+    } finally {
+      setLoading(false);
     }
-
-    // Fetch users
-    const { data: usersData } = await supabase
-      .from('users')
-      .select('*')
-      .order('full_name');
-
-    if (usersData) {
-      setUsers(usersData as User[]);
-    }
-
-    setLoading(false);
   }, []);
 
   useEffect(() => {
