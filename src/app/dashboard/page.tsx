@@ -51,45 +51,25 @@ export default function DashboardPage() {
       const supabase = createClient();
       console.log('[Dashboard] Starting data fetch...');
 
-      // Helper to wrap queries with individual timeouts
-      const fetchWithTimeout = async <T,>(
-        name: string,
-        query: PromiseLike<{ data: T | null; error: { message: string } | null }>
-      ): Promise<T | null> => {
-        const start = Date.now();
-        try {
-          const result = await Promise.race([
-            Promise.resolve(query),
-            new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error(`${name} timeout`)), 8000)
-            ),
-          ]);
-          console.log(`[Dashboard] ${name} completed in ${Date.now() - start}ms`);
-          if (result.error) {
-            console.error(`[Dashboard] ${name} error:`, result.error.message);
-            return null;
-          }
-          return result.data;
-        } catch (err) {
-          console.error(`[Dashboard] ${name} failed:`, err);
-          return null;
-        }
-      };
-
-      // Fetch all stats concurrently with individual timeouts
-      const [actions, threats, queries, milestones] = await Promise.all([
-        fetchWithTimeout('actions', supabase.from('actions').select('id, status, priority, due_date')),
-        fetchWithTimeout('threats', supabase.from('threats').select('id, current_risk')),
-        fetchWithTimeout('queries', supabase.from('technical_queries').select('id, responded_at')),
-        fetchWithTimeout('milestones', supabase.from('milestones').select('id, target_date, status')),
+      // Fetch stats directly - simpler approach that matches debug page
+      const [actionsRes, threatsRes, queriesRes, milestonesRes] = await Promise.all([
+        supabase.from('actions').select('id, status, priority, due_date'),
+        supabase.from('threats').select('id, current_risk'),
+        supabase.from('technical_queries').select('id, responded_at'),
+        supabase.from('milestones').select('id, target_date, status'),
       ]);
 
       console.log('[Dashboard] Stats fetched:', {
-        actions: actions?.length || 0,
-        threats: threats?.length || 0,
-        queries: queries?.length || 0,
-        milestones: milestones?.length || 0
+        actions: actionsRes.data?.length || 0,
+        threats: threatsRes.data?.length || 0,
+        queries: queriesRes.data?.length || 0,
+        milestones: milestonesRes.data?.length || 0
       });
+
+      const actions = actionsRes.data;
+      const threats = threatsRes.data;
+      const queries = queriesRes.data;
+      const milestones = milestonesRes.data;
 
     const actionsData = actions || [];
     const threatsData = threats || [];
@@ -113,37 +93,31 @@ export default function DashboardPage() {
     console.log('[Dashboard] Fetching detail data...');
 
     // Fetch recent actions with relations
-    const recentActionsData = await fetchWithTimeout(
-      'recentActions',
-      supabase
-        .from('actions')
-        .select(`
-          *,
-          owner:users!actions_owner_id_fkey(id, full_name, avatar_url),
-          workstream:workstreams(id, name, color)
-        `)
-        .in('status', ['pending', 'in_progress'])
-        .order('updated_at', { ascending: false })
-        .limit(5)
-    );
+    const { data: recentActionsData } = await supabase
+      .from('actions')
+      .select(`
+        *,
+        owner:users!actions_owner_id_fkey(id, full_name, avatar_url),
+        workstream:workstreams(id, name, color)
+      `)
+      .in('status', ['pending', 'in_progress'])
+      .order('updated_at', { ascending: false })
+      .limit(5);
 
     if (recentActionsData) {
       setRecentActions(recentActionsData as unknown as (Action & { owner?: User; workstream?: Workstream })[]);
     }
 
     // Fetch recent threats
-    const recentThreatsData = await fetchWithTimeout(
-      'recentThreats',
-      supabase
-        .from('threats')
-        .select(`
-          *,
-          workstream:workstreams(id, name, color)
-        `)
-        .in('current_risk', ['high', 'medium'])
-        .order('updated_at', { ascending: false })
-        .limit(5)
-    );
+    const { data: recentThreatsData } = await supabase
+      .from('threats')
+      .select(`
+        *,
+        workstream:workstreams(id, name, color)
+      `)
+      .in('current_risk', ['high', 'medium'])
+      .order('updated_at', { ascending: false })
+      .limit(5);
 
     if (recentThreatsData) {
       setRecentThreats(recentThreatsData as unknown as (Threat & { workstream?: Workstream })[]);
@@ -151,19 +125,16 @@ export default function DashboardPage() {
 
     // Fetch pending queries assigned to current user
     if (user) {
-      const pendingQueriesData = await fetchWithTimeout(
-        'pendingQueries',
-        supabase
-          .from('technical_queries')
-          .select(`
-            *,
-            submitter:users!technical_queries_submitted_by_fkey(id, full_name, avatar_url)
-          `)
-          .eq('assigned_to', user.id)
-          .is('responded_at', null)
-          .order('created_at', { ascending: false })
-          .limit(5)
-      );
+      const { data: pendingQueriesData } = await supabase
+        .from('technical_queries')
+        .select(`
+          *,
+          submitter:users!technical_queries_submitted_by_fkey(id, full_name, avatar_url)
+        `)
+        .eq('assigned_to', user.id)
+        .is('responded_at', null)
+        .order('created_at', { ascending: false })
+        .limit(5);
 
       if (pendingQueriesData) {
         setPendingQueries(pendingQueriesData as unknown as (TechnicalQuery & { assignee?: User })[]);
@@ -171,19 +142,16 @@ export default function DashboardPage() {
     }
 
     // Fetch upcoming milestones
-    const upcomingMilestonesData = await fetchWithTimeout(
-      'upcomingMilestones',
-      supabase
-        .from('milestones')
-        .select(`
-          *,
-          workstream:workstreams(id, name, color)
-        `)
-        .eq('status', 'pending')
-        .gte('target_date', now.toISOString())
-        .order('target_date', { ascending: true })
-        .limit(5)
-    );
+    const { data: upcomingMilestonesData } = await supabase
+      .from('milestones')
+      .select(`
+        *,
+        workstream:workstreams(id, name, color)
+      `)
+      .eq('status', 'pending')
+      .gte('target_date', now.toISOString())
+      .order('target_date', { ascending: true })
+      .limit(5);
 
     if (upcomingMilestonesData) {
       setUpcomingMilestones(upcomingMilestonesData as unknown as (Milestone & { workstream?: Workstream })[]);
