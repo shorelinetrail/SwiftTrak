@@ -4,67 +4,65 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
 import type { User } from '@/types/database';
+import type { User as AuthUser } from '@supabase/supabase-js';
 
 export function useUser() {
   const { user, setUser } = useAppStore();
   const [loading, setLoading] = useState(true);
   const initializedRef = useRef(false);
 
-  const fetchUserProfile = useCallback(async (authUserId: string) => {
-    console.log('[useUser] Fetching profile for:', authUserId);
+  const fetchUserProfile = useCallback(async (authUser: AuthUser) => {
     const supabase = createClient();
 
     try {
       const { data: profile, error } = await supabase
         .from('users')
         .select('*')
-        .eq('id', authUserId)
+        .eq('id', authUser.id)
         .single();
 
-      console.log('[useUser] Profile result:', { profileId: profile?.id, role: profile?.role, error: error?.message });
-
-      if (profile) {
-        setUser(profile as User);
-        return profile as User;
+      if (error) {
+        console.error('[useUser] Profile fetch error:', error);
+        // Create a default user from auth data if no profile exists
+        const defaultUser: User = {
+          id: authUser.id,
+          email: authUser.email || '',
+          full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
+          role: 'view',
+          avatar_url: authUser.user_metadata?.avatar_url,
+          created_at: authUser.created_at,
+          updated_at: authUser.created_at,
+        };
+        setUser(defaultUser);
+        return defaultUser;
       }
+
+      setUser(profile as User);
+      return profile as User;
     } catch (error) {
       console.error('[useUser] Error fetching profile:', error);
+      return null;
     }
-    return null;
   }, [setUser]);
 
   useEffect(() => {
-    // Prevent double initialization in React Strict Mode
-    if (initializedRef.current) {
-      console.log('[useUser] Already initialized');
-      return;
-    }
+    if (initializedRef.current) return;
     initializedRef.current = true;
 
-    console.log('[useUser] Initializing auth listener...');
     const supabase = createClient();
 
-    // Initial auth check
+    // Get initial session
     const initializeAuth = async () => {
       try {
-        console.log('[useUser] Getting initial session...');
-        const startTime = Date.now();
-
-        const { data: { session }, error } = await supabase.auth.getSession();
-        console.log('[useUser] getSession completed in', Date.now() - startTime, 'ms', {
-          hasSession: !!session,
-          userId: session?.user?.id,
-          error: error?.message
-        });
+        const { data: { session } } = await supabase.auth.getSession();
 
         if (session?.user) {
-          await fetchUserProfile(session.user.id);
+          await fetchUserProfile(session.user);
         } else {
-          console.log('[useUser] No session found');
           setUser(null);
         }
       } catch (error) {
-        console.error('[useUser] Error in initializeAuth:', error);
+        console.error('[useUser] Error getting session:', error);
         setUser(null);
       } finally {
         setLoading(false);
@@ -73,35 +71,18 @@ export function useUser() {
 
     initializeAuth();
 
-    // Listen for auth state changes
+    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('[useUser] Auth state changed:', event, { userId: session?.user?.id });
-
-        switch (event) {
-          case 'SIGNED_IN':
-          case 'TOKEN_REFRESHED':
-          case 'USER_UPDATED':
-            if (session?.user) {
-              await fetchUserProfile(session.user.id);
-            }
-            break;
-          case 'SIGNED_OUT':
-            console.log('[useUser] User signed out, clearing state');
-            setUser(null);
-            // Don't redirect here - let middleware handle it
-            break;
-          case 'INITIAL_SESSION':
-            // Already handled by initializeAuth
-            break;
-          default:
-            console.log('[useUser] Unhandled auth event:', event);
+        if (event === 'SIGNED_OUT') {
+          setUser(null);
+        } else if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
+          await fetchUserProfile(session.user);
         }
       }
     );
 
     return () => {
-      console.log('[useUser] Cleaning up auth listener');
       subscription.unsubscribe();
     };
   }, [setUser, fetchUserProfile]);
@@ -113,28 +94,16 @@ export function usePermission(workstreamId?: string) {
   const { user } = useAppStore();
   const [permission, setPermission] = useState<'view' | 'edit' | 'admin' | null>(null);
   const [loading, setLoading] = useState(true);
-  const mountedRef = useRef(true);
-
-  console.log('[usePermission] Render state:', {
-    userId: user?.id,
-    userRole: user?.role,
-    permission,
-    loading,
-    workstreamId
-  });
 
   useEffect(() => {
-    mountedRef.current = true;
+    let mounted = true;
     let timeoutId: NodeJS.Timeout;
-    console.log('[usePermission] Effect running, user:', user?.id, user?.role);
 
     const checkPermission = async () => {
-      // If no user yet, wait a bit for user fetch to complete
+      // Wait for user to load, with a timeout
       if (!user) {
-        console.log('[usePermission] No user, starting 3s timeout...');
         timeoutId = setTimeout(() => {
-          console.log('[usePermission] Timeout fired, still no user');
-          if (mountedRef.current) {
+          if (mounted) {
             setPermission(null);
             setLoading(false);
           }
@@ -142,14 +111,11 @@ export function usePermission(workstreamId?: string) {
         return;
       }
 
-      // Clear timeout if user exists
       clearTimeout(timeoutId);
-      console.log('[usePermission] User found:', user.id, 'role:', user.role);
 
       // Admin has full access everywhere
       if (user.role === 'admin') {
-        console.log('[usePermission] User is admin, granting admin permission');
-        if (mountedRef.current) {
+        if (mounted) {
           setPermission('admin');
           setLoading(false);
         }
@@ -158,8 +124,7 @@ export function usePermission(workstreamId?: string) {
 
       // If no workstream specified, use global role
       if (!workstreamId) {
-        console.log('[usePermission] No workstreamId, using global role:', user.role);
-        if (mountedRef.current) {
+        if (mounted) {
           setPermission(user.role);
           setLoading(false);
         }
@@ -168,28 +133,20 @@ export function usePermission(workstreamId?: string) {
 
       // Check workstream-specific permission
       try {
-        console.log('[usePermission] Checking workstream permission for:', workstreamId);
         const supabase = createClient();
-        const { data: workstreamPermission, error } = await supabase
+        const { data: workstreamPermission } = await supabase
           .from('user_workstream_permissions')
           .select('permission')
           .eq('user_id', user.id)
           .eq('workstream_id', workstreamId)
           .single();
 
-        console.log('[usePermission] Workstream permission result:', { workstreamPermission, error });
-
-        if (mountedRef.current) {
-          if (workstreamPermission) {
-            setPermission(workstreamPermission.permission as 'view' | 'edit' | 'admin');
-          } else {
-            setPermission(user.role);
-          }
+        if (mounted) {
+          setPermission(workstreamPermission?.permission as 'view' | 'edit' | 'admin' || user.role);
           setLoading(false);
         }
-      } catch (error) {
-        console.error('[usePermission] Error checking permission:', error);
-        if (mountedRef.current) {
+      } catch {
+        if (mounted) {
           setPermission(user.role);
           setLoading(false);
         }
@@ -199,8 +156,7 @@ export function usePermission(workstreamId?: string) {
     checkPermission();
 
     return () => {
-      console.log('[usePermission] Cleanup, unmounting');
-      mountedRef.current = false;
+      mounted = false;
       clearTimeout(timeoutId);
     };
   }, [user, workstreamId]);
@@ -208,8 +164,6 @@ export function usePermission(workstreamId?: string) {
   const canView = permission !== null;
   const canEdit = permission === 'edit' || permission === 'admin';
   const canAdmin = permission === 'admin';
-
-  console.log('[usePermission] Return values:', { permission, loading, canView, canEdit, canAdmin });
 
   return { permission, loading, canView, canEdit, canAdmin };
 }
