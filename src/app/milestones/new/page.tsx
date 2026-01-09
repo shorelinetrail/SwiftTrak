@@ -37,9 +37,23 @@ export default function NewMilestonePage() {
     }
 
     setLoading(true);
+    console.log('Creating milestone with user:', user?.id);
 
     try {
       const supabase = createClient();
+
+      // Debug: Check if user exists in database
+      if (user?.id) {
+        const { data: userCheck, error: userError } = await supabase
+          .from('users')
+          .select('id')
+          .eq('id', user.id)
+          .single();
+        console.log('User check:', userCheck, 'Error:', userError);
+      }
+
+      console.log('Inserting milestone...');
+      const startTime = Date.now();
 
       // Add timeout to prevent hanging
       const timeoutPromise = new Promise((_, reject) =>
@@ -54,12 +68,14 @@ export default function NewMilestonePage() {
           workstream_id: formData.workstream_id || null,
           target_date: formData.target_date,
           status: 'pending',
-          created_by: user?.id,
+          created_by: user?.id || null,
         })
         .select()
         .single();
 
       const { data, error } = await Promise.race([insertPromise, timeoutPromise]) as Awaited<typeof insertPromise>;
+      console.log('Insert took:', Date.now() - startTime, 'ms');
+      console.log('Result:', data, 'Error:', error);
 
       if (error) throw error;
 
@@ -67,7 +83,7 @@ export default function NewMilestonePage() {
       router.push('/milestones');
     } catch (error) {
       console.error('Error creating milestone:', error);
-      toast.error('Failed to create milestone');
+      toast.error('Failed to create milestone: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
       setLoading(false);
     }
