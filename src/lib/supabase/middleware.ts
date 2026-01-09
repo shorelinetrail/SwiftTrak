@@ -100,10 +100,18 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // If we have cookies but getUser failed/timed out, let them through
-  // The client-side will handle auth state
-  if (!user && hasCookies && timedOut) {
-    console.log('[Middleware] Auth timed out but cookies exist - allowing through');
+  // If we have cookies but getUser failed/timed out, handle appropriately
+  if (!user && hasCookies) {
+    if (timedOut) {
+      // Auth timed out but cookies exist - let them through, client will handle
+      console.log('[Middleware] Auth timed out but cookies exist - allowing through');
+    } else {
+      // Cookies exist but session is INVALID/EXPIRED - redirect to login
+      console.log('[Middleware] Session invalid/expired - redirecting to login');
+      const url = request.nextUrl.clone();
+      url.pathname = '/auth/login';
+      return NextResponse.redirect(url);
+    }
   }
 
   // Redirect to dashboard if authenticated and trying to access login

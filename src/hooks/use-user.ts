@@ -47,11 +47,18 @@ function initializeAuthOnce() {
 
   // Get initial session
   supabase.auth.getSession().then(({ data: { session } }) => {
-    // Only set user if we don't already have one
-    if (session?.user && !useAppStore.getState().user) {
-      fetchUserProfile(session.user).then((profile) => {
-        useAppStore.getState().setUser(profile);
-      });
+    if (session?.user) {
+      // Only set user if we don't already have one
+      if (!useAppStore.getState().user) {
+        fetchUserProfile(session.user).then((profile) => {
+          useAppStore.getState().setUser(profile);
+        });
+      }
+    } else {
+      // No valid session - redirect to login
+      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/auth')) {
+        window.location.href = '/auth/login';
+      }
     }
     authInitialized = true;
     authInitializing = false;
@@ -59,6 +66,10 @@ function initializeAuthOnce() {
     console.error('[useUser] Init error:', error);
     authInitialized = true;
     authInitializing = false;
+    // On error, redirect to login
+    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/auth')) {
+      window.location.href = '/auth/login';
+    }
   });
 
   // Set up SINGLE global subscription - never unsubscribed
@@ -68,6 +79,10 @@ function initializeAuthOnce() {
       const { data } = await supabase.auth.getSession();
       if (!data.session) {
         useAppStore.getState().setUser(null);
+        // Redirect to login when signed out
+        if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/auth')) {
+          window.location.href = '/auth/login';
+        }
       }
     } else if (event === 'SIGNED_IN' && session?.user) {
       const profile = await fetchUserProfile(session.user);
