@@ -3,9 +3,10 @@
 import { useEffect, useRef } from 'react';
 import { Toaster } from 'react-hot-toast';
 import { Sidebar } from './sidebar';
-import { useUser } from '@/hooks/use-user';
+import { AuthProvider, useAuth } from '@/providers/auth-provider';
 import { useAppStore } from '@/stores/app-store';
 import { createClient } from '@/lib/supabase/client';
+import { LoadingPage } from '@/components/ui/loading';
 import type { Workstream, Notification } from '@/types/database';
 
 // Module-level state to track workstream fetch across all MainLayout instances
@@ -15,8 +16,8 @@ interface MainLayoutProps {
   children: React.ReactNode;
 }
 
-export function MainLayout({ children }: MainLayoutProps) {
-  const { user } = useUser();
+function MainLayoutContent({ children }: MainLayoutProps) {
+  const { user, loading } = useAuth();
   const { workstreams, setWorkstreams, setNotifications, sidebarOpen } = useAppStore();
   const lastUserIdRef = useRef<string | null>(null);
 
@@ -67,7 +68,6 @@ export function MainLayout({ children }: MainLayoutProps) {
     const fetchNotifications = async () => {
       const supabase = createClient();
       try {
-        // CRITICAL: Wrap with timeout to prevent hanging
         const result = await Promise.race([
           supabase
             .from('notifications')
@@ -93,7 +93,11 @@ export function MainLayout({ children }: MainLayoutProps) {
     };
   }, [user, setNotifications]);
 
-  // Don't block rendering - middleware handles auth
+  // Show loading while auth initializes
+  if (loading) {
+    return <LoadingPage />;
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Toaster
@@ -115,5 +119,13 @@ export function MainLayout({ children }: MainLayoutProps) {
         {children}
       </main>
     </div>
+  );
+}
+
+export function MainLayout({ children }: MainLayoutProps) {
+  return (
+    <AuthProvider>
+      <MainLayoutContent>{children}</MainLayoutContent>
+    </AuthProvider>
   );
 }
