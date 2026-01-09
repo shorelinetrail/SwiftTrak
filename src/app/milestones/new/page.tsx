@@ -37,30 +37,21 @@ export default function NewMilestonePage() {
     }
 
     setLoading(true);
-    console.log('Creating milestone with user:', user?.id);
 
     try {
       const supabase = createClient();
 
-      // Debug: Check if user exists in database
-      if (user?.id) {
-        const { data: userCheck, error: userError } = await supabase
-          .from('users')
-          .select('id')
-          .eq('id', user.id)
-          .single();
-        console.log('User check:', userCheck, 'Error:', userError);
+      // Get current user directly from auth
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      console.log('Auth user:', authUser?.id);
+
+      if (!authUser) {
+        toast.error('Please log in to create a milestone');
+        router.push('/auth/login');
+        return;
       }
 
-      console.log('Inserting milestone...');
-      const startTime = Date.now();
-
-      // Add timeout to prevent hanging
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Request timeout')), 10000)
-      );
-
-      const insertPromise = supabase
+      const { data, error } = await supabase
         .from('milestones')
         .insert({
           title: formData.title.trim(),
@@ -68,16 +59,15 @@ export default function NewMilestonePage() {
           workstream_id: formData.workstream_id || null,
           target_date: formData.target_date,
           status: 'pending',
-          created_by: user?.id || null,
+          created_by: authUser.id,
         })
         .select()
         .single();
 
-      const { data, error } = await Promise.race([insertPromise, timeoutPromise]) as Awaited<typeof insertPromise>;
-      console.log('Insert took:', Date.now() - startTime, 'ms');
-      console.log('Result:', data, 'Error:', error);
-
-      if (error) throw error;
+      if (error) {
+        console.error('Insert error:', error);
+        throw error;
+      }
 
       toast.success('Milestone created');
       router.push('/milestones');
