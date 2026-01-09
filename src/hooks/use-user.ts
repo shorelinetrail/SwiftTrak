@@ -1,18 +1,20 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
 import type { User } from '@/types/database';
 import type { User as AuthUser } from '@supabase/supabase-js';
 
+// Module-level state for auth initialization
+let authInitPromise: Promise<void> | null = null;
+
 export function useUser() {
   const { user, setUser } = useAppStore();
-  // If user already exists in store, we're not "loading"
   const [loading, setLoading] = useState(!user);
-  const initializedRef = useRef(false);
+  const mountedRef = useRef(true);
 
-  const fetchUserProfile = useCallback(async (authUser: AuthUser) => {
+  const fetchUserProfile = useCallback(async (authUser: AuthUser): Promise<User | null> => {
     const supabase = createClient();
 
     // Create default user from auth data (used as fallback)
@@ -27,109 +29,89 @@ export function useUser() {
     };
 
     try {
-      // CRITICAL: Wrap database query with timeout to prevent hanging
-      const result = await Promise.race([
-        supabase.from('users').select('*').eq('id', authUser.id).single(),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
-      ]);
-
-      // Timeout occurred - use default user
-      if (!result) {
-        console.warn('[useUser] Profile fetch timed out - using default user');
-        setUser(defaultUser);
-        return defaultUser;
-      }
-
-      const { data: profile, error } = result;
+      const { data: profile, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', authUser.id)
+        .single();
 
       if (error || !profile) {
-        console.error('[useUser] Profile fetch error:', error);
-        setUser(defaultUser);
+        console.log('[useUser] Using default user for:', defaultUser.email);
         return defaultUser;
       }
 
-      setUser(profile as User);
       return profile as User;
     } catch (error) {
       console.error('[useUser] Error fetching profile:', error);
-      setUser(defaultUser);
       return defaultUser;
     }
-  }, [setUser]);
+  }, []);
 
   useEffect(() => {
-    // CRITICAL: Skip re-initialization if user already exists in store
-    // This prevents losing auth on navigation between pages
-    if (initializedRef.current || user) {
-      initializedRef.current = true;
-      setLoading(false);
-      return;
-    }
-    initializedRef.current = true;
-
+    mountedRef.current = true;
     const supabase = createClient();
-    let mounted = true;
-    let failsafeTimeout: NodeJS.Timeout;
 
-    // Get initial session
-    const initializeAuth = async () => {
-      try {
-        const sessionResult = await Promise.race([
-          supabase.auth.getSession(),
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
-        ]);
-
-        if (!mounted) return;
-
-        // CRITICAL: Only clear user if session explicitly returned no user
-        // Don't clear on timeout if user already exists
-        if (sessionResult === null) {
-          // Timed out - keep existing user if any
-          console.warn('[useUser] Auth session timed out');
-          return;
+    // If user already exists, just mark as loaded
+    if (user) {
+      setLoading(false);
+      // Still set up subscription for auth changes
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(
+        async (event, session) => {
+          if (event === 'SIGNED_OUT') {
+            setUser(null);
+          } else if (session?.user && event === 'TOKEN_REFRESHED') {
+            const profile = await fetchUserProfile(session.user);
+            if (mountedRef.current && profile) setUser(profile);
+          }
         }
+      );
+      return () => {
+        mountedRef.current = false;
+        subscription.unsubscribe();
+      };
+    }
 
-        if (sessionResult.data?.session?.user) {
-          await fetchUserProfile(sessionResult.data.session.user);
-        } else {
-          // Explicitly no session - clear user
-          setUser(null);
+    // Initialize auth only once (deduplicated via promise)
+    if (!authInitPromise) {
+      authInitPromise = (async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            const profile = await fetchUserProfile(session.user);
+            // Use getState() to ensure we set the latest
+            if (profile) {
+              useAppStore.getState().setUser(profile);
+            }
+          }
+        } catch (error) {
+          console.error('[useUser] Init error:', error);
         }
-      } catch (error) {
-        console.error('[useUser] Error getting session:', error);
-        // Don't clear user on error - keep existing state
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
+      })();
+    }
 
-    // FAILSAFE: Always stop loading after 8 seconds
-    failsafeTimeout = setTimeout(() => {
-      if (mounted) {
-        console.warn('[useUser] Failsafe timeout - forcing loading to stop');
-        setLoading(false);
-      }
-    }, 8000);
+    // Wait for initialization
+    authInitPromise.then(() => {
+      if (mountedRef.current) setLoading(false);
+    });
 
-    initializeAuth();
-
-    // Listen for auth changes
+    // Set up auth state change listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (event === 'SIGNED_OUT') {
           setUser(null);
+          authInitPromise = null; // Reset for next login
         } else if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
-          await fetchUserProfile(session.user);
+          const profile = await fetchUserProfile(session.user);
+          if (mountedRef.current && profile) setUser(profile);
         }
       }
     );
 
     return () => {
-      mounted = false;
-      clearTimeout(failsafeTimeout);
+      mountedRef.current = false;
       subscription.unsubscribe();
     };
-  }, [setUser, fetchUserProfile, user]);
+  }, [user, setUser, fetchUserProfile]);
 
   return { user, loading };
 }
