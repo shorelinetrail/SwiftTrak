@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
-import { useRealtime } from '@/hooks/use-realtime';
+// import { useRealtime } from '@/hooks/use-realtime';
 import { Header } from '@/components/layout/header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -31,6 +31,14 @@ type ActionWithRelations = Action & {
 };
 
 export default function ActionsPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-screen"><LoadingSpinner size="lg" /></div>}>
+      <ActionsPageContent />
+    </Suspense>
+  );
+}
+
+function ActionsPageContent() {
   const searchParams = useSearchParams();
   const { workstreams } = useAppStore();
   const [loading, setLoading] = useState(true);
