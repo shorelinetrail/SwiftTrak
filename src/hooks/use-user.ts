@@ -1,117 +1,109 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
 import type { User } from '@/types/database';
 import type { User as AuthUser } from '@supabase/supabase-js';
 
-// Module-level state for auth initialization
-let authInitPromise: Promise<void> | null = null;
+// Module-level state - ensures single global auth initialization
+let authInitialized = false;
+let authInitializing = false;
+
+// Fetch user profile from database, with fallback to auth metadata
+async function fetchUserProfile(authUser: AuthUser): Promise<User> {
+  const supabase = createClient();
+
+  const defaultUser: User = {
+    id: authUser.id,
+    email: authUser.email || '',
+    full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
+    role: 'view',
+    avatar_url: authUser.user_metadata?.avatar_url,
+    created_at: authUser.created_at,
+    updated_at: authUser.created_at,
+  };
+
+  try {
+    const { data: profile } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', authUser.id)
+      .single();
+
+    return (profile as User) || defaultUser;
+  } catch {
+    return defaultUser;
+  }
+}
+
+// Initialize auth ONCE globally - sets up session and subscription
+function initializeAuthOnce() {
+  // Already initialized or in progress
+  if (authInitialized || authInitializing) return;
+  authInitializing = true;
+
+  const supabase = createClient();
+
+  // Get initial session
+  supabase.auth.getSession().then(({ data: { session } }) => {
+    // Only set user if we don't already have one
+    if (session?.user && !useAppStore.getState().user) {
+      fetchUserProfile(session.user).then((profile) => {
+        useAppStore.getState().setUser(profile);
+      });
+    }
+    authInitialized = true;
+    authInitializing = false;
+  }).catch((error) => {
+    console.error('[useUser] Init error:', error);
+    authInitialized = true;
+    authInitializing = false;
+  });
+
+  // Set up SINGLE global subscription - never unsubscribed
+  supabase.auth.onAuthStateChange(async (event, session) => {
+    // Only handle explicit sign out - verify session is actually gone
+    if (event === 'SIGNED_OUT') {
+      const { data } = await supabase.auth.getSession();
+      if (!data.session) {
+        useAppStore.getState().setUser(null);
+      }
+    } else if (event === 'SIGNED_IN' && session?.user) {
+      const profile = await fetchUserProfile(session.user);
+      useAppStore.getState().setUser(profile);
+    } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+      // Only update if we already have a user (don't interrupt navigation)
+      const currentUser = useAppStore.getState().user;
+      if (currentUser && currentUser.id === session.user.id) {
+        const profile = await fetchUserProfile(session.user);
+        useAppStore.getState().setUser(profile);
+      }
+    }
+  });
+}
 
 export function useUser() {
-  const { user, setUser } = useAppStore();
+  const user = useAppStore((state) => state.user);
   const [loading, setLoading] = useState(!user);
-  const mountedRef = useRef(true);
-
-  const fetchUserProfile = useCallback(async (authUser: AuthUser): Promise<User | null> => {
-    const supabase = createClient();
-
-    // Create default user from auth data (used as fallback)
-    const defaultUser: User = {
-      id: authUser.id,
-      email: authUser.email || '',
-      full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
-      role: 'view',
-      avatar_url: authUser.user_metadata?.avatar_url,
-      created_at: authUser.created_at,
-      updated_at: authUser.created_at,
-    };
-
-    try {
-      const { data: profile, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', authUser.id)
-        .single();
-
-      if (error || !profile) {
-        console.log('[useUser] Using default user for:', defaultUser.email);
-        return defaultUser;
-      }
-
-      return profile as User;
-    } catch (error) {
-      console.error('[useUser] Error fetching profile:', error);
-      return defaultUser;
-    }
-  }, []);
 
   useEffect(() => {
-    mountedRef.current = true;
-    const supabase = createClient();
+    // Initialize auth globally (only runs once across ALL components)
+    initializeAuthOnce();
 
-    // If user already exists, just mark as loaded
+    // If user exists in store, we're done
     if (user) {
       setLoading(false);
-      // Still set up subscription for auth changes
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(
-        async (event, session) => {
-          if (event === 'SIGNED_OUT') {
-            setUser(null);
-          } else if (session?.user && event === 'TOKEN_REFRESHED') {
-            const profile = await fetchUserProfile(session.user);
-            if (mountedRef.current && profile) setUser(profile);
-          }
-        }
-      );
-      return () => {
-        mountedRef.current = false;
-        subscription.unsubscribe();
-      };
+      return;
     }
 
-    // Initialize auth only once (deduplicated via promise)
-    if (!authInitPromise) {
-      authInitPromise = (async () => {
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session?.user) {
-            const profile = await fetchUserProfile(session.user);
-            // Use getState() to ensure we set the latest
-            if (profile) {
-              useAppStore.getState().setUser(profile);
-            }
-          }
-        } catch (error) {
-          console.error('[useUser] Init error:', error);
-        }
-      })();
-    }
+    // Wait for auth to initialize with timeout
+    const timeout = setTimeout(() => {
+      setLoading(false);
+    }, 3000);
 
-    // Wait for initialization
-    authInitPromise.then(() => {
-      if (mountedRef.current) setLoading(false);
-    });
-
-    // Set up auth state change listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (event === 'SIGNED_OUT') {
-          setUser(null);
-          authInitPromise = null; // Reset for next login
-        } else if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
-          const profile = await fetchUserProfile(session.user);
-          if (mountedRef.current && profile) setUser(profile);
-        }
-      }
-    );
-
-    return () => {
-      mountedRef.current = false;
-      subscription.unsubscribe();
-    };
-  }, [user, setUser, fetchUserProfile]);
+    return () => clearTimeout(timeout);
+  }, [user]);
 
   return { user, loading };
 }
