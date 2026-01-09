@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
-import { useRealtime } from '@/hooks/use-realtime';
+// import { useRealtime } from '@/hooks/use-realtime';
 import { Header } from '@/components/layout/header';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -47,15 +47,25 @@ export default function DashboardPage() {
   const [upcomingMilestones, setUpcomingMilestones] = useState<(Milestone & { workstream?: Workstream })[]>([]);
 
   const fetchDashboardData = useCallback(async () => {
-    const supabase = createClient();
+    try {
+      const supabase = createClient();
 
-    // Fetch stats
-    const [actionsResult, threatsResult, queriesResult, milestonesResult] = await Promise.all([
-      supabase.from('actions').select('id, status, priority, due_date'),
-      supabase.from('threats').select('id, current_risk'),
-      supabase.from('technical_queries').select('id, responded_at'),
-      supabase.from('milestones').select('id, target_date, status'),
-    ]);
+      // Fetch stats with timeout
+      const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Fetch timeout')), 15000)
+      );
+
+      const fetchPromise = Promise.all([
+        supabase.from('actions').select('id, status, priority, due_date'),
+        supabase.from('threats').select('id, current_risk'),
+        supabase.from('technical_queries').select('id, responded_at'),
+        supabase.from('milestones').select('id, target_date, status'),
+      ]);
+
+      const [actionsResult, threatsResult, queriesResult, milestonesResult] = await Promise.race([
+        fetchPromise,
+        timeout
+      ]) as Awaited<typeof fetchPromise>;
 
     const actions = actionsResult.data || [];
     const threats = threatsResult.data || [];
@@ -140,26 +150,19 @@ export default function DashboardPage() {
     if (upcomingMilestonesData) {
       setUpcomingMilestones(upcomingMilestonesData as unknown as (Milestone & { workstream?: Workstream })[]);
     }
-
-    setLoading(false);
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+    } finally {
+      setLoading(false);
+    }
   }, [user]);
 
   useEffect(() => {
-    fetchDashboardData();
+    fetchDashboardData().catch(console.error);
   }, [fetchDashboardData]);
 
-  // Real-time updates
-  useRealtime({
-    table: 'actions',
-    onInsert: () => fetchDashboardData(),
-    onUpdate: () => fetchDashboardData(),
-  });
-
-  useRealtime({
-    table: 'threats',
-    onInsert: () => fetchDashboardData(),
-    onUpdate: () => fetchDashboardData(),
-  });
+  // Real-time updates disabled temporarily for stability
+  // TODO: Re-enable with proper memoization
 
   if (loading) {
     return (
