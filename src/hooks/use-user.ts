@@ -34,7 +34,7 @@ export function useUser() {
                 email: authUser.email || '',
                 full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
                 role: 'view',
-                avatar_url: null,
+                avatar_url: undefined,
                 created_at: authUser.created_at,
                 updated_at: authUser.created_at,
               } as User);
@@ -46,7 +46,7 @@ export function useUser() {
               email: authUser.email || '',
               full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
               role: 'view',
-              avatar_url: null,
+              avatar_url: undefined,
               created_at: authUser.created_at,
               updated_at: authUser.created_at,
             } as User);
@@ -81,7 +81,7 @@ export function useUser() {
                 email: session.user.email || '',
                 full_name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User',
                 role: 'view',
-                avatar_url: null,
+                avatar_url: undefined,
                 created_at: session.user.created_at,
                 updated_at: session.user.created_at,
               } as User);
@@ -92,7 +92,7 @@ export function useUser() {
               email: session.user.email || '',
               full_name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User',
               role: 'view',
-              avatar_url: null,
+              avatar_url: undefined,
               created_at: session.user.created_at,
               updated_at: session.user.created_at,
             } as User);
