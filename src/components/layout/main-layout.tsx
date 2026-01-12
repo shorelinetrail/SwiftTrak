@@ -21,8 +21,11 @@ function MainLayoutContent({ children }: MainLayoutProps) {
   const { workstreams, setWorkstreams, setNotifications, sidebarOpen } = useAppStore();
   const lastUserIdRef = useRef<string | null>(null);
 
+  console.log('[MainLayoutContent] Render - user:', !!user, 'loading:', loading, 'workstreams:', workstreams.length);
+
   // Fetch workstreams once globally - only if not already loaded or in progress
   useEffect(() => {
+    console.log('[MainLayoutContent] Workstreams effect - length:', workstreams.length, 'inProgress:', workstreamsFetchInProgress);
     // Already have workstreams in store - nothing to do
     if (workstreams.length > 0) return;
     // Another fetch is in progress - wait for it
@@ -95,8 +98,11 @@ function MainLayoutContent({ children }: MainLayoutProps) {
 
   // Show loading while auth initializes
   if (loading) {
+    console.log('[MainLayoutContent] Showing loading page');
     return <LoadingPage />;
   }
+
+  console.log('[MainLayoutContent] Rendering content - user:', user?.email, 'role:', user?.role);
 
   return (
     <div className="min-h-screen bg-gray-50">

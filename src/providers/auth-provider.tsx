@@ -82,17 +82,32 @@ function initializeGlobalAuth(
   onLoadingChange: (loading: boolean) => void,
   onRedirectToLogin: () => void
 ) {
-  if (globalAuthInitialized) return;
+  console.log('[AuthProvider] initializeGlobalAuth called, initialized:', globalAuthInitialized);
+
+  if (globalAuthInitialized) {
+    console.log('[AuthProvider] Already initialized, skipping');
+    return;
+  }
   globalAuthInitialized = true;
 
   const supabase = createClient();
+  console.log('[AuthProvider] Getting session...');
 
   // Get initial session
   supabase.auth.getSession().then(async ({ data: { session }, error }) => {
+    console.log('[AuthProvider] getSession result:', {
+      hasSession: !!session,
+      hasUser: !!session?.user,
+      error: error?.message,
+      storeUser: !!useAppStore.getState().user
+    });
+
     if (error || !session?.user) {
+      console.log('[AuthProvider] No session, setting loading false');
       onLoadingChange(false);
       // Only redirect if no user in store
       if (!useAppStore.getState().user) {
+        console.log('[AuthProvider] No user in store, redirecting to login');
         onRedirectToLogin();
       }
       return;
@@ -102,7 +117,9 @@ function initializeGlobalAuth(
     scheduleTokenRefresh(session);
 
     // Fetch and set user profile
+    console.log('[AuthProvider] Fetching user profile...');
     const profile = await fetchUserProfile(session.user);
+    console.log('[AuthProvider] Profile fetched:', { id: profile.id, role: profile.role });
     onUserChange(profile);
     onLoadingChange(false);
   }).catch((error) => {
@@ -116,17 +133,22 @@ function initializeGlobalAuth(
   // Set up SINGLE global subscription
   const { data: { subscription } } = supabase.auth.onAuthStateChange(
     async (event, session) => {
+      console.log('[AuthProvider] onAuthStateChange:', event, { hasSession: !!session });
+
       if (event === 'SIGNED_OUT') {
+        console.log('[AuthProvider] SIGNED_OUT - clearing user');
         if (globalRefreshTimer) {
           clearTimeout(globalRefreshTimer);
         }
         onUserChange(null);
         onRedirectToLogin();
       } else if (event === 'SIGNED_IN' && session?.user) {
+        console.log('[AuthProvider] SIGNED_IN - setting user');
         scheduleTokenRefresh(session);
         const profile = await fetchUserProfile(session.user);
         onUserChange(profile);
       } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+        console.log('[AuthProvider] TOKEN_REFRESHED');
         scheduleTokenRefresh(session);
         const currentUser = useAppStore.getState().user;
         if (currentUser?.id === session.user.id) {
@@ -149,8 +171,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // If user already in store, don't show loading
   const [loading, setLoading] = useState(() => {
     const existingUser = useAppStore.getState().user;
+    console.log('[AuthProvider] Initial state - existingUser:', !!existingUser, 'loading:', !existingUser);
     return !existingUser;
   });
+
+  console.log('[AuthProvider] Render - user:', !!user, 'loading:', loading, 'pathname:', pathname);
 
   // Redirect to login handler
   const redirectToLogin = useCallback(() => {
