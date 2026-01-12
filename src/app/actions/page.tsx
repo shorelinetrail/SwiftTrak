@@ -59,7 +59,7 @@ function ActionsPageContent() {
   // Upload modal
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [uploadResults, setUploadResults] = useState<{ success: number; errors: string[] } | null>(null);
+  const [uploadResults, setUploadResults] = useState<{ success: number; errors: string[]; warnings: string[] } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Filters
@@ -215,14 +215,15 @@ function ActionsPageContent() {
       }
 
       const supabase = createClient();
-      const results = { success: 0, errors: [] as string[] };
+      const results = { success: 0, errors: [] as string[], warnings: [] as string[] };
 
-      // Get users for owner mapping
+      // Get users for owner mapping - map by email (primary) and full name
       const { data: users } = await supabase.from('users').select('id, full_name, email');
-      const userMap = new Map<string, string>();
+      const userByEmail = new Map<string, { id: string; name: string }>();
+      const userByName = new Map<string, { id: string; email: string }>();
       users?.forEach(u => {
-        userMap.set(u.full_name.toLowerCase(), u.id);
-        userMap.set(u.email.toLowerCase(), u.id);
+        userByEmail.set(u.email.toLowerCase(), { id: u.id, name: u.full_name });
+        userByName.set(u.full_name.toLowerCase(), { id: u.id, email: u.email });
       });
 
       // Get workstreams for mapping
@@ -230,6 +231,9 @@ function ActionsPageContent() {
       workstreams.forEach(w => {
         workstreamMap.set(w.name.toLowerCase(), w.id);
       });
+
+      // Track unmatched owners for summary
+      const unmatchedOwners = new Set<string>();
 
       // Process each row
       for (let i = 1; i < lines.length; i++) {
@@ -268,11 +272,24 @@ function ActionsPageContent() {
           workstream_id = workstreamMap.get(workstreamValue)!;
         }
 
-        // Map owner
+        // Map owner - try email first, then name
         let owner_id: string | null = null;
-        const ownerValue = getValue('owner')?.toLowerCase();
-        if (ownerValue && userMap.has(ownerValue)) {
-          owner_id = userMap.get(ownerValue)!;
+        const ownerValue = getValue('owner');
+        if (ownerValue) {
+          const ownerLower = ownerValue.toLowerCase();
+          // Try email match first (most reliable)
+          if (userByEmail.has(ownerLower)) {
+            owner_id = userByEmail.get(ownerLower)!.id;
+          }
+          // Try name match
+          else if (userByName.has(ownerLower)) {
+            owner_id = userByName.get(ownerLower)!.id;
+          }
+          // No match found
+          else {
+            unmatchedOwners.add(ownerValue);
+            results.warnings.push(`Row ${i + 1}: Owner "${ownerValue}" not found - action created without owner`);
+          }
         }
 
         // Parse due date
@@ -301,6 +318,11 @@ function ActionsPageContent() {
         } else {
           results.success++;
         }
+      }
+
+      // Add summary warning for unmatched owners
+      if (unmatchedOwners.size > 0) {
+        console.log('Unmatched owner emails/names:', Array.from(unmatchedOwners));
       }
 
       setUploadResults(results);
@@ -532,10 +554,12 @@ function ActionsPageContent() {
               {uploadResults && (
                 <div className={cn(
                   'rounded-lg p-4',
-                  uploadResults.errors.length > 0 ? 'bg-amber-50' : 'bg-green-50'
+                  uploadResults.errors.length > 0 ? 'bg-red-50' : uploadResults.warnings.length > 0 ? 'bg-amber-50' : 'bg-green-50'
                 )}>
                   <div className="flex items-center gap-2 mb-2">
                     {uploadResults.errors.length > 0 ? (
+                      <ExclamationCircleIcon className="w-5 h-5 text-red-500" />
+                    ) : uploadResults.warnings.length > 0 ? (
                       <ExclamationCircleIcon className="w-5 h-5 text-amber-500" />
                     ) : (
                       <CheckCircleIcon className="w-5 h-5 text-green-500" />
@@ -544,10 +568,30 @@ function ActionsPageContent() {
                       {uploadResults.success} action{uploadResults.success !== 1 ? 's' : ''} imported
                     </span>
                   </div>
+                  {uploadResults.warnings.length > 0 && (
+                    <div className="mt-2">
+                      <p className="text-sm font-medium text-amber-800 mb-1">
+                        Warnings ({uploadResults.warnings.length}):
+                      </p>
+                      <ul className="text-sm text-amber-700 max-h-24 overflow-y-auto space-y-0.5">
+                        {uploadResults.warnings.slice(0, 5).map((warn, i) => (
+                          <li key={i}>{warn}</li>
+                        ))}
+                        {uploadResults.warnings.length > 5 && (
+                          <li className="text-amber-600 italic">
+                            ...and {uploadResults.warnings.length - 5} more
+                          </li>
+                        )}
+                      </ul>
+                      <p className="text-xs text-amber-600 mt-2">
+                        Tip: Owner emails must match existing user accounts
+                      </p>
+                    </div>
+                  )}
                   {uploadResults.errors.length > 0 && (
                     <div className="mt-2">
-                      <p className="text-sm font-medium text-amber-800 mb-1">Errors:</p>
-                      <ul className="text-sm text-amber-700 max-h-32 overflow-y-auto space-y-0.5">
+                      <p className="text-sm font-medium text-red-800 mb-1">Errors:</p>
+                      <ul className="text-sm text-red-700 max-h-24 overflow-y-auto space-y-0.5">
                         {uploadResults.errors.map((err, i) => (
                           <li key={i}>{err}</li>
                         ))}
