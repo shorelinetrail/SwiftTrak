@@ -252,8 +252,13 @@ export default function GanttPage() {
 
   // Calculate today line position
   const todayPosition = useMemo(() => {
+    // Use start of day to avoid time comparison issues
     const today = new Date();
-    const offset = (today.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60 * 24);
+    today.setHours(0, 0, 0, 0);
+    const startDate = new Date(dateRange.start);
+    startDate.setHours(0, 0, 0, 0);
+
+    const offset = (today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
     const percentage = (offset / daysBetween) * 100;
     return percentage >= 0 && percentage <= 100 ? percentage : null;
   }, [dateRange.start, daysBetween]);
@@ -262,13 +267,28 @@ export default function GanttPage() {
   const zoomConfig = useMemo(() => {
     switch (zoomLevel) {
       case 'week':
-        return { interval: 7, format: (d: Date) => `Week ${Math.ceil(d.getDate() / 7)} ${d.toLocaleDateString('en-US', { month: 'short' })}` };
+        return {
+          interval: 7,
+          cellCount: Math.ceil(daysBetween / 7),
+          format: (d: Date) => {
+            const weekNum = Math.ceil((d.getDate() + new Date(d.getFullYear(), d.getMonth(), 1).getDay()) / 7);
+            return `W${weekNum} ${d.toLocaleDateString('en-US', { month: 'short' })}`;
+          }
+        };
       case 'month':
-        return { interval: 30, format: (d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) };
+        return {
+          interval: 30,
+          cellCount: Math.ceil(daysBetween / 30),
+          format: (d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+        };
       default:
-        return { interval: 1, format: (d: Date) => d.getDate() === 1 ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : String(d.getDate()) };
+        return {
+          interval: 1,
+          cellCount: Math.min(daysBetween, 60),
+          format: (d: Date) => d.getDate() === 1 ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : String(d.getDate())
+        };
     }
-  }, [zoomLevel]);
+  }, [zoomLevel, daysBetween]);
 
   // Build task row index map for dependency line calculations
   const taskRowIndexMap = useMemo(() => {
@@ -349,9 +369,12 @@ export default function GanttPage() {
       toast.error('Failed to update task');
     } else {
       // If dates changed, cascade to dependent tasks
-      if (updates.end_date) {
-        const newEndDate = new Date(updates.end_date);
-        await cascadeDependencyUpdates(taskId, newEndDate);
+      if (updates.end_date || updates.start_date) {
+        const newEndDate = updates.end_date ? new Date(updates.end_date) : undefined;
+        const newStartDate = updates.start_date ? new Date(updates.start_date) : undefined;
+        if (newEndDate) {
+          await cascadeDependencyUpdates(taskId, newEndDate, newStartDate);
+        }
       }
       toast.success('Task updated');
       setEditTaskModalOpen(false);
@@ -455,7 +478,7 @@ export default function GanttPage() {
       } else {
         toast.success('Dependency added and schedule adjusted');
         // Cascade to any tasks that depend on this one
-        await cascadeDependencyUpdates(taskId, newEndDate);
+        await cascadeDependencyUpdates(taskId, newEndDate, requiredStartDate);
       }
     } else {
       toast.success('Dependency added');
@@ -465,41 +488,75 @@ export default function GanttPage() {
   };
 
   // Cascade date changes to dependent tasks
-  const cascadeDependencyUpdates = async (changedTaskId: string, newEndDate: Date) => {
+  const cascadeDependencyUpdates = async (changedTaskId: string, newEndDate: Date, newStartDate?: Date) => {
     const supabase = createClient();
 
-    // Find all tasks that depend on the changed task
-    const dependentDeps = allDependencies.filter(d => d.depends_on_id === changedTaskId);
+    // Fetch fresh dependencies to avoid stale state
+    const { data: freshDeps } = await supabase
+      .from('gantt_dependencies')
+      .select('*')
+      .eq('depends_on_id', changedTaskId);
 
-    for (const dep of dependentDeps) {
-      const dependentTask = tasks.find(t => t.id === dep.task_id);
+    if (!freshDeps || freshDeps.length === 0) return;
+
+    // Also fetch fresh task data
+    const { data: freshTasks } = await supabase
+      .from('gantt_tasks')
+      .select('*');
+
+    if (!freshTasks) return;
+
+    for (const dep of freshDeps) {
+      const dependentTask = freshTasks.find(t => t.id === dep.task_id);
       if (!dependentTask) continue;
 
       const dependentStart = new Date(dependentTask.start_date);
       const dependentEnd = new Date(dependentTask.end_date);
       const duration = dependentEnd.getTime() - dependentStart.getTime();
 
-      let newStart: Date | null = null;
+      let requiredStart: Date | null = null;
 
-      if (dep.dependency_type === 'finish_to_start' && dependentStart < newEndDate) {
-        newStart = new Date(newEndDate);
-      } else if (dep.dependency_type === 'start_to_start') {
-        // Would need the new start date of predecessor, not end
-        continue;
+      switch (dep.dependency_type) {
+        case 'finish_to_start':
+          // Dependent starts after predecessor finishes
+          if (dependentStart < newEndDate) {
+            requiredStart = new Date(newEndDate);
+          }
+          break;
+        case 'start_to_start':
+          // Both start at same time
+          if (newStartDate && dependentStart < newStartDate) {
+            requiredStart = new Date(newStartDate);
+          }
+          break;
+        case 'finish_to_finish':
+          // Both finish at same time - adjust start to maintain duration
+          const requiredEnd = newEndDate;
+          const calculatedStart = new Date(requiredEnd.getTime() - duration);
+          if (dependentEnd < newEndDate) {
+            requiredStart = calculatedStart;
+          }
+          break;
+        case 'start_to_finish':
+          // Dependent finishes when predecessor starts
+          if (newStartDate && dependentEnd < newStartDate) {
+            requiredStart = new Date(newStartDate.getTime() - duration);
+          }
+          break;
       }
 
-      if (newStart) {
-        const newDepEnd = new Date(newStart.getTime() + duration);
+      if (requiredStart) {
+        const newDepEnd = new Date(requiredStart.getTime() + duration);
         await supabase
           .from('gantt_tasks')
           .update({
-            start_date: newStart.toISOString(),
+            start_date: requiredStart.toISOString(),
             end_date: newDepEnd.toISOString(),
           })
           .eq('id', dep.task_id);
 
-        // Recursively cascade
-        await cascadeDependencyUpdates(dep.task_id, newDepEnd);
+        // Recursively cascade with both start and end dates
+        await cascadeDependencyUpdates(dep.task_id, newDepEnd, requiredStart);
       }
     }
   };
@@ -593,7 +650,7 @@ export default function GanttPage() {
         })
         .eq('id', dep.task_id);
 
-      await cascadeDependencyUpdates(dep.task_id, newEndDate);
+      await cascadeDependencyUpdates(dep.task_id, newEndDate, requiredStartDate);
       toast.success('Dependency updated and schedule adjusted');
     } else {
       toast.success('Dependency updated');
@@ -878,22 +935,23 @@ export default function GanttPage() {
                 Task
               </div>
               <div className="flex-1 relative h-10 bg-gray-50">
-                {/* Date headers */}
-                {Array.from({ length: Math.min(daysBetween, 30) }).map((_, i) => {
+                {/* Date headers - adjusted by zoom level */}
+                {Array.from({ length: zoomConfig.cellCount }).map((_, i) => {
                   const date = new Date(dateRange.start);
-                  date.setDate(date.getDate() + i);
+                  date.setDate(date.getDate() + (i * zoomConfig.interval));
+                  const cellWidth = (zoomConfig.interval / daysBetween) * 100;
+                  const cellLeft = (i * zoomConfig.interval / daysBetween) * 100;
+
                   return (
                     <div
                       key={i}
-                      className="absolute top-0 h-full border-r border-gray-200 text-xs text-gray-500 flex items-center justify-center"
+                      className="absolute top-0 h-full border-r border-gray-200 text-xs text-gray-500 flex items-center justify-center overflow-hidden"
                       style={{
-                        left: `${(i / daysBetween) * 100}%`,
-                        width: `${(1 / daysBetween) * 100}%`,
+                        left: `${cellLeft}%`,
+                        width: `${cellWidth}%`,
                       }}
                     >
-                      {date.getDate() === 1 || i === 0
-                        ? date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                        : date.getDate()}
+                      {zoomConfig.format(date)}
                     </div>
                   );
                 })}
@@ -902,14 +960,19 @@ export default function GanttPage() {
 
             {/* Tasks grouped by workstream */}
             <div className="relative">
-              {/* Today line */}
+              {/* Today line - positioned in the chart area (after 256px task name column) */}
               {todayPosition !== null && (
                 <div
-                  className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10 pointer-events-none"
-                  style={{ left: `calc(256px + ${todayPosition}% * (100% - 256px) / 100)` }}
+                  className="absolute top-0 bottom-0 z-10 pointer-events-none"
+                  style={{ left: '256px', right: 0 }}
                 >
-                  <div className="absolute -top-1 -left-2 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center">
-                    <span className="text-[8px] text-white font-bold">T</span>
+                  <div
+                    className="absolute top-0 bottom-0 w-0.5 bg-red-500"
+                    style={{ left: `${todayPosition}%` }}
+                  >
+                    <div className="absolute -top-1 -left-2 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center">
+                      <span className="text-[8px] text-white font-bold">T</span>
+                    </div>
                   </div>
                 </div>
               )}
