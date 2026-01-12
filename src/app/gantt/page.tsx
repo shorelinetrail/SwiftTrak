@@ -42,7 +42,9 @@ type MilestoneWithRelations = Milestone & {
 };
 
 export default function GanttPage() {
+  console.log('[GanttPage] Rendering start');
   const { workstreams } = useAppStore();
+  console.log('[GanttPage] workstreams:', workstreams?.length);
   const { canEdit } = usePermission();
   const [loading, setLoading] = useState(true);
   const [tasks, setTasks] = useState<GanttTaskWithRelations[]>([]);
@@ -198,12 +200,14 @@ export default function GanttPage() {
   // });
 
   const criticalPath = useMemo(() => {
+    console.log('[GanttPage] criticalPath useMemo - tasks:', tasks.length);
     if (!showCriticalPath || tasks.length === 0) return [];
     return calculateCriticalPath(tasks);
   }, [tasks, showCriticalPath]);
 
   // Group tasks by workstream with hierarchy support
   const tasksByWorkstream = useMemo(() => {
+    console.log('[GanttPage] tasksByWorkstream useMemo start');
     const grouped = new Map<string, GanttTaskWithRelations[]>();
     const unassigned: GanttTaskWithRelations[] = [];
 
@@ -263,12 +267,15 @@ export default function GanttPage() {
       result.push({ workstream: null, tasks: unassigned });
     }
 
+    console.log('[GanttPage] tasksByWorkstream useMemo end - groups:', result.length);
     return result;
   }, [tasks, workstreams]);
 
+  console.log('[GanttPage] Before daysBetween calc');
   const daysBetween = Math.ceil(
     (dateRange.end.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60 * 24)
   );
+  console.log('[GanttPage] daysBetween:', daysBetween);
 
   const getTaskPosition = (task: GanttTaskWithRelations) => {
     const startDate = new Date(task.start_date);
@@ -364,6 +371,7 @@ export default function GanttPage() {
 
   // Build task row index map for dependency line calculations
   const taskRowIndexMap = useMemo(() => {
+    console.log('[GanttPage] taskRowIndexMap useMemo start');
     const map = new Map<string, number>();
     let rowIndex = 0;
 
@@ -388,8 +396,11 @@ export default function GanttPage() {
       }
     });
 
+    console.log('[GanttPage] taskRowIndexMap useMemo end - size:', map.size);
     return map;
   }, [tasksByWorkstream, collapsedWorkstreams]);
+
+  console.log('[GanttPage] After all useMemo hooks');
 
   // Toggle workstream collapse
   const toggleWorkstreamCollapse = (workstreamId: string) => {
@@ -1927,12 +1938,14 @@ function DependencyArrows({
   daysBetween: number;
   dateRange: { start: Date; end: Date };
 }) {
+  console.log('[DependencyArrows] Rendering - deps:', dependencies.length, 'tasks:', tasks.length);
   const ROW_HEIGHT = 64; // h-16 = 4rem = 64px
   const HEADER_HEIGHT = 32; // Workstream header height
   const TASK_NAME_WIDTH = 256; // w-64 = 16rem = 256px
 
   // Calculate arrows for each dependency
   const arrows = useMemo(() => {
+    console.log('[DependencyArrows] arrows useMemo start');
     return dependencies.map((dep) => {
       const fromTask = tasks.find(t => t.id === dep.depends_on_id);
       const toTask = tasks.find(t => t.id === dep.task_id);
