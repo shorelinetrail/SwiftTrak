@@ -28,12 +28,16 @@ import {
   LinkIcon,
   TrashIcon,
 } from '@heroicons/react/24/outline';
-import type { GanttTask, GanttDependency, Workstream, User } from '@/types/database';
+import type { GanttTask, GanttDependency, Workstream, User, Milestone } from '@/types/database';
 
 type GanttTaskWithRelations = GanttTask & {
   workstream?: Workstream;
   assignee?: User;
   dependencies?: GanttDependency[];
+};
+
+type MilestoneWithRelations = Milestone & {
+  workstream?: Workstream;
 };
 
 export default function GanttPage() {
@@ -47,7 +51,9 @@ export default function GanttPage() {
   const [showCriticalPath, setShowCriticalPath] = useState(true);
   const [showUncertainty, setShowUncertainty] = useState(false);
   const [showDependencies, setShowDependencies] = useState(true);
+  const [showMilestones, setShowMilestones] = useState(true);
   const [allDependencies, setAllDependencies] = useState<GanttDependency[]>([]);
+  const [milestones, setMilestones] = useState<MilestoneWithRelations[]>([]);
 
   const [addTaskModalOpen, setAddTaskModalOpen] = useState(false);
   const [editTaskModalOpen, setEditTaskModalOpen] = useState(false);
@@ -108,6 +114,29 @@ export default function GanttPage() {
 
       if (usersData) {
         setUsers(usersData as User[]);
+      }
+
+      // Fetch milestones
+      const { data: milestonesData } = await supabase
+        .from('milestones')
+        .select(`
+          *,
+          workstream:workstreams(id, name, color)
+        `)
+        .order('target_date');
+
+      if (milestonesData) {
+        setMilestones(milestonesData as MilestoneWithRelations[]);
+
+        // Extend date range to include milestones
+        if (milestonesData.length > 0) {
+          const milestoneDates = milestonesData.map(m => new Date(m.target_date));
+          const maxMilestoneDate = new Date(Math.max(...milestoneDates.map(d => d.getTime())));
+          setDateRange(prev => ({
+            start: prev.start,
+            end: new Date(Math.max(prev.end.getTime(), maxMilestoneDate.getTime() + 5 * 24 * 60 * 60 * 1000)),
+          }));
+        }
       }
     } catch (error) {
       console.error('Error loading gantt data:', error);
@@ -342,6 +371,24 @@ export default function GanttPage() {
                 />
                 <span className="text-sm text-gray-700">Show Uncertainty</span>
               </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showDependencies}
+                  onChange={(e) => setShowDependencies(e.target.checked)}
+                  className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                />
+                <span className="text-sm text-gray-700">Show Dependencies</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showMilestones}
+                  onChange={(e) => setShowMilestones(e.target.checked)}
+                  className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                />
+                <span className="text-sm text-gray-700">Show Milestones</span>
+              </label>
               <div className="flex items-center gap-2 ml-auto">
                 <Button
                   variant="ghost"
@@ -378,15 +425,45 @@ export default function GanttPage() {
           </CardContent>
         </Card>
 
-        {/* Critical Path Legend */}
-        {showCriticalPath && criticalPath.length > 0 && (
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <div className="w-4 h-4 bg-red-500 rounded" />
-            <span>Critical Path ({criticalPath.length} tasks)</span>
-            <ExclamationTriangleIcon className="w-4 h-4 text-yellow-500 ml-4" />
-            <span>Any delay in these tasks will delay the project</span>
+        {/* Legend */}
+        {(showCriticalPath && criticalPath.length > 0) || (showMilestones && milestones.length > 0) || showDependencies ? (
+          <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
+            {showCriticalPath && criticalPath.length > 0 && (
+              <>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 bg-red-500 rounded" />
+                  <span>Critical Path ({criticalPath.length} tasks)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <ExclamationTriangleIcon className="w-4 h-4 text-yellow-500" />
+                  <span>Any delay will delay the project</span>
+                </div>
+              </>
+            )}
+            {showMilestones && milestones.length > 0 && (
+              <>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 bg-purple-500 rotate-45" />
+                  <span>Pending</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 bg-green-500 rotate-45" />
+                  <span>Completed</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 bg-red-500 rotate-45" />
+                  <span>Missed</span>
+                </div>
+              </>
+            )}
+            {showDependencies && allDependencies.length > 0 && (
+              <div className="flex items-center gap-2">
+                <LinkIcon className="w-4 h-4 text-blue-500" />
+                <span>Dependencies ({allDependencies.length} links)</span>
+              </div>
+            )}
           </div>
-        )}
+        ) : null}
 
         {/* Gantt Chart */}
         {tasks.length === 0 ? (
@@ -513,6 +590,64 @@ export default function GanttPage() {
                 </div>
               ))}
             </div>
+
+            {/* Milestones Row */}
+            {showMilestones && milestones.length > 0 && (
+              <div className="border-t-2 border-gray-300">
+                <div className="flex border-b border-gray-200 bg-purple-50">
+                  <div className="w-64 flex-shrink-0 p-2 border-r border-gray-200">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-purple-600 rotate-45" />
+                      <span className="text-sm font-semibold text-purple-700">
+                        Milestones
+                      </span>
+                      <span className="text-xs text-purple-500">
+                        ({milestones.length})
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex-1 relative h-12">
+                    {milestones.map((milestone) => {
+                      const milestoneDate = new Date(milestone.target_date);
+                      const offset = (milestoneDate.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60 * 24);
+                      const left = (offset / daysBetween) * 100;
+
+                      if (left < 0 || left > 100) return null;
+
+                      const isCompleted = milestone.status === 'completed';
+                      const isMissed = milestone.status === 'missed';
+
+                      return (
+                        <div
+                          key={milestone.id}
+                          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 group cursor-pointer"
+                          style={{ left: `${left}%` }}
+                          title={`${milestone.title} - ${formatDate(milestone.target_date, { month: 'short', day: 'numeric' })}`}
+                        >
+                          <div
+                            className={cn(
+                              'w-4 h-4 rotate-45 border-2',
+                              isCompleted
+                                ? 'bg-green-500 border-green-600'
+                                : isMissed
+                                ? 'bg-red-500 border-red-600'
+                                : 'bg-purple-500 border-purple-600'
+                            )}
+                          />
+                          {/* Tooltip */}
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            {milestone.title}
+                            {milestone.workstream && (
+                              <span className="text-gray-400"> ({milestone.workstream.name})</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
           </Card>
         ) : (
           // Resource View
