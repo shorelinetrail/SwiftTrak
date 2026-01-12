@@ -1141,8 +1141,8 @@ export default function GanttPage() {
                 </div>
               )}
 
-              {/* Dependency arrows SVG overlay */}
-              {showDependencies && allDependencies.length > 0 && (
+              {/* Dependency arrows SVG overlay - temporarily disabled for debugging */}
+              {/* {showDependencies && allDependencies.length > 0 && (
                 <DependencyArrows
                   dependencies={allDependencies}
                   tasks={tasks}
@@ -1151,7 +1151,7 @@ export default function GanttPage() {
                   daysBetween={daysBetween}
                   dateRange={dateRange}
                 />
-              )}
+              )} */}
 
               {tasksByWorkstream.map(({ workstream, tasks: wsTasks, children }) => {
                 const wsId = workstream?.id || 'unassigned';
