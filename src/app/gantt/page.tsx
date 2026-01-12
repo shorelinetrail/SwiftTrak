@@ -91,17 +91,52 @@ export default function GanttPage() {
           .from('gantt_dependencies')
           .select('*');
 
-        const tasksWithDeps = (tasksData || []).map(task => ({
-          ...task,
-          dependencies: (depsData || []).filter(d => d.task_id === task.id),
+        // Create clean data objects without potential circular references
+        const cleanTasks = (tasksData || []).map(task => ({
+          id: task.id,
+          title: task.title,
+          start_date: task.start_date,
+          end_date: task.end_date,
+          progress: task.progress,
+          workstream_id: task.workstream_id,
+          assigned_to: task.assigned_to,
+          order_index: task.order_index,
+          optimistic_duration: task.optimistic_duration,
+          pessimistic_duration: task.pessimistic_duration,
+          most_likely_duration: task.most_likely_duration,
+          created_at: task.created_at,
+          updated_at: task.updated_at,
+          created_by: task.created_by,
+          // Extract only needed fields from relations to avoid circular refs
+          workstream: task.workstream ? {
+            id: task.workstream.id,
+            name: task.workstream.name,
+            color: task.workstream.color,
+          } : undefined,
+          assignee: task.assignee ? {
+            id: task.assignee.id,
+            full_name: task.assignee.full_name,
+            avatar_url: task.assignee.avatar_url,
+          } : undefined,
+          dependencies: (depsData || []).filter(d => d.task_id === task.id).map(d => ({
+            id: d.id,
+            task_id: d.task_id,
+            depends_on_id: d.depends_on_id,
+            dependency_type: d.dependency_type,
+          })),
         }));
 
-        setTasks(tasksWithDeps as unknown as GanttTaskWithRelations[]);
-        setAllDependencies((depsData || []) as GanttDependency[]);
+        setTasks(cleanTasks as unknown as GanttTaskWithRelations[]);
+        setAllDependencies((depsData || []).map(d => ({
+          id: d.id,
+          task_id: d.task_id,
+          depends_on_id: d.depends_on_id,
+          dependency_type: d.dependency_type,
+        })) as GanttDependency[]);
 
         // Calculate date range from tasks
-        if (tasksWithDeps.length > 0) {
-          const allDates = tasksWithDeps.flatMap(t => [new Date(t.start_date), new Date(t.end_date)]);
+        if (cleanTasks.length > 0) {
+          const allDates = cleanTasks.flatMap(t => [new Date(t.start_date), new Date(t.end_date)]);
           const minDate = new Date(Math.min(...allDates.map(d => d.getTime())));
           const maxDate = new Date(Math.max(...allDates.map(d => d.getTime())));
           // Add some padding
@@ -720,17 +755,51 @@ export default function GanttPage() {
         .from('gantt_dependencies')
         .select('*');
 
-      const tasksWithDeps = (tasksData || []).map(task => ({
-        ...task,
-        dependencies: (depsData || []).filter(d => d.task_id === task.id),
+      // Create clean data objects without potential circular references
+      const cleanTasks = (tasksData || []).map(task => ({
+        id: task.id,
+        title: task.title,
+        start_date: task.start_date,
+        end_date: task.end_date,
+        progress: task.progress,
+        workstream_id: task.workstream_id,
+        assigned_to: task.assigned_to,
+        order_index: task.order_index,
+        optimistic_duration: task.optimistic_duration,
+        pessimistic_duration: task.pessimistic_duration,
+        most_likely_duration: task.most_likely_duration,
+        created_at: task.created_at,
+        updated_at: task.updated_at,
+        created_by: task.created_by,
+        workstream: task.workstream ? {
+          id: task.workstream.id,
+          name: task.workstream.name,
+          color: task.workstream.color,
+        } : undefined,
+        assignee: task.assignee ? {
+          id: task.assignee.id,
+          full_name: task.assignee.full_name,
+          avatar_url: task.assignee.avatar_url,
+        } : undefined,
+        dependencies: (depsData || []).filter(d => d.task_id === task.id).map(d => ({
+          id: d.id,
+          task_id: d.task_id,
+          depends_on_id: d.depends_on_id,
+          dependency_type: d.dependency_type,
+        })),
       }));
 
-      setTasks(tasksWithDeps as unknown as GanttTaskWithRelations[]);
-      setAllDependencies((depsData || []) as GanttDependency[]);
+      setTasks(cleanTasks as unknown as GanttTaskWithRelations[]);
+      setAllDependencies((depsData || []).map(d => ({
+        id: d.id,
+        task_id: d.task_id,
+        depends_on_id: d.depends_on_id,
+        dependency_type: d.dependency_type,
+      })) as GanttDependency[]);
 
       // Update selectedTask with fresh data if it's set
       if (selectedTask) {
-        const freshTask = tasksWithDeps.find(t => t.id === selectedTask.id);
+        const freshTask = cleanTasks.find(t => t.id === selectedTask.id);
         if (freshTask) {
           setSelectedTask(freshTask as unknown as GanttTaskWithRelations);
         }
@@ -1141,8 +1210,8 @@ export default function GanttPage() {
                 </div>
               )}
 
-              {/* Dependency arrows SVG overlay - temporarily disabled for debugging */}
-              {/* {showDependencies && allDependencies.length > 0 && (
+              {/* Dependency arrows SVG overlay */}
+              {showDependencies && allDependencies.length > 0 && (
                 <DependencyArrows
                   dependencies={allDependencies}
                   tasks={tasks}
@@ -1151,7 +1220,7 @@ export default function GanttPage() {
                   daysBetween={daysBetween}
                   dateRange={dateRange}
                 />
-              )} */}
+              )}
 
               {tasksByWorkstream.map(({ workstream, tasks: wsTasks, children }) => {
                 const wsId = workstream?.id || 'unassigned';
