@@ -57,9 +57,11 @@ function getTokenRefreshTime(session: Session): number {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [loading, setLoading] = useState(true);
   const user = useAppStore((state) => state.user);
   const setUser = useAppStore((state) => state.setUser);
+
+  // If user already in store, don't show loading
+  const [loading, setLoading] = useState(!user);
 
   // Track initialization to prevent duplicate setup
   const initializedRef = useRef(false);
@@ -116,7 +118,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const supabase = createClient();
     let mounted = true;
 
+    // Failsafe timeout - never show loading for more than 5 seconds
+    const failsafeTimeout = setTimeout(() => {
+      if (mounted && loading) {
+        console.warn('[AuthProvider] Failsafe timeout - forcing loading to false');
+        setLoading(false);
+      }
+    }, 5000);
+
     const initialize = async () => {
+      // If user already exists in store, just verify session is valid
+      const existingUser = useAppStore.getState().user;
+      if (existingUser) {
+        setLoading(false);
+        // Still verify session in background
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          scheduleTokenRefresh(session);
+        }
+        return;
+      }
+
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
 
@@ -178,10 +200,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       mounted = false;
       subscription.unsubscribe();
+      clearTimeout(failsafeTimeout);
       // Reset for HMR
       initializedRef.current = false;
     };
-  }, [setUser, redirectToLogin, scheduleTokenRefresh]);
+  }, [setUser, redirectToLogin, scheduleTokenRefresh, loading]);
 
   return (
     <AuthContext.Provider value={{ user, loading, signOut }}>

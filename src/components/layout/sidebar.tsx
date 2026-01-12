@@ -16,7 +16,6 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   BellIcon,
-  UserGroupIcon,
 } from '@heroicons/react/24/outline';
 import { Avatar } from '../ui/avatar';
 
@@ -31,7 +30,7 @@ const navigation = [
 ];
 
 const adminNavigation = [
-  { name: 'User Management', href: '/admin', icon: UserGroupIcon },
+  { name: 'Admin Settings', href: '/admin', icon: Cog6ToothIcon },
 ];
 
 export function Sidebar() {
