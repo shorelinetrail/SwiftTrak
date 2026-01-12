@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
@@ -8,6 +8,7 @@ import { useAppStore } from '@/stores/app-store';
 import { Header } from '@/components/layout/header';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Select } from '@/components/ui/select';
 import { StatusBadge, PriorityBadge, RiskBadge } from '@/components/ui/badge';
 import { Avatar } from '@/components/ui/avatar';
 import { LoadingSpinner } from '@/components/ui/loading';
@@ -23,6 +24,7 @@ import {
   CheckCircleIcon,
   ExclamationCircleIcon,
   PlusIcon,
+  FunnelIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import type { Action, Threat, TechnicalQuery, Milestone, Workstream, User } from '@/types/database';
@@ -42,11 +44,76 @@ export default function DashboardPage() {
   const { workstreams, setWorkstreams } = useAppStore();
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [selectedWorkstream, setSelectedWorkstream] = useState<string>('all');
+  const [allActions, setAllActions] = useState<{ id: string; status: string; priority: string; due_date: string | null; workstream_id: string }[]>([]);
+  const [allThreats, setAllThreats] = useState<{ id: string; current_risk: string; workstream_id: string }[]>([]);
+  const [allQueries, setAllQueries] = useState<{ id: string; responded_at: string | null }[]>([]);
+  const [allMilestones, setAllMilestones] = useState<{ id: string; target_date: string; status: string; workstream_id: string | null }[]>([]);
   const [recentActions, setRecentActions] = useState<(Action & { owner?: User; workstream?: Workstream })[]>([]);
   const [recentThreats, setRecentThreats] = useState<(Threat & { workstream?: Workstream })[]>([]);
   const [pendingQueries, setPendingQueries] = useState<(TechnicalQuery & { assignee?: User })[]>([]);
   const [upcomingMilestones, setUpcomingMilestones] = useState<(Milestone & { workstream?: Workstream })[]>([]);
+
+  // Workstream filter options
+  const workstreamOptions = useMemo(() => [
+    { value: 'all', label: 'All Workstreams' },
+    ...workstreams.map(ws => ({
+      value: ws.id,
+      label: ws.name,
+      icon: <div className="w-3 h-3 rounded-full" style={{ backgroundColor: ws.color }} />,
+    })),
+  ], [workstreams]);
+
+  // Calculate stats based on selected workstream
+  const stats = useMemo<DashboardStats | null>(() => {
+    const now = new Date();
+    const oneWeekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const filteredActions = selectedWorkstream === 'all'
+      ? allActions
+      : allActions.filter(a => a.workstream_id === selectedWorkstream);
+
+    const filteredThreats = selectedWorkstream === 'all'
+      ? allThreats
+      : allThreats.filter(t => t.workstream_id === selectedWorkstream);
+
+    const filteredMilestones = selectedWorkstream === 'all'
+      ? allMilestones
+      : allMilestones.filter(m => m.workstream_id === selectedWorkstream);
+
+    return {
+      totalActions: filteredActions.length,
+      completedActions: filteredActions.filter(a => a.status === 'complete').length,
+      overdueActions: filteredActions.filter(a => a.due_date && new Date(a.due_date) < now && a.status !== 'complete' && a.status !== 'cancelled').length,
+      criticalActions: filteredActions.filter(a => a.priority === 'critical' && a.status !== 'complete' && a.status !== 'cancelled').length,
+      totalThreats: filteredThreats.length,
+      highRiskThreats: filteredThreats.filter(t => t.current_risk === 'high').length,
+      pendingQueries: allQueries.filter(q => !q.responded_at).length, // Queries aren't workstream-specific in the same way
+      upcomingMilestones: filteredMilestones.filter(m => new Date(m.target_date) <= oneWeekFromNow && m.status === 'pending').length,
+    };
+  }, [allActions, allThreats, allQueries, allMilestones, selectedWorkstream]);
+
+  // Filter displayed items by workstream
+  const filteredRecentActions = useMemo(() =>
+    selectedWorkstream === 'all'
+      ? recentActions
+      : recentActions.filter(a => a.workstream_id === selectedWorkstream),
+    [recentActions, selectedWorkstream]
+  );
+
+  const filteredRecentThreats = useMemo(() =>
+    selectedWorkstream === 'all'
+      ? recentThreats
+      : recentThreats.filter(t => t.workstream_id === selectedWorkstream),
+    [recentThreats, selectedWorkstream]
+  );
+
+  const filteredUpcomingMilestones = useMemo(() =>
+    selectedWorkstream === 'all'
+      ? upcomingMilestones
+      : upcomingMilestones.filter(m => m.workstream_id === selectedWorkstream),
+    [upcomingMilestones, selectedWorkstream]
+  );
 
   // Direct data fetch with timeout protection
   useEffect(() => {
@@ -112,19 +179,11 @@ export default function DashboardPage() {
         const queriesData = queriesRes.data || [];
         const milestonesData = milestonesRes.data || [];
 
-        const now = new Date();
-        const oneWeekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-
-        setStats({
-          totalActions: actionsData.length,
-          completedActions: actionsData.filter(a => a.status === 'complete').length,
-          overdueActions: actionsData.filter(a => a.due_date && new Date(a.due_date) < now && a.status !== 'complete' && a.status !== 'cancelled').length,
-          criticalActions: actionsData.filter(a => a.priority === 'critical' && a.status !== 'complete' && a.status !== 'cancelled').length,
-          totalThreats: threatsData.length,
-          highRiskThreats: threatsData.filter(t => t.current_risk === 'high').length,
-          pendingQueries: queriesData.filter(q => !q.responded_at).length,
-          upcomingMilestones: milestonesData.filter(m => new Date(m.target_date) <= oneWeekFromNow && m.status === 'pending').length,
-        });
+        // Store raw data for filtering
+        setAllActions(actionsData as { id: string; status: string; priority: string; due_date: string | null; workstream_id: string }[]);
+        setAllThreats(threatsData as { id: string; current_risk: string; workstream_id: string }[]);
+        setAllQueries(queriesData as { id: string; responded_at: string | null }[]);
+        setAllMilestones(milestonesData as { id: string; target_date: string; status: string; workstream_id: string | null }[]);
 
         // Fetch detailed data in parallel with timeout
         const detailResult = await Promise.race([
@@ -231,74 +290,93 @@ export default function DashboardPage() {
         title="Crisis Dashboard"
         subtitle="Real-time overview of all workstreams"
         actions={
-          <Link href="/executive">
-            <Button variant="outline" size="sm">
-              Executive View
-            </Button>
-          </Link>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <FunnelIcon className="w-4 h-4 text-gray-400" />
+              <Select
+                options={workstreamOptions}
+                value={selectedWorkstream}
+                onChange={setSelectedWorkstream}
+                className="w-48"
+              />
+            </div>
+            <Link href="/executive">
+              <Button variant="outline" size="sm">
+                Executive View
+              </Button>
+            </Link>
+          </div>
         }
       />
 
       <div className="p-6 space-y-6">
-        {/* Stats Grid */}
+        {/* Stats Grid - Clickable Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white border-0">
-            <CardContent className="pt-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-red-100 text-sm font-medium">Critical Actions</p>
-                  <p className="text-3xl font-bold mt-1">{stats?.criticalActions || 0}</p>
+          <Link href={`/actions?priority=critical${selectedWorkstream !== 'all' ? `&workstream=${selectedWorkstream}` : ''}`}>
+            <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white border-0 cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all">
+              <CardContent className="pt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-red-100 text-sm font-medium">Critical Actions</p>
+                    <p className="text-3xl font-bold mt-1">{stats?.criticalActions || 0}</p>
+                  </div>
+                  <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
+                    <ExclamationCircleIcon className="w-6 h-6" />
+                  </div>
                 </div>
-                <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
-                  <ExclamationCircleIcon className="w-6 h-6" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </Link>
 
-          <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white border-0">
-            <CardContent className="pt-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-orange-100 text-sm font-medium">Overdue Actions</p>
-                  <p className="text-3xl font-bold mt-1">{stats?.overdueActions || 0}</p>
+          <Link href={`/actions?status=overdue${selectedWorkstream !== 'all' ? `&workstream=${selectedWorkstream}` : ''}`}>
+            <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white border-0 cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all">
+              <CardContent className="pt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-orange-100 text-sm font-medium">Overdue Actions</p>
+                    <p className="text-3xl font-bold mt-1">{stats?.overdueActions || 0}</p>
+                  </div>
+                  <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
+                    <ClockIcon className="w-6 h-6" />
+                  </div>
                 </div>
-                <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
-                  <ClockIcon className="w-6 h-6" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </Link>
 
-          <Card className="bg-gradient-to-br from-amber-500 to-amber-600 text-white border-0">
-            <CardContent className="pt-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-amber-100 text-sm font-medium">High Risk Threats</p>
-                  <p className="text-3xl font-bold mt-1">{stats?.highRiskThreats || 0}</p>
+          <Link href={`/threats?risk=high${selectedWorkstream !== 'all' ? `&workstream=${selectedWorkstream}` : ''}`}>
+            <Card className="bg-gradient-to-br from-amber-500 to-amber-600 text-white border-0 cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all">
+              <CardContent className="pt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-amber-100 text-sm font-medium">High Risk Threats</p>
+                    <p className="text-3xl font-bold mt-1">{stats?.highRiskThreats || 0}</p>
+                  </div>
+                  <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
+                    <ExclamationTriangleIcon className="w-6 h-6" />
+                  </div>
                 </div>
-                <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
-                  <ExclamationTriangleIcon className="w-6 h-6" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </Link>
 
-          <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white border-0">
-            <CardContent className="pt-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-green-100 text-sm font-medium">Completed Actions</p>
-                  <p className="text-3xl font-bold mt-1">
-                    {stats?.completedActions || 0}/{stats?.totalActions || 0}
-                  </p>
+          <Link href={`/actions?status=complete${selectedWorkstream !== 'all' ? `&workstream=${selectedWorkstream}` : ''}`}>
+            <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white border-0 cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all">
+              <CardContent className="pt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-green-100 text-sm font-medium">Completed Actions</p>
+                    <p className="text-3xl font-bold mt-1">
+                      {stats?.completedActions || 0}/{stats?.totalActions || 0}
+                    </p>
+                  </div>
+                  <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
+                    <CheckCircleIcon className="w-6 h-6" />
+                  </div>
                 </div>
-                <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
-                  <CheckCircleIcon className="w-6 h-6" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </Link>
         </div>
 
         {/* Progress by Workstream */}
@@ -346,7 +424,7 @@ export default function DashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {recentActions.length === 0 ? (
+              {filteredRecentActions.length === 0 ? (
                 <EmptyState
                   icon={<ClipboardDocumentListIcon className="w-6 h-6" />}
                   title="No active actions"
@@ -358,7 +436,7 @@ export default function DashboardPage() {
                 />
               ) : (
                 <div className="space-y-3">
-                  {recentActions.map((action) => (
+                  {filteredRecentActions.map((action) => (
                     <Link
                       key={action.id}
                       href={`/actions/${action.id}`}
@@ -418,7 +496,7 @@ export default function DashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {recentThreats.length === 0 ? (
+              {filteredRecentThreats.length === 0 ? (
                 <EmptyState
                   icon={<ExclamationTriangleIcon className="w-6 h-6" />}
                   title="No active threats"
@@ -430,7 +508,7 @@ export default function DashboardPage() {
                 />
               ) : (
                 <div className="space-y-3">
-                  {recentThreats.map((threat) => (
+                  {filteredRecentThreats.map((threat) => (
                     <Link
                       key={threat.id}
                       href={`/threats/${threat.id}`}
@@ -521,7 +599,7 @@ export default function DashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {upcomingMilestones.length === 0 ? (
+              {filteredUpcomingMilestones.length === 0 ? (
                 <EmptyState
                   icon={<FlagIcon className="w-6 h-6" />}
                   title="No upcoming milestones"
@@ -533,7 +611,7 @@ export default function DashboardPage() {
                 />
               ) : (
                 <div className="space-y-3">
-                  {upcomingMilestones.map((milestone) => (
+                  {filteredUpcomingMilestones.map((milestone) => (
                     <Link
                       key={milestone.id}
                       href={`/milestones/${milestone.id}`}
