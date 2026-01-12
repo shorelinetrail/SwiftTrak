@@ -27,6 +27,7 @@ import {
   ChevronDownIcon,
   LinkIcon,
   TrashIcon,
+  FlagIcon,
 } from '@heroicons/react/24/outline';
 import type { GanttTask, GanttDependency, Workstream, User, Milestone } from '@/types/database';
 
@@ -58,6 +59,8 @@ export default function GanttPage() {
   const [addTaskModalOpen, setAddTaskModalOpen] = useState(false);
   const [editTaskModalOpen, setEditTaskModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<GanttTaskWithRelations | null>(null);
+  const [milestoneModalOpen, setMilestoneModalOpen] = useState(false);
+  const [selectedMilestone, setSelectedMilestone] = useState<MilestoneWithRelations | null>(null);
 
   const [dateRange, setDateRange] = useState<{ start: Date; end: Date }>({
     start: new Date(),
@@ -304,6 +307,97 @@ export default function GanttPage() {
     }
   };
 
+  const handleAddDependency = async (taskId: string, dependsOnId: string, dependencyType: GanttDependency['dependency_type']) => {
+    const supabase = createClient();
+
+    const { error } = await supabase
+      .from('gantt_dependencies')
+      .insert({
+        task_id: taskId,
+        depends_on_id: dependsOnId,
+        dependency_type: dependencyType,
+      });
+
+    if (error) {
+      toast.error('Failed to add dependency');
+    } else {
+      toast.success('Dependency added');
+      fetchTasks();
+    }
+  };
+
+  const handleRemoveDependency = async (dependencyId: string) => {
+    const supabase = createClient();
+
+    const { error } = await supabase
+      .from('gantt_dependencies')
+      .delete()
+      .eq('id', dependencyId);
+
+    if (error) {
+      toast.error('Failed to remove dependency');
+    } else {
+      toast.success('Dependency removed');
+      fetchTasks();
+    }
+  };
+
+  const handleAddMilestone = async (data: Partial<Milestone>) => {
+    const supabase = createClient();
+
+    const { error } = await supabase.from('milestones').insert({
+      title: data.title,
+      description: data.description,
+      workstream_id: data.workstream_id || null,
+      target_date: data.target_date,
+      status: 'pending',
+    });
+
+    if (error) {
+      toast.error('Failed to add milestone');
+    } else {
+      toast.success('Milestone added');
+      setMilestoneModalOpen(false);
+      fetchTasks();
+    }
+  };
+
+  const handleUpdateMilestone = async (milestoneId: string, data: Partial<Milestone>) => {
+    const supabase = createClient();
+
+    const { error } = await supabase
+      .from('milestones')
+      .update(data)
+      .eq('id', milestoneId);
+
+    if (error) {
+      toast.error('Failed to update milestone');
+    } else {
+      toast.success('Milestone updated');
+      setMilestoneModalOpen(false);
+      setSelectedMilestone(null);
+      fetchTasks();
+    }
+  };
+
+  const handleDeleteMilestone = async (milestoneId: string) => {
+    const supabase = createClient();
+
+    const { error } = await supabase
+      .from('milestones')
+      .delete()
+      .eq('id', milestoneId);
+
+    if (error) {
+      toast.error('Failed to delete milestone');
+    } else {
+      toast.success('Milestone deleted');
+      setMilestoneModalOpen(false);
+      setSelectedMilestone(null);
+      fetchTasks();
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen">
@@ -339,10 +433,19 @@ export default function GanttPage() {
               Resource
             </Button>
             {canEdit && (
-              <Button size="sm" onClick={() => setAddTaskModalOpen(true)}>
-                <PlusIcon className="w-4 h-4 mr-2" />
-                Add Task
-              </Button>
+              <>
+                <Button size="sm" variant="outline" onClick={() => {
+                  setSelectedMilestone(null);
+                  setMilestoneModalOpen(true);
+                }}>
+                  <FlagIcon className="w-4 h-4 mr-2" />
+                  Add Milestone
+                </Button>
+                <Button size="sm" onClick={() => setAddTaskModalOpen(true)}>
+                  <PlusIcon className="w-4 h-4 mr-2" />
+                  Add Task
+                </Button>
+              </>
             )}
           </div>
         }
@@ -623,10 +726,16 @@ export default function GanttPage() {
                           className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 group cursor-pointer"
                           style={{ left: `${left}%` }}
                           title={`${milestone.title} - ${formatDate(milestone.target_date, { month: 'short', day: 'numeric' })}`}
+                          onClick={() => {
+                            if (canEdit) {
+                              setSelectedMilestone(milestone);
+                              setMilestoneModalOpen(true);
+                            }
+                          }}
                         >
                           <div
                             className={cn(
-                              'w-4 h-4 rotate-45 border-2',
+                              'w-4 h-4 rotate-45 border-2 transition-transform hover:scale-125',
                               isCompleted
                                 ? 'bg-green-500 border-green-600'
                                 : isMissed
@@ -640,6 +749,7 @@ export default function GanttPage() {
                             {milestone.workstream && (
                               <span className="text-gray-400"> ({milestone.workstream.name})</span>
                             )}
+                            {canEdit && <span className="text-blue-400 block text-center mt-1">Click to edit</span>}
                           </div>
                         </div>
                       );
@@ -703,6 +813,7 @@ export default function GanttPage() {
         onSave={handleAddTask}
         workstreams={workstreams}
         users={users}
+        allTasks={tasks}
       />
 
       {/* Edit Task Modal */}
@@ -718,8 +829,30 @@ export default function GanttPage() {
           task={selectedTask}
           workstreams={workstreams}
           users={users}
+          allTasks={tasks}
+          onDependencyAdd={handleAddDependency}
+          onDependencyRemove={handleRemoveDependency}
         />
       )}
+
+      {/* Milestone Modal */}
+      <MilestoneModal
+        open={milestoneModalOpen}
+        onClose={() => {
+          setMilestoneModalOpen(false);
+          setSelectedMilestone(null);
+        }}
+        onSave={(data) => {
+          if (selectedMilestone) {
+            handleUpdateMilestone(selectedMilestone.id, data);
+          } else {
+            handleAddMilestone(data);
+          }
+        }}
+        onDelete={selectedMilestone ? () => handleDeleteMilestone(selectedMilestone.id) : undefined}
+        milestone={selectedMilestone}
+        workstreams={workstreams}
+      />
     </div>
   );
 }
@@ -732,6 +865,9 @@ function TaskModal({
   task,
   workstreams,
   users,
+  allTasks,
+  onDependencyAdd,
+  onDependencyRemove,
 }: {
   open: boolean;
   onClose: () => void;
@@ -740,6 +876,9 @@ function TaskModal({
   task?: GanttTaskWithRelations;
   workstreams: Workstream[];
   users: User[];
+  allTasks?: GanttTaskWithRelations[];
+  onDependencyAdd?: (taskId: string, dependsOnId: string, type: GanttDependency['dependency_type']) => void;
+  onDependencyRemove?: (dependencyId: string) => void;
 }) {
   const [formData, setFormData] = useState({
     title: task?.title || '',
@@ -752,6 +891,19 @@ function TaskModal({
     pessimistic_duration: task?.pessimistic_duration || '',
     most_likely_duration: task?.most_likely_duration || '',
   });
+
+  const [newDependencyTask, setNewDependencyTask] = useState('');
+  const [newDependencyType, setNewDependencyType] = useState<GanttDependency['dependency_type']>('finish_to_start');
+
+  // Get tasks that are not this task and not already dependencies
+  const availableDependencies = useMemo(() => {
+    if (!task || !allTasks) return [];
+    const existingDeps = (task.dependencies || []).map(d => d.depends_on_id);
+    return allTasks.filter(t =>
+      t.id !== task.id &&
+      !existingDeps.includes(t.id)
+    );
+  }, [task, allTasks]);
 
   useEffect(() => {
     if (task) {
@@ -766,6 +918,8 @@ function TaskModal({
         pessimistic_duration: task.pessimistic_duration || '',
         most_likely_duration: task.most_likely_duration || '',
       });
+      setNewDependencyTask('');
+      setNewDependencyType('finish_to_start');
     }
   }, [task]);
 
@@ -875,6 +1029,92 @@ function TaskModal({
           </div>
         </div>
 
+        {/* Dependencies Section - only for editing existing tasks */}
+        {task && onDependencyAdd && onDependencyRemove && (
+          <div className="border-t border-gray-200 pt-4">
+            <p className="text-sm font-medium text-gray-700 mb-2">
+              <LinkIcon className="w-4 h-4 inline mr-1" />
+              Dependencies (This task depends on...)
+            </p>
+
+            {/* Current dependencies */}
+            {task.dependencies && task.dependencies.length > 0 && (
+              <div className="space-y-2 mb-4">
+                {task.dependencies.map((dep) => {
+                  const dependsOnTask = allTasks?.find(t => t.id === dep.depends_on_id);
+                  return (
+                    <div
+                      key={dep.id}
+                      className="flex items-center justify-between p-2 bg-gray-50 rounded-lg text-sm"
+                    >
+                      <div className="flex items-center gap-2">
+                        <LinkIcon className="w-4 h-4 text-blue-500" />
+                        <span className="font-medium">{dependsOnTask?.title || 'Unknown task'}</span>
+                        <span className="text-gray-500 text-xs">
+                          ({dep.dependency_type.replace(/_/g, ' ')})
+                        </span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onDependencyRemove(dep.id)}
+                      >
+                        <TrashIcon className="w-4 h-4 text-red-500" />
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Add new dependency */}
+            {availableDependencies.length > 0 && (
+              <div className="flex gap-2">
+                <Select
+                  label=""
+                  className="flex-1"
+                  options={[
+                    { value: '', label: 'Select task...' },
+                    ...availableDependencies.map(t => ({ value: t.id, label: t.title })),
+                  ]}
+                  value={newDependencyTask}
+                  onChange={(value) => setNewDependencyTask(value)}
+                />
+                <Select
+                  label=""
+                  className="w-48"
+                  options={[
+                    { value: 'finish_to_start', label: 'Finish to Start' },
+                    { value: 'start_to_start', label: 'Start to Start' },
+                    { value: 'finish_to_finish', label: 'Finish to Finish' },
+                    { value: 'start_to_finish', label: 'Start to Finish' },
+                  ]}
+                  value={newDependencyType}
+                  onChange={(value) => setNewDependencyType(value as GanttDependency['dependency_type'])}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    if (newDependencyTask && task) {
+                      onDependencyAdd(task.id, newDependencyTask, newDependencyType);
+                      setNewDependencyTask('');
+                    }
+                  }}
+                  disabled={!newDependencyTask}
+                >
+                  <PlusIcon className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
+
+            {availableDependencies.length === 0 && (!task.dependencies || task.dependencies.length === 0) && (
+              <p className="text-sm text-gray-500 italic">No dependencies configured</p>
+            )}
+          </div>
+        )}
+
         <div className="flex justify-between pt-4">
           {onDelete ? (
             <Button type="button" variant="danger" onClick={onDelete}>
@@ -981,5 +1221,136 @@ function TaskRow({
         </div>
       </div>
     </div>
+  );
+}
+
+function MilestoneModal({
+  open,
+  onClose,
+  onSave,
+  onDelete,
+  milestone,
+  workstreams,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSave: (data: Partial<Milestone>) => void;
+  onDelete?: () => void;
+  milestone?: MilestoneWithRelations | null;
+  workstreams: Workstream[];
+}) {
+  const [formData, setFormData] = useState({
+    title: milestone?.title || '',
+    description: milestone?.description || '',
+    workstream_id: milestone?.workstream_id || '',
+    target_date: milestone?.target_date ? new Date(milestone.target_date).toISOString().slice(0, 10) : '',
+    status: milestone?.status || 'pending',
+  });
+
+  useEffect(() => {
+    if (milestone) {
+      setFormData({
+        title: milestone.title,
+        description: milestone.description || '',
+        workstream_id: milestone.workstream_id || '',
+        target_date: new Date(milestone.target_date).toISOString().slice(0, 10),
+        status: milestone.status,
+      });
+    } else {
+      setFormData({
+        title: '',
+        description: '',
+        workstream_id: '',
+        target_date: '',
+        status: 'pending',
+      });
+    }
+  }, [milestone]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSave({
+      title: formData.title,
+      description: formData.description || undefined,
+      workstream_id: formData.workstream_id || undefined,
+      target_date: formData.target_date,
+      status: formData.status as Milestone['status'],
+    });
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={milestone ? 'Edit Milestone' : 'Add Milestone'}
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Input
+          label="Milestone Title"
+          value={formData.title}
+          onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+          placeholder="e.g., Phase 1 Complete, Design Review"
+          required
+        />
+
+        <Textarea
+          label="Description (Optional)"
+          value={formData.description}
+          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+          placeholder="Brief description of this milestone"
+          rows={2}
+        />
+
+        <div className="grid grid-cols-2 gap-4">
+          <Input
+            label="Target Date"
+            type="date"
+            value={formData.target_date}
+            onChange={(e) => setFormData({ ...formData, target_date: e.target.value })}
+            required
+          />
+          <Select
+            label="Workstream"
+            options={[
+              { value: '', label: 'None' },
+              ...workstreams.map(w => ({ value: w.id, label: w.name })),
+            ]}
+            value={formData.workstream_id}
+            onChange={(value) => setFormData({ ...formData, workstream_id: value })}
+          />
+        </div>
+
+        {milestone && (
+          <Select
+            label="Status"
+            options={[
+              { value: 'pending', label: 'Pending' },
+              { value: 'completed', label: 'Completed' },
+              { value: 'missed', label: 'Missed' },
+            ]}
+            value={formData.status}
+            onChange={(value) => setFormData({ ...formData, status: value })}
+          />
+        )}
+
+        <div className="flex justify-between pt-4">
+          {onDelete ? (
+            <Button type="button" variant="danger" onClick={onDelete}>
+              Delete
+            </Button>
+          ) : (
+            <div />
+          )}
+          <div className="flex gap-3">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit">
+              {milestone ? 'Save Changes' : 'Add Milestone'}
+            </Button>
+          </div>
+        </div>
+      </form>
+    </Modal>
   );
 }
