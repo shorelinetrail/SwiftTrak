@@ -511,6 +511,14 @@ function ActionsPageContent() {
                   <li><strong>Owner</strong>: User&apos;s full name or email</li>
                   <li><strong>Due Date</strong>: Due Date, Due, or Deadline (any date format)</li>
                 </ul>
+                <a
+                  href="/templates/actions-import-template.csv"
+                  download
+                  className="inline-flex items-center gap-1 text-sm text-red-600 hover:text-red-700 mt-3"
+                >
+                  <ArrowDownTrayIcon className="w-4 h-4" />
+                  Download template
+                </a>
               </div>
 
               <input
