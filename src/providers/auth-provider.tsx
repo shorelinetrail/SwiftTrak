@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
@@ -18,6 +18,13 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   signOut: async () => {},
 });
+
+// ============================================
+// GLOBAL AUTH STATE - shared across all instances
+// ============================================
+let globalAuthInitialized = false;
+let globalAuthSubscription: { unsubscribe: () => void } | null = null;
+let globalRefreshTimer: NodeJS.Timeout | null = null;
 
 // Fetch user profile from database, with fallback to auth metadata
 async function fetchUserProfile(authUser: AuthUser): Promise<User> {
@@ -46,12 +53,91 @@ async function fetchUserProfile(authUser: AuthUser): Promise<User> {
   }
 }
 
-// Calculate when to refresh token (5 minutes before expiry)
-function getTokenRefreshTime(session: Session): number {
-  if (!session.expires_at) return 0;
-  const expiresAt = session.expires_at * 1000; // Convert to milliseconds
+// Schedule proactive token refresh
+function scheduleTokenRefresh(session: Session) {
+  if (globalRefreshTimer) {
+    clearTimeout(globalRefreshTimer);
+  }
+
+  if (!session.expires_at) return;
+
+  const expiresAt = session.expires_at * 1000;
   const refreshAt = expiresAt - 5 * 60 * 1000; // 5 minutes before expiry
-  return Math.max(0, refreshAt - Date.now());
+  const refreshIn = Math.max(0, refreshAt - Date.now());
+
+  if (refreshIn > 0) {
+    globalRefreshTimer = setTimeout(async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase.auth.refreshSession();
+      if (data.session && !error) {
+        scheduleTokenRefresh(data.session);
+      }
+    }, refreshIn);
+  }
+}
+
+// Initialize auth ONCE globally
+function initializeGlobalAuth(
+  onUserChange: (user: User | null) => void,
+  onLoadingChange: (loading: boolean) => void,
+  onRedirectToLogin: () => void
+) {
+  if (globalAuthInitialized) return;
+  globalAuthInitialized = true;
+
+  const supabase = createClient();
+
+  // Get initial session
+  supabase.auth.getSession().then(async ({ data: { session }, error }) => {
+    if (error || !session?.user) {
+      onLoadingChange(false);
+      // Only redirect if no user in store
+      if (!useAppStore.getState().user) {
+        onRedirectToLogin();
+      }
+      return;
+    }
+
+    // Setup token refresh
+    scheduleTokenRefresh(session);
+
+    // Fetch and set user profile
+    const profile = await fetchUserProfile(session.user);
+    onUserChange(profile);
+    onLoadingChange(false);
+  }).catch((error) => {
+    console.error('[AuthProvider] Init error:', error);
+    onLoadingChange(false);
+    if (!useAppStore.getState().user) {
+      onRedirectToLogin();
+    }
+  });
+
+  // Set up SINGLE global subscription
+  const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    async (event, session) => {
+      if (event === 'SIGNED_OUT') {
+        if (globalRefreshTimer) {
+          clearTimeout(globalRefreshTimer);
+        }
+        onUserChange(null);
+        onRedirectToLogin();
+      } else if (event === 'SIGNED_IN' && session?.user) {
+        scheduleTokenRefresh(session);
+        const profile = await fetchUserProfile(session.user);
+        onUserChange(profile);
+      } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+        scheduleTokenRefresh(session);
+        const currentUser = useAppStore.getState().user;
+        if (currentUser?.id === session.user.id) {
+          const profile = await fetchUserProfile(session.user);
+          onUserChange(profile);
+        }
+      }
+    }
+  );
+
+  globalAuthSubscription = subscription;
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -61,40 +147,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const setUser = useAppStore((state) => state.setUser);
 
   // If user already in store, don't show loading
-  const [loading, setLoading] = useState(!user);
+  const [loading, setLoading] = useState(() => {
+    const existingUser = useAppStore.getState().user;
+    return !existingUser;
+  });
 
-  // Track initialization to prevent duplicate setup
-  const initializedRef = useRef(false);
-  const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Clear refresh timer on unmount
-  useEffect(() => {
-    return () => {
-      if (refreshTimerRef.current) {
-        clearTimeout(refreshTimerRef.current);
-      }
-    };
-  }, []);
-
-  // Setup proactive token refresh
-  const scheduleTokenRefresh = useCallback((session: Session) => {
-    if (refreshTimerRef.current) {
-      clearTimeout(refreshTimerRef.current);
-    }
-
-    const refreshIn = getTokenRefreshTime(session);
-    if (refreshIn > 0) {
-      refreshTimerRef.current = setTimeout(async () => {
-        const supabase = createClient();
-        const { data, error } = await supabase.auth.refreshSession();
-        if (data.session && !error) {
-          scheduleTokenRefresh(data.session);
-        }
-      }, refreshIn);
-    }
-  }, []);
-
-  // Redirect to login (using router, not hard redirect)
+  // Redirect to login handler
   const redirectToLogin = useCallback(() => {
     if (!pathname.startsWith('/auth')) {
       router.replace('/auth/login');
@@ -109,102 +167,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.replace('/auth/login');
   }, [setUser, router]);
 
-  // Initialize auth
+  // Initialize auth once globally
   useEffect(() => {
-    // Prevent double initialization (handles React StrictMode and HMR)
-    if (initializedRef.current) return;
-    initializedRef.current = true;
-
-    const supabase = createClient();
-    let mounted = true;
-
-    // Failsafe timeout - never show loading for more than 5 seconds
-    const failsafeTimeout = setTimeout(() => {
-      if (mounted && loading) {
-        console.warn('[AuthProvider] Failsafe timeout - forcing loading to false');
-        setLoading(false);
-      }
-    }, 5000);
-
-    const initialize = async () => {
-      // If user already exists in store, just verify session is valid
-      const existingUser = useAppStore.getState().user;
-      if (existingUser) {
-        setLoading(false);
-        // Still verify session in background
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          scheduleTokenRefresh(session);
-        }
-        return;
-      }
-
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-
-        if (!mounted) return;
-
-        if (error || !session?.user) {
-          setLoading(false);
-          redirectToLogin();
-          return;
-        }
-
-        // Setup proactive token refresh
-        scheduleTokenRefresh(session);
-
-        // Fetch and set user profile
-        const profile = await fetchUserProfile(session.user);
-        if (mounted) {
-          setUser(profile);
-          setLoading(false);
-        }
-      } catch (error) {
-        console.error('[AuthProvider] Init error:', error);
-        if (mounted) {
-          setLoading(false);
-          redirectToLogin();
-        }
-      }
-    };
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (!mounted) return;
-
-        if (event === 'SIGNED_OUT') {
-          setUser(null);
-          if (refreshTimerRef.current) {
-            clearTimeout(refreshTimerRef.current);
-          }
-          redirectToLogin();
-        } else if (event === 'SIGNED_IN' && session?.user) {
-          scheduleTokenRefresh(session);
-          const profile = await fetchUserProfile(session.user);
-          setUser(profile);
-        } else if (event === 'TOKEN_REFRESHED' && session?.user) {
-          scheduleTokenRefresh(session);
-          // Only update profile if user ID matches (prevents race conditions)
-          const currentUser = useAppStore.getState().user;
-          if (currentUser?.id === session.user.id) {
-            const profile = await fetchUserProfile(session.user);
-            setUser(profile);
-          }
-        }
-      }
+    initializeGlobalAuth(
+      (newUser) => {
+        useAppStore.getState().setUser(newUser);
+      },
+      setLoading,
+      redirectToLogin
     );
 
-    initialize();
+    // Failsafe timeout
+    const timeout = setTimeout(() => {
+      setLoading(false);
+    }, 5000);
 
     return () => {
-      mounted = false;
-      subscription.unsubscribe();
-      clearTimeout(failsafeTimeout);
-      // Reset for HMR
-      initializedRef.current = false;
+      clearTimeout(timeout);
     };
-  }, [setUser, redirectToLogin, scheduleTokenRefresh, loading]);
+  }, [redirectToLogin]);
+
+  // Update loading when user changes
+  useEffect(() => {
+    if (user) {
+      setLoading(false);
+    }
+  }, [user]);
 
   return (
     <AuthContext.Provider value={{ user, loading, signOut }}>
