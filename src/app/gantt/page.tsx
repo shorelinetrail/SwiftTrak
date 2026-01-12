@@ -49,12 +49,14 @@ export default function GanttPage() {
   const [users, setUsers] = useState<User[]>([]);
 
   const [viewMode, setViewMode] = useState<'gantt' | 'resource'>('gantt');
+  const [zoomLevel, setZoomLevel] = useState<'day' | 'week' | 'month'>('day');
   const [showCriticalPath, setShowCriticalPath] = useState(true);
   const [showUncertainty, setShowUncertainty] = useState(false);
   const [showDependencies, setShowDependencies] = useState(true);
   const [showMilestones, setShowMilestones] = useState(true);
   const [allDependencies, setAllDependencies] = useState<GanttDependency[]>([]);
   const [milestones, setMilestones] = useState<MilestoneWithRelations[]>([]);
+  const [collapsedWorkstreams, setCollapsedWorkstreams] = useState<Set<string>>(new Set());
 
   const [addTaskModalOpen, setAddTaskModalOpen] = useState(false);
   const [editTaskModalOpen, setEditTaskModalOpen] = useState(false);
@@ -246,6 +248,68 @@ export default function GanttPage() {
     const width = Math.max(1, (duration / daysBetween) * 100);
 
     return { left: `${left}%`, width: `${width}%` };
+  };
+
+  // Calculate today line position
+  const todayPosition = useMemo(() => {
+    const today = new Date();
+    const offset = (today.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60 * 24);
+    const percentage = (offset / daysBetween) * 100;
+    return percentage >= 0 && percentage <= 100 ? percentage : null;
+  }, [dateRange.start, daysBetween]);
+
+  // Calculate zoom-based intervals for date header
+  const zoomConfig = useMemo(() => {
+    switch (zoomLevel) {
+      case 'week':
+        return { interval: 7, format: (d: Date) => `Week ${Math.ceil(d.getDate() / 7)} ${d.toLocaleDateString('en-US', { month: 'short' })}` };
+      case 'month':
+        return { interval: 30, format: (d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) };
+      default:
+        return { interval: 1, format: (d: Date) => d.getDate() === 1 ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : String(d.getDate()) };
+    }
+  }, [zoomLevel]);
+
+  // Build task row index map for dependency line calculations
+  const taskRowIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    let rowIndex = 0;
+
+    tasksByWorkstream.forEach(({ workstream, tasks: wsTasks, children }) => {
+      rowIndex++; // Workstream header
+      const wsId = workstream?.id || 'unassigned';
+      const isCollapsed = collapsedWorkstreams.has(wsId);
+
+      if (!isCollapsed) {
+        wsTasks.forEach((task) => {
+          map.set(task.id, rowIndex);
+          rowIndex++;
+        });
+
+        children?.forEach(({ workstream: subWs, tasks: subTasks }) => {
+          rowIndex++; // Sub-workstream header
+          subTasks.forEach((task) => {
+            map.set(task.id, rowIndex);
+            rowIndex++;
+          });
+        });
+      }
+    });
+
+    return map;
+  }, [tasksByWorkstream, collapsedWorkstreams]);
+
+  // Toggle workstream collapse
+  const toggleWorkstreamCollapse = (workstreamId: string) => {
+    setCollapsedWorkstreams(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(workstreamId)) {
+        newSet.delete(workstreamId);
+      } else {
+        newSet.add(workstreamId);
+      }
+      return newSet;
+    });
   };
 
   const handleAddTask = async (formData: Partial<GanttTask>) => {
@@ -688,6 +752,23 @@ export default function GanttPage() {
                 />
                 <span className="text-sm text-gray-700">Show Milestones</span>
               </label>
+
+              {/* Zoom Controls */}
+              <div className="flex items-center gap-1 border-l border-gray-200 pl-4 ml-2">
+                <span className="text-xs text-gray-500 mr-1">Zoom:</span>
+                {(['day', 'week', 'month'] as const).map((level) => (
+                  <Button
+                    key={level}
+                    variant={zoomLevel === level ? 'primary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setZoomLevel(level)}
+                    className="px-2 py-1 text-xs"
+                  >
+                    {level.charAt(0).toUpperCase() + level.slice(1)}
+                  </Button>
+                ))}
+              </div>
+
               <div className="flex items-center gap-2 ml-auto">
                 <Button
                   variant="ghost"
@@ -701,6 +782,20 @@ export default function GanttPage() {
                   }}
                 >
                   <ChevronLeftIcon className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const today = new Date();
+                    const rangeSize = dateRange.end.getTime() - dateRange.start.getTime();
+                    const newStart = new Date(today.getTime() - rangeSize / 4);
+                    const newEnd = new Date(newStart.getTime() + rangeSize);
+                    setDateRange({ start: newStart, end: newEnd });
+                  }}
+                  className="text-xs"
+                >
+                  Today
                 </Button>
                 <span className="text-sm text-gray-600">
                   {formatDate(dateRange.start, { month: 'short', day: 'numeric' })} -{' '}
@@ -806,13 +901,51 @@ export default function GanttPage() {
             </div>
 
             {/* Tasks grouped by workstream */}
-            <div>
-              {tasksByWorkstream.map(({ workstream, tasks: wsTasks, children }) => (
-                <div key={workstream?.id || 'unassigned'}>
-                  {/* Workstream header */}
-                  <div className="flex border-b border-gray-200 bg-gray-100">
+            <div className="relative">
+              {/* Today line */}
+              {todayPosition !== null && (
+                <div
+                  className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10 pointer-events-none"
+                  style={{ left: `calc(256px + ${todayPosition}% * (100% - 256px) / 100)` }}
+                >
+                  <div className="absolute -top-1 -left-2 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center">
+                    <span className="text-[8px] text-white font-bold">T</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Dependency arrows SVG overlay */}
+              {showDependencies && allDependencies.length > 0 && (
+                <DependencyArrows
+                  dependencies={allDependencies}
+                  tasks={tasks}
+                  taskRowIndexMap={taskRowIndexMap}
+                  getTaskPosition={getTaskPosition}
+                  daysBetween={daysBetween}
+                  dateRange={dateRange}
+                />
+              )}
+
+              {tasksByWorkstream.map(({ workstream, tasks: wsTasks, children }) => {
+                const wsId = workstream?.id || 'unassigned';
+                const isCollapsed = collapsedWorkstreams.has(wsId);
+                const totalTasks = wsTasks.length + (children?.reduce((acc, c) => acc + c.tasks.length, 0) || 0);
+
+                return (
+                <div key={wsId}>
+                  {/* Workstream header - clickable to collapse */}
+                  <div
+                    className="flex border-b border-gray-200 bg-gray-100 cursor-pointer hover:bg-gray-150 select-none"
+                    onClick={() => toggleWorkstreamCollapse(wsId)}
+                  >
                     <div className="w-64 flex-shrink-0 p-2 border-r border-gray-200">
                       <div className="flex items-center gap-2">
+                        <ChevronDownIcon
+                          className={cn(
+                            'w-4 h-4 text-gray-500 transition-transform',
+                            isCollapsed && '-rotate-90'
+                          )}
+                        />
                         <div
                           className="w-3 h-3 rounded-full"
                           style={{ backgroundColor: workstream?.color || '#6b7280' }}
@@ -821,15 +954,23 @@ export default function GanttPage() {
                           {workstream?.name || 'Unassigned'}
                         </span>
                         <span className="text-xs text-gray-500">
-                          ({wsTasks.length} task{wsTasks.length !== 1 ? 's' : ''})
+                          ({totalTasks} task{totalTasks !== 1 ? 's' : ''})
                         </span>
                       </div>
                     </div>
-                    <div className="flex-1 h-8" />
+                    <div className="flex-1 h-8 relative">
+                      {/* Today indicator in header */}
+                      {todayPosition !== null && (
+                        <div
+                          className="absolute top-0 bottom-0 w-0.5 bg-red-300"
+                          style={{ left: `${todayPosition}%` }}
+                        />
+                      )}
+                    </div>
                   </div>
 
-                  {/* Tasks in this workstream */}
-                  {wsTasks.map((task) => (
+                  {/* Tasks in this workstream - hide when collapsed */}
+                  {!isCollapsed && wsTasks.map((task) => (
                     <TaskRow
                       key={task.id}
                       task={task}
@@ -842,11 +983,12 @@ export default function GanttPage() {
                         setSelectedTask(task);
                         setEditTaskModalOpen(true);
                       }}
+                      todayPosition={todayPosition}
                     />
                   ))}
 
-                  {/* Sub-workstreams */}
-                  {children?.map(({ workstream: subWs, tasks: subTasks }) => (
+                  {/* Sub-workstreams - hide when collapsed */}
+                  {!isCollapsed && children?.map(({ workstream: subWs, tasks: subTasks }) => (
                     <div key={subWs?.id}>
                       {/* Sub-workstream header */}
                       <div className="flex border-b border-gray-200 bg-gray-50">
@@ -865,7 +1007,15 @@ export default function GanttPage() {
                             </span>
                           </div>
                         </div>
-                        <div className="flex-1 h-7" />
+                        <div className="flex-1 h-7 relative">
+                          {/* Today indicator */}
+                          {todayPosition !== null && (
+                            <div
+                              className="absolute top-0 bottom-0 w-0.5 bg-red-300"
+                              style={{ left: `${todayPosition}%` }}
+                            />
+                          )}
+                        </div>
                       </div>
 
                       {/* Tasks in sub-workstream */}
@@ -882,12 +1032,14 @@ export default function GanttPage() {
                             setSelectedTask(task);
                             setEditTaskModalOpen(true);
                           }}
+                          todayPosition={todayPosition}
                         />
                       ))}
                     </div>
                   ))}
                 </div>
-              ))}
+              );
+              })}
             </div>
 
             {/* Milestones Row */}
@@ -1065,6 +1217,7 @@ function TaskModal({
   allTasks,
   onDependencyAdd,
   onDependencyRemove,
+  onDependencyUpdate,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1382,6 +1535,7 @@ function TaskRow({
   criticalPath,
   showUncertainty,
   onClick,
+  todayPosition,
 }: {
   task: GanttTaskWithRelations;
   workstream: Workstream | null;
@@ -1390,6 +1544,7 @@ function TaskRow({
   criticalPath: string[];
   showUncertainty: boolean;
   onClick: () => void;
+  todayPosition?: number | null;
 }) {
   const position = getTaskPosition(task);
   const isCritical = criticalPath.includes(task.id);
@@ -1457,6 +1612,198 @@ function TaskRow({
         </div>
       </div>
     </div>
+  );
+}
+
+// DependencyArrows component for drawing SVG lines between tasks
+function DependencyArrows({
+  dependencies,
+  tasks,
+  taskRowIndexMap,
+  getTaskPosition,
+  daysBetween,
+  dateRange,
+}: {
+  dependencies: GanttDependency[];
+  tasks: GanttTaskWithRelations[];
+  taskRowIndexMap: Map<string, number>;
+  getTaskPosition: (task: GanttTaskWithRelations) => { left: string; width: string };
+  daysBetween: number;
+  dateRange: { start: Date; end: Date };
+}) {
+  const ROW_HEIGHT = 64; // h-16 = 4rem = 64px
+  const HEADER_HEIGHT = 32; // Workstream header height
+  const TASK_NAME_WIDTH = 256; // w-64 = 16rem = 256px
+
+  // Calculate arrows for each dependency
+  const arrows = useMemo(() => {
+    return dependencies.map((dep) => {
+      const fromTask = tasks.find(t => t.id === dep.depends_on_id);
+      const toTask = tasks.find(t => t.id === dep.task_id);
+
+      if (!fromTask || !toTask) return null;
+
+      const fromRowIndex = taskRowIndexMap.get(fromTask.id);
+      const toRowIndex = taskRowIndexMap.get(toTask.id);
+
+      // If either task is in a collapsed section, don't draw the arrow
+      if (fromRowIndex === undefined || toRowIndex === undefined) return null;
+
+      const fromPosition = getTaskPosition(fromTask);
+      const toPosition = getTaskPosition(toTask);
+
+      // Calculate pixel positions
+      // From position: end of the "from" task bar
+      const fromLeftPercent = parseFloat(fromPosition.left);
+      const fromWidthPercent = parseFloat(fromPosition.width);
+      const toLeftPercent = parseFloat(toPosition.left);
+
+      // Determine connection points based on dependency type
+      let fromX: number, toX: number;
+
+      switch (dep.dependency_type) {
+        case 'finish_to_start':
+          fromX = fromLeftPercent + fromWidthPercent; // End of from task
+          toX = toLeftPercent; // Start of to task
+          break;
+        case 'start_to_start':
+          fromX = fromLeftPercent; // Start of from task
+          toX = toLeftPercent; // Start of to task
+          break;
+        case 'finish_to_finish':
+          fromX = fromLeftPercent + fromWidthPercent; // End of from task
+          toX = toLeftPercent + parseFloat(toPosition.width); // End of to task
+          break;
+        case 'start_to_finish':
+          fromX = fromLeftPercent; // Start of from task
+          toX = toLeftPercent + parseFloat(toPosition.width); // End of to task
+          break;
+        default:
+          fromX = fromLeftPercent + fromWidthPercent;
+          toX = toLeftPercent;
+      }
+
+      // Calculate Y positions (center of each row)
+      const fromY = (fromRowIndex * ROW_HEIGHT) + (ROW_HEIGHT / 2);
+      const toY = (toRowIndex * ROW_HEIGHT) + (ROW_HEIGHT / 2);
+
+      return {
+        id: dep.id,
+        fromX,
+        toX,
+        fromY,
+        toY,
+        type: dep.dependency_type,
+      };
+    }).filter(Boolean) as Array<{
+      id: string;
+      fromX: number;
+      toX: number;
+      fromY: number;
+      toY: number;
+      type: string;
+    }>;
+  }, [dependencies, tasks, taskRowIndexMap, getTaskPosition]);
+
+  if (arrows.length === 0) return null;
+
+  // Calculate total height needed for SVG
+  const maxRow = Math.max(...Array.from(taskRowIndexMap.values())) + 1;
+  const svgHeight = maxRow * ROW_HEIGHT + 100;
+
+  return (
+    <svg
+      className="absolute top-0 pointer-events-none"
+      style={{
+        left: TASK_NAME_WIDTH,
+        width: `calc(100% - ${TASK_NAME_WIDTH}px)`,
+        height: svgHeight,
+        overflow: 'visible',
+      }}
+    >
+      <defs>
+        <marker
+          id="arrowhead"
+          markerWidth="10"
+          markerHeight="7"
+          refX="9"
+          refY="3.5"
+          orient="auto"
+        >
+          <polygon
+            points="0 0, 10 3.5, 0 7"
+            fill="#3B82F6"
+          />
+        </marker>
+        <marker
+          id="arrowhead-critical"
+          markerWidth="10"
+          markerHeight="7"
+          refX="9"
+          refY="3.5"
+          orient="auto"
+        >
+          <polygon
+            points="0 0, 10 3.5, 0 7"
+            fill="#EF4444"
+          />
+        </marker>
+      </defs>
+      {arrows.map((arrow) => {
+        // Convert percentage positions to SVG coordinates
+        // The SVG width is (100% - 256px), so we need to calculate based on percentage
+        const startX = `${arrow.fromX}%`;
+        const endX = `${arrow.toX}%`;
+        const startY = arrow.fromY;
+        const endY = arrow.toY;
+
+        // Calculate control points for curved line
+        const midY = (startY + endY) / 2;
+        const curveOffset = Math.min(Math.abs(endY - startY) / 4, 20);
+
+        // Create a path that goes from end of one task to start of another
+        // with a nice curve
+        let pathD: string;
+
+        if (Math.abs(arrow.fromY - arrow.toY) < ROW_HEIGHT) {
+          // Tasks on same or adjacent rows - simple curved line
+          pathD = `M ${startX} ${startY}
+                   C ${arrow.fromX + 3}% ${startY},
+                     ${arrow.toX - 3}% ${endY},
+                     ${endX} ${endY}`;
+        } else if (arrow.fromX < arrow.toX - 5) {
+          // Normal case: from task ends before to task starts
+          pathD = `M ${startX} ${startY}
+                   L ${arrow.fromX + 1}% ${startY}
+                   Q ${arrow.fromX + 2}% ${startY} ${arrow.fromX + 2}% ${startY + (endY > startY ? 10 : -10)}
+                   L ${arrow.fromX + 2}% ${midY}
+                   Q ${arrow.fromX + 2}% ${endY - (endY > startY ? 10 : -10)} ${arrow.fromX + 3}% ${endY}
+                   L ${arrow.toX - 1}% ${endY}`;
+        } else {
+          // Overlapping case: need to route around
+          const routeX = Math.max(arrow.fromX + 2, arrow.toX + 2);
+          pathD = `M ${startX} ${startY}
+                   L ${routeX}% ${startY}
+                   Q ${routeX + 1}% ${startY} ${routeX + 1}% ${startY + (endY > startY ? 10 : -10)}
+                   L ${routeX + 1}% ${endY - (endY > startY ? 10 : -10)}
+                   Q ${routeX + 1}% ${endY} ${routeX}% ${endY}
+                   L ${endX} ${endY}`;
+        }
+
+        return (
+          <path
+            key={arrow.id}
+            d={pathD}
+            fill="none"
+            stroke="#3B82F6"
+            strokeWidth="2"
+            strokeDasharray={arrow.type === 'finish_to_start' ? 'none' : '4 2'}
+            markerEnd="url(#arrowhead)"
+            opacity="0.7"
+          />
+        );
+      })}
+    </svg>
   );
 }
 
