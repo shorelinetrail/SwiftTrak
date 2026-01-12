@@ -51,7 +51,7 @@ export function Modal({ open, onClose, title, description, children, size = 'md'
             >
               <Dialog.Panel
                 className={cn(
-                  'w-full transform overflow-hidden rounded-xl bg-white shadow-xl transition-all',
+                  'w-full transform rounded-xl bg-white shadow-xl transition-all',
                   sizes[size]
                 )}
               >
@@ -76,7 +76,7 @@ export function Modal({ open, onClose, title, description, children, size = 'md'
                     </button>
                   </div>
                 )}
-                <div className={cn(!title && 'pt-6', 'px-6 pb-6')}>{children}</div>
+                <div className={cn(!title && 'pt-6', 'px-6 pb-6 max-h-[80vh] overflow-y-auto overflow-x-visible')}>{children}</div>
               </Dialog.Panel>
             </Transition.Child>
           </div>
