@@ -185,6 +185,8 @@ export default function DashboardPage() {
         setAllQueries(queriesData as { id: string; responded_at: string | null }[]);
         setAllMilestones(milestonesData as { id: string; target_date: string; status: string; workstream_id: string | null }[]);
 
+        const now = new Date();
+
         // Fetch detailed data in parallel with timeout
         const detailResult = await Promise.race([
           Promise.all([
