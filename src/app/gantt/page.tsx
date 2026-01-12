@@ -1239,7 +1239,13 @@ function MilestoneModal({
   milestone?: MilestoneWithRelations | null;
   workstreams: Workstream[];
 }) {
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    title: string;
+    description: string;
+    workstream_id: string;
+    target_date: string;
+    status: Milestone['status'];
+  }>({
     title: milestone?.title || '',
     description: milestone?.description || '',
     workstream_id: milestone?.workstream_id || '',
@@ -1329,7 +1335,7 @@ function MilestoneModal({
               { value: 'missed', label: 'Missed' },
             ]}
             value={formData.status}
-            onChange={(value) => setFormData({ ...formData, status: value })}
+            onChange={(value) => setFormData({ ...formData, status: value as Milestone['status'] })}
           />
         )}
 
