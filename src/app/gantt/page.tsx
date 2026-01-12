@@ -28,8 +28,9 @@ import {
   LinkIcon,
   TrashIcon,
   FlagIcon,
+  ChatBubbleLeftIcon,
 } from '@heroicons/react/24/outline';
-import type { GanttTask, GanttDependency, Workstream, User, Milestone } from '@/types/database';
+import type { GanttTask, GanttDependency, GanttTaskComment, Workstream, User, Milestone } from '@/types/database';
 
 type GanttTaskWithRelations = GanttTask & {
   workstream?: Workstream;
@@ -43,7 +44,7 @@ type MilestoneWithRelations = Milestone & {
 
 export default function GanttPage() {
   console.log('[GanttPage] Rendering start');
-  const { workstreams } = useAppStore();
+  const { workstreams, user } = useAppStore();
   console.log('[GanttPage] workstreams:', workstreams?.length);
   const { canEdit } = usePermission();
   const [loading, setLoading] = useState(true);
@@ -125,6 +126,8 @@ export default function GanttPage() {
             task_id: d.task_id,
             depends_on_id: d.depends_on_id,
             dependency_type: d.dependency_type,
+            lag_days: d.lag_days || 0,
+            created_at: d.created_at,
           })),
         }));
 
@@ -134,6 +137,8 @@ export default function GanttPage() {
           task_id: d.task_id,
           depends_on_id: d.depends_on_id,
           dependency_type: d.dependency_type,
+          lag_days: d.lag_days || 0,
+          created_at: d.created_at,
         })) as GanttDependency[]);
 
         // Calculate date range from tasks
@@ -508,7 +513,7 @@ export default function GanttPage() {
     return false;
   };
 
-  const handleAddDependency = async (taskId: string, dependsOnId: string, dependencyType: GanttDependency['dependency_type']) => {
+  const handleAddDependency = async (taskId: string, dependsOnId: string, dependencyType: GanttDependency['dependency_type'], lagDays: number = 0) => {
     const supabase = createClient();
 
     // Prevent self-dependency
@@ -541,7 +546,9 @@ export default function GanttPage() {
       return;
     }
 
-    // Calculate required start date based on dependency type
+    // Calculate required start date based on dependency type and lag/lead time
+    // Positive lag = delay (gap between tasks), Negative lag = lead (overlap)
+    const lagMs = lagDays * 24 * 60 * 60 * 1000;
     let requiredStartDate: Date | null = null;
     const predecessorStart = new Date(predecessorTask.start_date);
     const predecessorEnd = new Date(predecessorTask.end_date);
@@ -551,40 +558,44 @@ export default function GanttPage() {
 
     switch (dependencyType) {
       case 'finish_to_start':
-        // Dependent task starts after predecessor finishes
-        if (dependentStart < predecessorEnd) {
-          requiredStartDate = new Date(predecessorEnd);
+        // Dependent task starts after predecessor finishes + lag
+        const fsRequiredStart = new Date(predecessorEnd.getTime() + lagMs);
+        if (dependentStart < fsRequiredStart) {
+          requiredStartDate = fsRequiredStart;
         }
         break;
       case 'start_to_start':
-        // Both tasks start at the same time
-        if (dependentStart < predecessorStart) {
-          requiredStartDate = new Date(predecessorStart);
+        // Both tasks start at the same time + lag
+        const ssRequiredStart = new Date(predecessorStart.getTime() + lagMs);
+        if (dependentStart < ssRequiredStart) {
+          requiredStartDate = ssRequiredStart;
         }
         break;
       case 'finish_to_finish':
-        // Both tasks finish at the same time - adjust start based on duration
-        const requiredEnd = predecessorEnd;
+        // Both tasks finish at the same time + lag - adjust start based on duration
+        const requiredEnd = new Date(predecessorEnd.getTime() + lagMs);
         const calculatedStart = new Date(requiredEnd.getTime() - dependentDuration);
-        if (dependentEnd < predecessorEnd) {
+        if (dependentEnd < requiredEnd) {
           requiredStartDate = calculatedStart;
         }
         break;
       case 'start_to_finish':
-        // Dependent finishes when predecessor starts
-        if (dependentEnd < predecessorStart) {
-          requiredStartDate = new Date(predecessorStart.getTime() - dependentDuration);
+        // Dependent finishes when predecessor starts + lag
+        const sfRequiredEnd = new Date(predecessorStart.getTime() + lagMs);
+        if (dependentEnd < sfRequiredEnd) {
+          requiredStartDate = new Date(sfRequiredEnd.getTime() - dependentDuration);
         }
         break;
     }
 
-    // Insert the dependency
+    // Insert the dependency with lag
     const { error: depError } = await supabase
       .from('gantt_dependencies')
       .insert({
         task_id: taskId,
         depends_on_id: dependsOnId,
         dependency_type: dependencyType,
+        lag_days: lagDays,
       });
 
     if (depError) {
@@ -673,32 +684,42 @@ export default function GanttPage() {
         continue;
       }
 
+      // Include lag time in calculations (positive = delay, negative = lead/overlap)
+      const lagMs = (dep.lag_days || 0) * 24 * 60 * 60 * 1000;
       let requiredStart: Date | null = null;
 
       switch (dep.dependency_type) {
         case 'finish_to_start':
-          // Dependent starts after predecessor finishes
-          if (dependentStart.getTime() < newEndDate.getTime()) {
-            requiredStart = new Date(newEndDate);
+          // Dependent starts after predecessor finishes + lag
+          const fsRequired = new Date(newEndDate.getTime() + lagMs);
+          if (dependentStart.getTime() < fsRequired.getTime()) {
+            requiredStart = fsRequired;
           }
           break;
         case 'start_to_start':
-          // Both start at same time
-          if (newStartDate && dependentStart.getTime() < newStartDate.getTime()) {
-            requiredStart = new Date(newStartDate);
+          // Both start at same time + lag
+          if (newStartDate) {
+            const ssRequired = new Date(newStartDate.getTime() + lagMs);
+            if (dependentStart.getTime() < ssRequired.getTime()) {
+              requiredStart = ssRequired;
+            }
           }
           break;
         case 'finish_to_finish':
-          // Both finish at same time - adjust start to maintain duration
-          const calculatedStart = new Date(newEndDate.getTime() - duration);
-          if (dependentEnd.getTime() < newEndDate.getTime()) {
+          // Both finish at same time + lag - adjust start to maintain duration
+          const ffRequired = new Date(newEndDate.getTime() + lagMs);
+          const calculatedStart = new Date(ffRequired.getTime() - duration);
+          if (dependentEnd.getTime() < ffRequired.getTime()) {
             requiredStart = calculatedStart;
           }
           break;
         case 'start_to_finish':
-          // Dependent finishes when predecessor starts
-          if (newStartDate && dependentEnd.getTime() < newStartDate.getTime()) {
-            requiredStart = new Date(newStartDate.getTime() - duration);
+          // Dependent finishes when predecessor starts + lag
+          if (newStartDate) {
+            const sfRequired = new Date(newStartDate.getTime() + lagMs);
+            if (dependentEnd.getTime() < sfRequired.getTime()) {
+              requiredStart = new Date(sfRequired.getTime() - duration);
+            }
           }
           break;
       }
@@ -797,6 +818,8 @@ export default function GanttPage() {
           task_id: d.task_id,
           depends_on_id: d.depends_on_id,
           dependency_type: d.dependency_type,
+          lag_days: d.lag_days || 0,
+          created_at: d.created_at,
         })),
       }));
 
@@ -806,6 +829,8 @@ export default function GanttPage() {
         task_id: d.task_id,
         depends_on_id: d.depends_on_id,
         dependency_type: d.dependency_type,
+        lag_days: d.lag_days || 0,
+        created_at: d.created_at,
       })) as GanttDependency[]);
 
       // Update selectedTask with fresh data if it's set
@@ -820,7 +845,7 @@ export default function GanttPage() {
     }
   };
 
-  const handleUpdateDependency = async (dependencyId: string, newType: GanttDependency['dependency_type']) => {
+  const handleUpdateDependency = async (dependencyId: string, newType: GanttDependency['dependency_type'], lagDays?: number) => {
     const supabase = createClient();
 
     // Get the dependency to find the related tasks
@@ -838,10 +863,15 @@ export default function GanttPage() {
       return;
     }
 
-    // Update the dependency type
+    // Update the dependency type and lag
+    const updateData: { dependency_type: string; lag_days?: number } = { dependency_type: newType };
+    if (lagDays !== undefined) {
+      updateData.lag_days = lagDays;
+    }
+
     const { error } = await supabase
       .from('gantt_dependencies')
-      .update({ dependency_type: newType })
+      .update(updateData)
       .eq('id', dependencyId);
 
     if (error) {
@@ -849,7 +879,9 @@ export default function GanttPage() {
       return;
     }
 
-    // Recalculate dates based on new dependency type
+    // Recalculate dates based on new dependency type and lag
+    const effectiveLag = lagDays !== undefined ? lagDays : (dep.lag_days || 0);
+    const lagMs = effectiveLag * 24 * 60 * 60 * 1000;
     let requiredStartDate: Date | null = null;
     const predecessorStart = new Date(predecessorTask.start_date);
     const predecessorEnd = new Date(predecessorTask.end_date);
@@ -859,25 +891,28 @@ export default function GanttPage() {
 
     switch (newType) {
       case 'finish_to_start':
-        if (dependentStart < predecessorEnd) {
-          requiredStartDate = new Date(predecessorEnd);
+        const fsRequired = new Date(predecessorEnd.getTime() + lagMs);
+        if (dependentStart < fsRequired) {
+          requiredStartDate = fsRequired;
         }
         break;
       case 'start_to_start':
-        if (dependentStart < predecessorStart) {
-          requiredStartDate = new Date(predecessorStart);
+        const ssRequired = new Date(predecessorStart.getTime() + lagMs);
+        if (dependentStart < ssRequired) {
+          requiredStartDate = ssRequired;
         }
         break;
       case 'finish_to_finish':
-        const requiredEnd = predecessorEnd;
-        const calculatedStart = new Date(requiredEnd.getTime() - dependentDuration);
-        if (dependentEnd < predecessorEnd) {
+        const ffRequired = new Date(predecessorEnd.getTime() + lagMs);
+        const calculatedStart = new Date(ffRequired.getTime() - dependentDuration);
+        if (dependentEnd < ffRequired) {
           requiredStartDate = calculatedStart;
         }
         break;
       case 'start_to_finish':
-        if (dependentEnd < predecessorStart) {
-          requiredStartDate = new Date(predecessorStart.getTime() - dependentDuration);
+        const sfRequired = new Date(predecessorStart.getTime() + lagMs);
+        if (dependentEnd < sfRequired) {
+          requiredStartDate = new Date(sfRequired.getTime() - dependentDuration);
         }
         break;
     }
@@ -1469,6 +1504,7 @@ export default function GanttPage() {
         workstreams={workstreams}
         users={users}
         allTasks={tasks}
+        currentUser={user}
       />
 
       {/* Edit Task Modal */}
@@ -1488,6 +1524,7 @@ export default function GanttPage() {
           onDependencyAdd={handleAddDependency}
           onDependencyRemove={handleRemoveDependency}
           onDependencyUpdate={handleUpdateDependency}
+          currentUser={user}
         />
       )}
 
@@ -1525,6 +1562,7 @@ function TaskModal({
   onDependencyAdd,
   onDependencyRemove,
   onDependencyUpdate,
+  currentUser,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1534,11 +1572,16 @@ function TaskModal({
   workstreams: Workstream[];
   users: User[];
   allTasks?: GanttTaskWithRelations[];
-  onDependencyAdd?: (taskId: string, dependsOnId: string, type: GanttDependency['dependency_type']) => void;
+  onDependencyAdd?: (taskId: string, dependsOnId: string, type: GanttDependency['dependency_type'], lagDays?: number) => void;
   onDependencyRemove?: (dependencyId: string) => void;
-  onDependencyUpdate?: (dependencyId: string, newType: GanttDependency['dependency_type']) => void;
+  onDependencyUpdate?: (dependencyId: string, newType: GanttDependency['dependency_type'], lagDays?: number) => void;
+  currentUser?: User | null;
 }) {
   const [editingDependency, setEditingDependency] = useState<string | null>(null);
+  const [editingLag, setEditingLag] = useState<{ [key: string]: number }>({});
+  const [comments, setComments] = useState<GanttTaskComment[]>([]);
+  const [newComment, setNewComment] = useState('');
+  const [loadingComments, setLoadingComments] = useState(false);
   const [formData, setFormData] = useState({
     title: task?.title || '',
     workstream_id: task?.workstream_id || '',
@@ -1553,6 +1596,7 @@ function TaskModal({
 
   const [newDependencyTask, setNewDependencyTask] = useState('');
   const [newDependencyType, setNewDependencyType] = useState<GanttDependency['dependency_type']>('finish_to_start');
+  const [newDependencyLag, setNewDependencyLag] = useState<number>(0);
 
   // Get tasks that are not this task and not already dependencies
   const availableDependencies = useMemo(() => {
@@ -1579,8 +1623,100 @@ function TaskModal({
       });
       setNewDependencyTask('');
       setNewDependencyType('finish_to_start');
+      setNewDependencyLag(0);
+      setEditingLag({});
+      setNewComment('');
     }
   }, [task]);
+
+  // Fetch comments when task changes
+  useEffect(() => {
+    const fetchComments = async () => {
+      if (!task?.id) {
+        setComments([]);
+        return;
+      }
+
+      setLoadingComments(true);
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from('gantt_task_comments')
+          .select(`
+            *,
+            user:users(id, full_name, avatar_url)
+          `)
+          .eq('task_id', task.id)
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          console.error('Error fetching comments:', error);
+        } else {
+          setComments(data as GanttTaskComment[]);
+        }
+      } catch (error) {
+        console.error('Error fetching comments:', error);
+      } finally {
+        setLoadingComments(false);
+      }
+    };
+
+    if (open && task?.id) {
+      fetchComments();
+    }
+  }, [open, task?.id]);
+
+  const handleAddComment = async () => {
+    if (!task?.id || !newComment.trim()) return;
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('gantt_task_comments')
+        .insert({
+          task_id: task.id,
+          content: newComment.trim(),
+        })
+        .select(`
+          *,
+          user:users(id, full_name, avatar_url)
+        `)
+        .single();
+
+      if (error) {
+        toast.error('Failed to add comment');
+        console.error('Error adding comment:', error);
+      } else {
+        setComments(prev => [data as GanttTaskComment, ...prev]);
+        setNewComment('');
+        toast.success('Comment added');
+      }
+    } catch (error) {
+      console.error('Error adding comment:', error);
+      toast.error('Failed to add comment');
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('gantt_task_comments')
+        .delete()
+        .eq('id', commentId);
+
+      if (error) {
+        toast.error('Failed to delete comment');
+        console.error('Error deleting comment:', error);
+      } else {
+        setComments(prev => prev.filter(c => c.id !== commentId));
+        toast.success('Comment deleted');
+      }
+    } catch (error) {
+      console.error('Error deleting comment:', error);
+      toast.error('Failed to delete comment');
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1702,61 +1838,117 @@ function TaskModal({
                 {task.dependencies.map((dep) => {
                   const dependsOnTask = allTasks?.find(t => t.id === dep.depends_on_id);
                   const isEditing = editingDependency === dep.id;
+                  const currentLag = editingLag[dep.id] ?? dep.lag_days ?? 0;
 
                   return (
                     <div
                       key={dep.id}
-                      className="flex items-center justify-between p-2 bg-gray-50 rounded-lg text-sm"
+                      className="flex flex-col p-2 bg-gray-50 rounded-lg text-sm gap-2"
                     >
-                      <div className="flex items-center gap-2 flex-1">
-                        <LinkIcon className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                        <span className="font-medium">{dependsOnTask?.title || 'Unknown task'}</span>
-                        {isEditing && onDependencyUpdate ? (
-                          <Select
-                            label=""
-                            className="w-40"
-                            options={[
-                              { value: 'finish_to_start', label: 'Finish → Start' },
-                              { value: 'start_to_start', label: 'Start → Start' },
-                              { value: 'finish_to_finish', label: 'Finish → Finish' },
-                              { value: 'start_to_finish', label: 'Start → Finish' },
-                            ]}
-                            value={dep.dependency_type}
-                            onChange={(value) => {
-                              onDependencyUpdate(dep.id, value as GanttDependency['dependency_type']);
-                              setEditingDependency(null);
-                            }}
-                          />
-                        ) : (
-                          <button
-                            type="button"
-                            className="text-gray-500 text-xs hover:text-blue-600 hover:underline cursor-pointer"
-                            onClick={() => setEditingDependency(dep.id)}
-                            title="Click to change dependency type"
-                          >
-                            ({dep.dependency_type.replace(/_/g, ' ')})
-                          </button>
-                        )}
-                      </div>
-                      <div className="flex gap-1">
-                        {isEditing && (
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 flex-1">
+                          <LinkIcon className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                          <span className="font-medium">{dependsOnTask?.title || 'Unknown task'}</span>
+                        </div>
+                        <div className="flex gap-1">
+                          {isEditing && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setEditingDependency(null);
+                                setEditingLag(prev => {
+                                  const newLag = { ...prev };
+                                  delete newLag[dep.id];
+                                  return newLag;
+                                });
+                              }}
+                            >
+                              Cancel
+                            </Button>
+                          )}
                           <Button
                             type="button"
                             variant="ghost"
                             size="sm"
-                            onClick={() => setEditingDependency(null)}
+                            onClick={() => onDependencyRemove(dep.id)}
                           >
-                            Cancel
+                            <TrashIcon className="w-4 h-4 text-red-500" />
                           </Button>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 pl-6">
+                        {isEditing && onDependencyUpdate ? (
+                          <>
+                            <Select
+                              label=""
+                              className="w-40"
+                              options={[
+                                { value: 'finish_to_start', label: 'Finish → Start' },
+                                { value: 'start_to_start', label: 'Start → Start' },
+                                { value: 'finish_to_finish', label: 'Finish → Finish' },
+                                { value: 'start_to_finish', label: 'Start → Finish' },
+                              ]}
+                              value={dep.dependency_type}
+                              onChange={(value) => {
+                                onDependencyUpdate(dep.id, value as GanttDependency['dependency_type'], currentLag);
+                                setEditingDependency(null);
+                                setEditingLag(prev => {
+                                  const newLag = { ...prev };
+                                  delete newLag[dep.id];
+                                  return newLag;
+                                });
+                              }}
+                            />
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-gray-500">Lag:</span>
+                              <input
+                                type="number"
+                                className="w-16 px-2 py-1 text-xs border border-gray-300 rounded"
+                                value={currentLag}
+                                onChange={(e) => setEditingLag(prev => ({ ...prev, [dep.id]: parseInt(e.target.value) || 0 }))}
+                                placeholder="0"
+                              />
+                              <span className="text-xs text-gray-500">days</span>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="primary"
+                              size="sm"
+                              onClick={() => {
+                                onDependencyUpdate(dep.id, dep.dependency_type, currentLag);
+                                setEditingDependency(null);
+                                setEditingLag(prev => {
+                                  const newLag = { ...prev };
+                                  delete newLag[dep.id];
+                                  return newLag;
+                                });
+                              }}
+                            >
+                              Save
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              className="text-gray-500 text-xs hover:text-blue-600 hover:underline cursor-pointer"
+                              onClick={() => {
+                                setEditingDependency(dep.id);
+                                setEditingLag(prev => ({ ...prev, [dep.id]: dep.lag_days || 0 }));
+                              }}
+                              title="Click to edit dependency"
+                            >
+                              {dep.dependency_type.replace(/_/g, ' ')}
+                            </button>
+                            {(dep.lag_days !== undefined && dep.lag_days !== 0) && (
+                              <span className={`text-xs ${dep.lag_days > 0 ? 'text-orange-600' : 'text-green-600'}`}>
+                                {dep.lag_days > 0 ? `+${dep.lag_days}d lag` : `${dep.lag_days}d lead`}
+                              </span>
+                            )}
+                          </>
                         )}
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => onDependencyRemove(dep.id)}
-                        >
-                          <TrashIcon className="w-4 h-4 text-red-500" />
-                        </Button>
                       </div>
                     </div>
                   );
@@ -1766,47 +1958,133 @@ function TaskModal({
 
             {/* Add new dependency */}
             {availableDependencies.length > 0 && (
-              <div className="flex gap-2">
-                <Select
-                  label=""
-                  className="flex-1"
-                  options={[
-                    { value: '', label: 'Select task...' },
-                    ...availableDependencies.map(t => ({ value: t.id, label: t.title })),
-                  ]}
-                  value={newDependencyTask}
-                  onChange={(value) => setNewDependencyTask(value)}
-                />
-                <Select
-                  label=""
-                  className="w-48"
-                  options={[
-                    { value: 'finish_to_start', label: 'Finish to Start' },
-                    { value: 'start_to_start', label: 'Start to Start' },
-                    { value: 'finish_to_finish', label: 'Finish to Finish' },
-                    { value: 'start_to_finish', label: 'Start to Finish' },
-                  ]}
-                  value={newDependencyType}
-                  onChange={(value) => setNewDependencyType(value as GanttDependency['dependency_type'])}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    if (newDependencyTask && task) {
-                      onDependencyAdd(task.id, newDependencyTask, newDependencyType);
-                      setNewDependencyTask('');
-                    }
-                  }}
-                  disabled={!newDependencyTask}
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <Select
+                    label=""
+                    className="flex-1"
+                    options={[
+                      { value: '', label: 'Select task...' },
+                      ...availableDependencies.map(t => ({ value: t.id, label: t.title })),
+                    ]}
+                    value={newDependencyTask}
+                    onChange={(value) => setNewDependencyTask(value)}
+                  />
+                  <Select
+                    label=""
+                    className="w-40"
+                    options={[
+                      { value: 'finish_to_start', label: 'Finish → Start' },
+                      { value: 'start_to_start', label: 'Start → Start' },
+                      { value: 'finish_to_finish', label: 'Finish → Finish' },
+                      { value: 'start_to_finish', label: 'Start → Finish' },
+                    ]}
+                    value={newDependencyType}
+                    onChange={(value) => setNewDependencyType(value as GanttDependency['dependency_type'])}
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 flex-1">
+                    <span className="text-xs text-gray-500">Lag/Lead:</span>
+                    <input
+                      type="number"
+                      className="w-20 px-2 py-1 text-sm border border-gray-300 rounded"
+                      value={newDependencyLag}
+                      onChange={(e) => setNewDependencyLag(parseInt(e.target.value) || 0)}
+                      placeholder="0"
+                    />
+                    <span className="text-xs text-gray-500">days (+ = lag, - = lead)</span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      if (newDependencyTask && task) {
+                        onDependencyAdd(task.id, newDependencyTask, newDependencyType, newDependencyLag);
+                        setNewDependencyTask('');
+                        setNewDependencyLag(0);
+                      }
+                    }}
+                    disabled={!newDependencyTask}
                 >
                   <PlusIcon className="w-4 h-4" />
                 </Button>
+                </div>
               </div>
             )}
 
             {availableDependencies.length === 0 && (!task.dependencies || task.dependencies.length === 0) && (
               <p className="text-sm text-gray-500 italic">No dependencies configured</p>
+            )}
+          </div>
+        )}
+
+        {/* Comments Section - only for editing existing tasks */}
+        {task && (
+          <div className="border-t border-gray-200 pt-4">
+            <p className="text-sm font-medium text-gray-700 mb-2">
+              <ChatBubbleLeftIcon className="w-4 h-4 inline mr-1" />
+              Comments ({comments.length})
+            </p>
+
+            {/* Add comment input */}
+            <div className="flex gap-2 mb-4">
+              <Textarea
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                placeholder="Add a comment..."
+                rows={2}
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleAddComment}
+                disabled={!newComment.trim()}
+                className="self-end"
+              >
+                <PlusIcon className="w-4 h-4" />
+              </Button>
+            </div>
+
+            {/* Comments list */}
+            {loadingComments ? (
+              <div className="text-center py-4">
+                <LoadingSpinner size="sm" />
+              </div>
+            ) : comments.length > 0 ? (
+              <div className="space-y-3 max-h-60 overflow-y-auto">
+                {comments.map((comment) => (
+                  <div key={comment.id} className="bg-gray-50 rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <Avatar
+                          src={comment.user?.avatar_url}
+                          name={comment.user?.full_name || 'Unknown'}
+                          size="xs"
+                        />
+                        <span className="text-sm font-medium text-gray-700">
+                          {comment.user?.full_name || 'Unknown'}
+                        </span>
+                        <span className="text-xs text-gray-400">
+                          {formatDate(comment.created_at, { month: 'short', day: 'numeric', hour: 'numeric', minute: 'numeric' })}
+                        </span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteComment(comment.id)}
+                      >
+                        <TrashIcon className="w-3 h-3 text-red-500" />
+                      </Button>
+                    </div>
+                    <p className="text-sm text-gray-600 whitespace-pre-wrap">{comment.content}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500 italic">No comments yet</p>
             )}
           </div>
         )}
@@ -1843,6 +2121,10 @@ function TaskRow({
   showUncertainty,
   onClick,
   todayPosition,
+  onDrag,
+  dateRange,
+  daysBetween,
+  canEdit,
 }: {
   task: GanttTaskWithRelations;
   workstream: Workstream | null;
@@ -1852,6 +2134,10 @@ function TaskRow({
   showUncertainty: boolean;
   onClick: () => void;
   todayPosition?: number | null;
+  onDrag?: (taskId: string, newStartDate: Date, newEndDate: Date) => void;
+  dateRange?: { start: Date; end: Date };
+  daysBetween?: number;
+  canEdit?: boolean;
 }) {
   const position = getTaskPosition(task);
   const isCritical = criticalPath.includes(task.id);
@@ -1860,6 +2146,58 @@ function TaskRow({
     : null;
 
   const paddingLeft = indent === 1 ? 'pl-6' : indent === 2 ? 'pl-10' : 'pl-3';
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStartX, setDragStartX] = useState(0);
+  const [dragOffset, setDragOffset] = useState(0);
+  const barRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!canEdit || !onDrag) return;
+    e.stopPropagation();
+    setIsDragging(true);
+    setDragStartX(e.clientX);
+    setDragOffset(0);
+  };
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!isDragging) return;
+    const offset = e.clientX - dragStartX;
+    setDragOffset(offset);
+  }, [isDragging, dragStartX]);
+
+  const handleMouseUp = useCallback((e: MouseEvent) => {
+    if (!isDragging || !onDrag || !containerRef.current || !dateRange || !daysBetween) {
+      setIsDragging(false);
+      return;
+    }
+
+    const containerWidth = containerRef.current.offsetWidth;
+    const dayWidth = containerWidth / daysBetween;
+    const daysMoved = Math.round(dragOffset / dayWidth);
+
+    if (daysMoved !== 0) {
+      const currentStart = new Date(task.start_date);
+      const currentEnd = new Date(task.end_date);
+      const newStart = new Date(currentStart.getTime() + daysMoved * 24 * 60 * 60 * 1000);
+      const newEnd = new Date(currentEnd.getTime() + daysMoved * 24 * 60 * 60 * 1000);
+      onDrag(task.id, newStart, newEnd);
+    }
+
+    setIsDragging(false);
+    setDragOffset(0);
+  }, [isDragging, dragOffset, onDrag, dateRange, daysBetween, task.id, task.start_date, task.end_date]);
+
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isDragging, handleMouseMove, handleMouseUp]);
 
   return (
     <div
@@ -1886,7 +2224,7 @@ function TaskRow({
       </div>
 
       {/* Task bar */}
-      <div className="flex-1 relative h-16 py-2">
+      <div ref={containerRef} className="flex-1 relative h-16 py-2">
         {/* Uncertainty range */}
         {showUncertainty && pert && (
           <div
@@ -1901,19 +2239,24 @@ function TaskRow({
 
         {/* Main bar */}
         <div
+          ref={barRef}
           className={cn(
             'absolute h-8 rounded gantt-task top-1/2 -translate-y-1/2',
-            isCritical ? 'gantt-critical' : ''
+            isCritical ? 'gantt-critical' : '',
+            isDragging ? 'opacity-70 cursor-grabbing' : canEdit ? 'cursor-grab' : ''
           )}
           style={{
-            left: position.left,
+            left: isDragging ? `calc(${position.left} + ${dragOffset}px)` : position.left,
             width: position.width,
             backgroundColor: workstream?.color || '#6b7280',
+            transition: isDragging ? 'none' : 'left 0.2s ease-out',
           }}
+          onMouseDown={handleMouseDown}
+          title={canEdit ? 'Drag to reschedule' : undefined}
         >
           {/* Progress */}
           <div
-            className="h-full rounded opacity-30 bg-black"
+            className="h-full rounded opacity-30 bg-black pointer-events-none"
             style={{ width: `${task.progress}%` }}
           />
         </div>

@@ -178,6 +178,17 @@ export interface GanttDependency {
   created_at: string;
 }
 
+export interface GanttTaskComment {
+  id: string;
+  task_id: string;
+  user_id: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+  // Joined fields
+  user?: User;
+}
+
 export interface Attachment {
   id: string;
   entity_type: 'action' | 'threat' | 'query' | 'decision' | 'milestone';
