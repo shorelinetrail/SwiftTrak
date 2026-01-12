@@ -25,6 +25,7 @@ const AuthContext = createContext<AuthContextType>({
 let globalAuthInitialized = false;
 let globalAuthSubscription: { unsubscribe: () => void } | null = null;
 let globalRefreshTimer: NodeJS.Timeout | null = null;
+let authHandled = false; // Track if we've already processed auth
 
 // Fetch user profile from database, with fallback to auth metadata
 async function fetchUserProfile(authUser: AuthUser): Promise<User> {
@@ -93,60 +94,33 @@ function initializeGlobalAuth(
   const supabase = createClient();
   console.log('[AuthProvider] Getting session...');
 
-  // Get initial session
-  supabase.auth.getSession().then(async ({ data: { session }, error }) => {
-    console.log('[AuthProvider] getSession result:', {
-      hasSession: !!session,
-      hasUser: !!session?.user,
-      error: error?.message,
-      storeUser: !!useAppStore.getState().user
-    });
-
-    if (error || !session?.user) {
-      console.log('[AuthProvider] No session, setting loading false');
-      onLoadingChange(false);
-      // Only redirect if no user in store
-      if (!useAppStore.getState().user) {
-        console.log('[AuthProvider] No user in store, redirecting to login');
-        onRedirectToLogin();
-      }
-      return;
-    }
-
-    // Setup token refresh
-    scheduleTokenRefresh(session);
-
-    // Fetch and set user profile
-    console.log('[AuthProvider] Fetching user profile...');
-    const profile = await fetchUserProfile(session.user);
-    console.log('[AuthProvider] Profile fetched:', { id: profile.id, role: profile.role });
-    onUserChange(profile);
-    onLoadingChange(false);
-  }).catch((error) => {
-    console.error('[AuthProvider] Init error:', error);
-    onLoadingChange(false);
-    if (!useAppStore.getState().user) {
-      onRedirectToLogin();
-    }
-  });
-
-  // Set up SINGLE global subscription
+  // Set up subscription FIRST - it fires immediately with current state
   const { data: { subscription } } = supabase.auth.onAuthStateChange(
     async (event, session) => {
-      console.log('[AuthProvider] onAuthStateChange:', event, { hasSession: !!session });
+      console.log('[AuthProvider] onAuthStateChange:', event, { hasSession: !!session, authHandled });
 
       if (event === 'SIGNED_OUT') {
         console.log('[AuthProvider] SIGNED_OUT - clearing user');
+        authHandled = false;
         if (globalRefreshTimer) {
           clearTimeout(globalRefreshTimer);
         }
         onUserChange(null);
+        onLoadingChange(false);
         onRedirectToLogin();
-      } else if (event === 'SIGNED_IN' && session?.user) {
-        console.log('[AuthProvider] SIGNED_IN - setting user');
+      } else if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session?.user) {
+        // Skip if we've already handled auth
+        if (authHandled && useAppStore.getState().user) {
+          console.log('[AuthProvider] Auth already handled, skipping');
+          return;
+        }
+        console.log('[AuthProvider] Processing auth event:', event);
+        authHandled = true;
         scheduleTokenRefresh(session);
         const profile = await fetchUserProfile(session.user);
+        console.log('[AuthProvider] Profile fetched:', { id: profile.id, role: profile.role });
         onUserChange(profile);
+        onLoadingChange(false);
       } else if (event === 'TOKEN_REFRESHED' && session?.user) {
         console.log('[AuthProvider] TOKEN_REFRESHED');
         scheduleTokenRefresh(session);
@@ -158,6 +132,44 @@ function initializeGlobalAuth(
       }
     }
   );
+
+  // Fallback: Get initial session if onAuthStateChange doesn't fire
+  // This handles edge cases where the subscription might not fire immediately
+  setTimeout(async () => {
+    if (authHandled) {
+      console.log('[AuthProvider] Auth already handled by subscription');
+      return;
+    }
+
+    console.log('[AuthProvider] Fallback: Getting session...');
+    const { data: { session }, error } = await supabase.auth.getSession();
+    console.log('[AuthProvider] Fallback getSession result:', {
+      hasSession: !!session,
+      hasUser: !!session?.user,
+      error: error?.message,
+      authHandled
+    });
+
+    // If auth was handled while we were waiting, skip
+    if (authHandled) return;
+
+    if (error || !session?.user) {
+      console.log('[AuthProvider] No session in fallback');
+      onLoadingChange(false);
+      if (!useAppStore.getState().user) {
+        onRedirectToLogin();
+      }
+      return;
+    }
+
+    // Handle session from fallback
+    authHandled = true;
+    scheduleTokenRefresh(session);
+    const profile = await fetchUserProfile(session.user);
+    console.log('[AuthProvider] Fallback profile fetched:', { id: profile.id, role: profile.role });
+    onUserChange(profile);
+    onLoadingChange(false);
+  }, 100); // Small delay to let subscription fire first
 
   globalAuthSubscription = subscription;
 }
