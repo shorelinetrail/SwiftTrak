@@ -284,6 +284,11 @@ export default function GanttPage() {
     if (error) {
       toast.error('Failed to update task');
     } else {
+      // If dates changed, cascade to dependent tasks
+      if (updates.end_date) {
+        const newEndDate = new Date(updates.end_date);
+        await cascadeDependencyUpdates(taskId, newEndDate);
+      }
       toast.success('Task updated');
       setEditTaskModalOpen(false);
       fetchTasks();
@@ -310,7 +315,54 @@ export default function GanttPage() {
   const handleAddDependency = async (taskId: string, dependsOnId: string, dependencyType: GanttDependency['dependency_type']) => {
     const supabase = createClient();
 
-    const { error } = await supabase
+    // Get the predecessor task and the dependent task
+    const predecessorTask = tasks.find(t => t.id === dependsOnId);
+    const dependentTask = tasks.find(t => t.id === taskId);
+
+    if (!predecessorTask || !dependentTask) {
+      toast.error('Task not found');
+      return;
+    }
+
+    // Calculate required start date based on dependency type
+    let requiredStartDate: Date | null = null;
+    const predecessorStart = new Date(predecessorTask.start_date);
+    const predecessorEnd = new Date(predecessorTask.end_date);
+    const dependentStart = new Date(dependentTask.start_date);
+    const dependentEnd = new Date(dependentTask.end_date);
+    const dependentDuration = dependentEnd.getTime() - dependentStart.getTime();
+
+    switch (dependencyType) {
+      case 'finish_to_start':
+        // Dependent task starts after predecessor finishes
+        if (dependentStart < predecessorEnd) {
+          requiredStartDate = new Date(predecessorEnd);
+        }
+        break;
+      case 'start_to_start':
+        // Both tasks start at the same time
+        if (dependentStart < predecessorStart) {
+          requiredStartDate = new Date(predecessorStart);
+        }
+        break;
+      case 'finish_to_finish':
+        // Both tasks finish at the same time - adjust start based on duration
+        const requiredEnd = predecessorEnd;
+        const calculatedStart = new Date(requiredEnd.getTime() - dependentDuration);
+        if (dependentEnd < predecessorEnd) {
+          requiredStartDate = calculatedStart;
+        }
+        break;
+      case 'start_to_finish':
+        // Dependent finishes when predecessor starts
+        if (dependentEnd < predecessorStart) {
+          requiredStartDate = new Date(predecessorStart.getTime() - dependentDuration);
+        }
+        break;
+    }
+
+    // Insert the dependency
+    const { error: depError } = await supabase
       .from('gantt_dependencies')
       .insert({
         task_id: taskId,
@@ -318,11 +370,73 @@ export default function GanttPage() {
         dependency_type: dependencyType,
       });
 
-    if (error) {
+    if (depError) {
       toast.error('Failed to add dependency');
+      return;
+    }
+
+    // If we need to adjust the dependent task's dates
+    if (requiredStartDate) {
+      const newEndDate = new Date(requiredStartDate.getTime() + dependentDuration);
+      const { error: updateError } = await supabase
+        .from('gantt_tasks')
+        .update({
+          start_date: requiredStartDate.toISOString(),
+          end_date: newEndDate.toISOString(),
+        })
+        .eq('id', taskId);
+
+      if (updateError) {
+        toast.error('Dependency added but failed to adjust dates');
+      } else {
+        toast.success('Dependency added and schedule adjusted');
+        // Cascade to any tasks that depend on this one
+        await cascadeDependencyUpdates(taskId, newEndDate);
+      }
     } else {
       toast.success('Dependency added');
-      fetchTasks();
+    }
+
+    fetchTasks();
+  };
+
+  // Cascade date changes to dependent tasks
+  const cascadeDependencyUpdates = async (changedTaskId: string, newEndDate: Date) => {
+    const supabase = createClient();
+
+    // Find all tasks that depend on the changed task
+    const dependentDeps = allDependencies.filter(d => d.depends_on_id === changedTaskId);
+
+    for (const dep of dependentDeps) {
+      const dependentTask = tasks.find(t => t.id === dep.task_id);
+      if (!dependentTask) continue;
+
+      const dependentStart = new Date(dependentTask.start_date);
+      const dependentEnd = new Date(dependentTask.end_date);
+      const duration = dependentEnd.getTime() - dependentStart.getTime();
+
+      let newStart: Date | null = null;
+
+      if (dep.dependency_type === 'finish_to_start' && dependentStart < newEndDate) {
+        newStart = new Date(newEndDate);
+      } else if (dep.dependency_type === 'start_to_start') {
+        // Would need the new start date of predecessor, not end
+        continue;
+      }
+
+      if (newStart) {
+        const newDepEnd = new Date(newStart.getTime() + duration);
+        await supabase
+          .from('gantt_tasks')
+          .update({
+            start_date: newStart.toISOString(),
+            end_date: newDepEnd.toISOString(),
+          })
+          .eq('id', dep.task_id);
+
+        // Recursively cascade
+        await cascadeDependencyUpdates(dep.task_id, newDepEnd);
+      }
     }
   };
 
