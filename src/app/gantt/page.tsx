@@ -250,30 +250,54 @@ export default function GanttPage() {
     return { left: `${left}%`, width: `${width}%` };
   };
 
-  // Calculate today line position with UK time accuracy
+  // Calculate today line position
   const todayPosition = useMemo(() => {
-    // Get current time in UK timezone
-    const now = new Date();
-    const ukTimeStr = now.toLocaleString('en-GB', { timeZone: 'Europe/London' });
-    // Parse UK time string back to get hours/minutes for fractional day calculation
-    const [datePart, timePart] = ukTimeStr.split(', ');
-    const [day, month, year] = datePart.split('/').map(Number);
-    const [hours, minutes] = timePart.split(':').map(Number);
+    try {
+      // Get current date components in UK timezone using Intl API
+      const now = new Date();
+      const ukFormatter = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Europe/London',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      });
 
-    // Calculate fractional hours through the day (0-24)
-    const fractionalHours = hours + minutes / 60;
-    const dayFraction = fractionalHours / 24;
+      const parts = ukFormatter.formatToParts(now);
+      const getPart = (type: string) => parseInt(parts.find(p => p.type === type)?.value || '0', 10);
 
-    // Get the start of today in UK time
-    const todayStart = new Date(year, month - 1, day, 0, 0, 0, 0);
-    const startDate = new Date(dateRange.start);
-    startDate.setHours(0, 0, 0, 0);
+      const year = getPart('year');
+      const month = getPart('month');
+      const day = getPart('day');
+      const hours = getPart('hour');
+      const minutes = getPart('minute');
 
-    // Calculate days from start, adding the fractional day for current time
-    const daysDiff = Math.floor((todayStart.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-    const offset = daysDiff + dayFraction;
-    const percentage = (offset / daysBetween) * 100;
-    return percentage >= 0 && percentage <= 100 ? percentage : null;
+      // Calculate fractional hours through the day (0-24)
+      const fractionalHours = hours + minutes / 60;
+      const dayFraction = fractionalHours / 24;
+
+      // Get the start of today in local time (for comparison with dateRange)
+      const todayStart = new Date(year, month - 1, day, 0, 0, 0, 0);
+      const startDate = new Date(dateRange.start);
+      startDate.setHours(0, 0, 0, 0);
+
+      // Calculate days from start, adding the fractional day for current time
+      const daysDiff = Math.floor((todayStart.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+      const offset = daysDiff + dayFraction;
+      const percentage = (offset / daysBetween) * 100;
+      return percentage >= 0 && percentage <= 100 ? percentage : null;
+    } catch {
+      // Fallback to simple calculation if Intl API fails
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const startDate = new Date(dateRange.start);
+      startDate.setHours(0, 0, 0, 0);
+      const offset = (today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
+      const percentage = (offset / daysBetween) * 100;
+      return percentage >= 0 && percentage <= 100 ? percentage : null;
+    }
   }, [dateRange.start, daysBetween]);
 
   // Calculate zoom-based intervals for date header
