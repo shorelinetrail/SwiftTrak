@@ -29,6 +29,7 @@ let authHandled = false; // Track if we've already processed auth
 
 // Fetch user profile from database, with fallback to auth metadata
 async function fetchUserProfile(authUser: AuthUser): Promise<User> {
+  console.log('[fetchUserProfile] Starting for user:', authUser.id);
   const supabase = createClient();
 
   const defaultUser: User = {
@@ -42,14 +43,34 @@ async function fetchUserProfile(authUser: AuthUser): Promise<User> {
   };
 
   try {
-    const { data: profile } = await supabase
+    console.log('[fetchUserProfile] Querying database...');
+
+    // Add timeout to prevent hanging - return default user if query takes too long
+    const queryPromise = supabase
       .from('users')
       .select('*')
       .eq('id', authUser.id)
       .single();
 
-    return (profile as User) || defaultUser;
-  } catch {
+    const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((resolve) => {
+      setTimeout(() => {
+        console.log('[fetchUserProfile] Query timeout after 3s');
+        resolve({ data: null, error: { message: 'Query timeout' } });
+      }, 3000);
+    });
+
+    const { data: profile, error } = await Promise.race([queryPromise, timeoutPromise]);
+
+    console.log('[fetchUserProfile] Query result:', { hasProfile: !!profile, error: error?.message });
+
+    if (error || !profile) {
+      console.log('[fetchUserProfile] Using default user due to:', error?.message || 'no profile');
+      return defaultUser;
+    }
+
+    return profile as User;
+  } catch (err) {
+    console.error('[fetchUserProfile] Error:', err);
     return defaultUser;
   }
 }
@@ -99,36 +120,44 @@ function initializeGlobalAuth(
     async (event, session) => {
       console.log('[AuthProvider] onAuthStateChange:', event, { hasSession: !!session, authHandled });
 
-      if (event === 'SIGNED_OUT') {
-        console.log('[AuthProvider] SIGNED_OUT - clearing user');
-        authHandled = false;
-        if (globalRefreshTimer) {
-          clearTimeout(globalRefreshTimer);
-        }
-        onUserChange(null);
-        onLoadingChange(false);
-        onRedirectToLogin();
-      } else if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session?.user) {
-        // Skip if we've already handled auth
-        if (authHandled && useAppStore.getState().user) {
-          console.log('[AuthProvider] Auth already handled, skipping');
-          return;
-        }
-        console.log('[AuthProvider] Processing auth event:', event);
-        authHandled = true;
-        scheduleTokenRefresh(session);
-        const profile = await fetchUserProfile(session.user);
-        console.log('[AuthProvider] Profile fetched:', { id: profile.id, role: profile.role });
-        onUserChange(profile);
-        onLoadingChange(false);
-      } else if (event === 'TOKEN_REFRESHED' && session?.user) {
-        console.log('[AuthProvider] TOKEN_REFRESHED');
-        scheduleTokenRefresh(session);
-        const currentUser = useAppStore.getState().user;
-        if (currentUser?.id === session.user.id) {
+      try {
+        if (event === 'SIGNED_OUT') {
+          console.log('[AuthProvider] SIGNED_OUT - clearing user');
+          authHandled = false;
+          if (globalRefreshTimer) {
+            clearTimeout(globalRefreshTimer);
+          }
+          onUserChange(null);
+          onLoadingChange(false);
+          onRedirectToLogin();
+        } else if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session?.user) {
+          // Skip if we've already handled auth
+          if (authHandled && useAppStore.getState().user) {
+            console.log('[AuthProvider] Auth already handled, skipping');
+            return;
+          }
+          console.log('[AuthProvider] Processing auth event:', event);
+          authHandled = true;
+          scheduleTokenRefresh(session);
+          console.log('[AuthProvider] About to fetch profile for:', session.user.id);
           const profile = await fetchUserProfile(session.user);
+          console.log('[AuthProvider] Profile fetched:', { id: profile.id, role: profile.role, email: profile.email });
           onUserChange(profile);
+          console.log('[AuthProvider] User set, setting loading=false');
+          onLoadingChange(false);
+        } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+          console.log('[AuthProvider] TOKEN_REFRESHED');
+          scheduleTokenRefresh(session);
+          const currentUser = useAppStore.getState().user;
+          if (currentUser?.id === session.user.id) {
+            const profile = await fetchUserProfile(session.user);
+            onUserChange(profile);
+          }
         }
+      } catch (error) {
+        console.error('[AuthProvider] Error in auth handler:', error);
+        // On error, still set loading to false to prevent infinite spinner
+        onLoadingChange(false);
       }
     }
   );
