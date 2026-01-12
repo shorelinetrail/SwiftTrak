@@ -456,6 +456,88 @@ export default function GanttPage() {
     }
   };
 
+  const handleUpdateDependency = async (dependencyId: string, newType: GanttDependency['dependency_type']) => {
+    const supabase = createClient();
+
+    // Get the dependency to find the related tasks
+    const dep = allDependencies.find(d => d.id === dependencyId);
+    if (!dep) {
+      toast.error('Dependency not found');
+      return;
+    }
+
+    const predecessorTask = tasks.find(t => t.id === dep.depends_on_id);
+    const dependentTask = tasks.find(t => t.id === dep.task_id);
+
+    if (!predecessorTask || !dependentTask) {
+      toast.error('Related tasks not found');
+      return;
+    }
+
+    // Update the dependency type
+    const { error } = await supabase
+      .from('gantt_dependencies')
+      .update({ dependency_type: newType })
+      .eq('id', dependencyId);
+
+    if (error) {
+      toast.error('Failed to update dependency');
+      return;
+    }
+
+    // Recalculate dates based on new dependency type
+    let requiredStartDate: Date | null = null;
+    const predecessorStart = new Date(predecessorTask.start_date);
+    const predecessorEnd = new Date(predecessorTask.end_date);
+    const dependentStart = new Date(dependentTask.start_date);
+    const dependentEnd = new Date(dependentTask.end_date);
+    const dependentDuration = dependentEnd.getTime() - dependentStart.getTime();
+
+    switch (newType) {
+      case 'finish_to_start':
+        if (dependentStart < predecessorEnd) {
+          requiredStartDate = new Date(predecessorEnd);
+        }
+        break;
+      case 'start_to_start':
+        if (dependentStart < predecessorStart) {
+          requiredStartDate = new Date(predecessorStart);
+        }
+        break;
+      case 'finish_to_finish':
+        const requiredEnd = predecessorEnd;
+        const calculatedStart = new Date(requiredEnd.getTime() - dependentDuration);
+        if (dependentEnd < predecessorEnd) {
+          requiredStartDate = calculatedStart;
+        }
+        break;
+      case 'start_to_finish':
+        if (dependentEnd < predecessorStart) {
+          requiredStartDate = new Date(predecessorStart.getTime() - dependentDuration);
+        }
+        break;
+    }
+
+    // Adjust dates if needed
+    if (requiredStartDate) {
+      const newEndDate = new Date(requiredStartDate.getTime() + dependentDuration);
+      await supabase
+        .from('gantt_tasks')
+        .update({
+          start_date: requiredStartDate.toISOString(),
+          end_date: newEndDate.toISOString(),
+        })
+        .eq('id', dep.task_id);
+
+      await cascadeDependencyUpdates(dep.task_id, newEndDate);
+      toast.success('Dependency updated and schedule adjusted');
+    } else {
+      toast.success('Dependency updated');
+    }
+
+    fetchTasks();
+  };
+
   const handleAddMilestone = async (data: Partial<Milestone>) => {
     const supabase = createClient();
 
@@ -946,6 +1028,7 @@ export default function GanttPage() {
           allTasks={tasks}
           onDependencyAdd={handleAddDependency}
           onDependencyRemove={handleRemoveDependency}
+          onDependencyUpdate={handleUpdateDependency}
         />
       )}
 
@@ -993,7 +1076,9 @@ function TaskModal({
   allTasks?: GanttTaskWithRelations[];
   onDependencyAdd?: (taskId: string, dependsOnId: string, type: GanttDependency['dependency_type']) => void;
   onDependencyRemove?: (dependencyId: string) => void;
+  onDependencyUpdate?: (dependencyId: string, newType: GanttDependency['dependency_type']) => void;
 }) {
+  const [editingDependency, setEditingDependency] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     title: task?.title || '',
     workstream_id: task?.workstream_id || '',
@@ -1156,26 +1241,63 @@ function TaskModal({
               <div className="space-y-2 mb-4">
                 {task.dependencies.map((dep) => {
                   const dependsOnTask = allTasks?.find(t => t.id === dep.depends_on_id);
+                  const isEditing = editingDependency === dep.id;
+
                   return (
                     <div
                       key={dep.id}
                       className="flex items-center justify-between p-2 bg-gray-50 rounded-lg text-sm"
                     >
-                      <div className="flex items-center gap-2">
-                        <LinkIcon className="w-4 h-4 text-blue-500" />
+                      <div className="flex items-center gap-2 flex-1">
+                        <LinkIcon className="w-4 h-4 text-blue-500 flex-shrink-0" />
                         <span className="font-medium">{dependsOnTask?.title || 'Unknown task'}</span>
-                        <span className="text-gray-500 text-xs">
-                          ({dep.dependency_type.replace(/_/g, ' ')})
-                        </span>
+                        {isEditing && onDependencyUpdate ? (
+                          <Select
+                            label=""
+                            className="w-40"
+                            options={[
+                              { value: 'finish_to_start', label: 'Finish → Start' },
+                              { value: 'start_to_start', label: 'Start → Start' },
+                              { value: 'finish_to_finish', label: 'Finish → Finish' },
+                              { value: 'start_to_finish', label: 'Start → Finish' },
+                            ]}
+                            value={dep.dependency_type}
+                            onChange={(value) => {
+                              onDependencyUpdate(dep.id, value as GanttDependency['dependency_type']);
+                              setEditingDependency(null);
+                            }}
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            className="text-gray-500 text-xs hover:text-blue-600 hover:underline cursor-pointer"
+                            onClick={() => setEditingDependency(dep.id)}
+                            title="Click to change dependency type"
+                          >
+                            ({dep.dependency_type.replace(/_/g, ' ')})
+                          </button>
+                        )}
                       </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onDependencyRemove(dep.id)}
-                      >
-                        <TrashIcon className="w-4 h-4 text-red-500" />
-                      </Button>
+                      <div className="flex gap-1">
+                        {isEditing && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditingDependency(null)}
+                          >
+                            Cancel
+                          </Button>
+                        )}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onDependencyRemove(dep.id)}
+                        >
+                          <TrashIcon className="w-4 h-4 text-red-500" />
+                        </Button>
+                      </div>
                     </div>
                   );
                 })}
