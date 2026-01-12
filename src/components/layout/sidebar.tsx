@@ -16,6 +16,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   BellIcon,
+  SwatchIcon,
 } from '@heroicons/react/24/outline';
 import { Avatar } from '../ui/avatar';
 
@@ -29,6 +30,10 @@ const navigation = [
   { name: 'Gantt Chart', href: '/gantt', icon: ChartBarIcon },
 ];
 
+const editNavigation = [
+  { name: 'Workstreams', href: '/workstreams', icon: SwatchIcon },
+];
+
 const adminNavigation = [
   { name: 'Admin Settings', href: '/admin', icon: Cog6ToothIcon },
 ];
@@ -38,6 +43,7 @@ export function Sidebar() {
   const { user, sidebarOpen, setSidebarOpen, unreadCount } = useAppStore();
 
   const isAdmin = user?.role === 'admin';
+  const canEdit = user?.role === 'admin' || user?.role === 'edit';
 
   return (
     <aside
@@ -93,13 +99,32 @@ export function Sidebar() {
             })}
           </ul>
 
-          {isAdmin && (
+          {canEdit && (
             <>
               <div className="my-4 px-3">
                 <div className="border-t border-gray-800" />
               </div>
               <ul className="space-y-1 px-3">
-                {adminNavigation.map((item) => {
+                {editNavigation.map((item) => {
+                  const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+                  return (
+                    <li key={item.name}>
+                      <Link
+                        href={item.href}
+                        className={cn(
+                          'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors',
+                          isActive
+                            ? 'bg-red-600 text-white'
+                            : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                        )}
+                      >
+                        <item.icon className="w-5 h-5 flex-shrink-0" />
+                        {sidebarOpen && <span className="text-sm font-medium">{item.name}</span>}
+                      </Link>
+                    </li>
+                  );
+                })}
+                {isAdmin && adminNavigation.map((item) => {
                   const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
                   return (
                     <li key={item.name}>
