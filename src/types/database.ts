@@ -189,6 +189,28 @@ export interface GanttTaskComment {
   user?: User;
 }
 
+export interface GanttView {
+  id: string;
+  name: string;
+  user_id: string;
+  filters: {
+    workstream_ids?: string[];
+    assignee_ids?: string[];
+    show_completed?: boolean;
+    date_range?: { start: string; end: string };
+  };
+  settings: {
+    zoom_level?: 'day' | 'week' | 'month';
+    show_critical_path?: boolean;
+    show_dependencies?: boolean;
+    show_milestones?: boolean;
+    show_uncertainty?: boolean;
+  };
+  is_default?: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Attachment {
   id: string;
   entity_type: 'action' | 'threat' | 'query' | 'decision' | 'milestone';

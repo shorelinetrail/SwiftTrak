@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
 // import { useRealtime } from '@/hooks/use-realtime';
@@ -29,8 +29,11 @@ import {
   TrashIcon,
   FlagIcon,
   ChatBubbleLeftIcon,
+  FunnelIcon,
+  BookmarkIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
-import type { GanttTask, GanttDependency, GanttTaskComment, Workstream, User, Milestone } from '@/types/database';
+import type { GanttTask, GanttDependency, GanttTaskComment, GanttView, Workstream, User, Milestone } from '@/types/database';
 
 type GanttTaskWithRelations = GanttTask & {
   workstream?: Workstream;
@@ -71,6 +74,18 @@ export default function GanttPage() {
     start: new Date(),
     end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
   });
+
+  // Filter state
+  const [filterWorkstreams, setFilterWorkstreams] = useState<string[]>([]);
+  const [filterAssignees, setFilterAssignees] = useState<string[]>([]);
+  const [showCompleted, setShowCompleted] = useState(true);
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Saved views state
+  const [savedViews, setSavedViews] = useState<GanttView[]>([]);
+  const [activeViewId, setActiveViewId] = useState<string | null>(null);
+  const [saveViewModalOpen, setSaveViewModalOpen] = useState(false);
+  const [newViewName, setNewViewName] = useState('');
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -197,12 +212,142 @@ export default function GanttPage() {
     fetchTasks();
   }, [fetchTasks]);
 
+  // Fetch saved views
+  const fetchSavedViews = useCallback(async () => {
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('gantt_views')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!error && data) {
+        setSavedViews(data as GanttView[]);
+      }
+    } catch (error) {
+      console.error('Error fetching saved views:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSavedViews();
+  }, [fetchSavedViews]);
+
+  // Save current view
+  const handleSaveView = async () => {
+    if (!newViewName.trim()) {
+      toast.error('Please enter a view name');
+      return;
+    }
+
+    try {
+      const supabase = createClient();
+      const viewData = {
+        name: newViewName.trim(),
+        filters: {
+          workstream_ids: filterWorkstreams,
+          assignee_ids: filterAssignees,
+          show_completed: showCompleted,
+        },
+        settings: {
+          zoom_level: zoomLevel,
+          show_critical_path: showCriticalPath,
+          show_dependencies: showDependencies,
+          show_milestones: showMilestones,
+          show_uncertainty: showUncertainty,
+        },
+      };
+
+      const { error } = await supabase
+        .from('gantt_views')
+        .insert(viewData);
+
+      if (error) {
+        toast.error('Failed to save view');
+      } else {
+        toast.success('View saved');
+        setSaveViewModalOpen(false);
+        setNewViewName('');
+        fetchSavedViews();
+      }
+    } catch (error) {
+      console.error('Error saving view:', error);
+      toast.error('Failed to save view');
+    }
+  };
+
+  // Load a saved view
+  const handleLoadView = (view: GanttView) => {
+    setActiveViewId(view.id);
+    if (view.filters.workstream_ids) setFilterWorkstreams(view.filters.workstream_ids);
+    if (view.filters.assignee_ids) setFilterAssignees(view.filters.assignee_ids);
+    if (view.filters.show_completed !== undefined) setShowCompleted(view.filters.show_completed);
+    if (view.settings.zoom_level) setZoomLevel(view.settings.zoom_level);
+    if (view.settings.show_critical_path !== undefined) setShowCriticalPath(view.settings.show_critical_path);
+    if (view.settings.show_dependencies !== undefined) setShowDependencies(view.settings.show_dependencies);
+    if (view.settings.show_milestones !== undefined) setShowMilestones(view.settings.show_milestones);
+    if (view.settings.show_uncertainty !== undefined) setShowUncertainty(view.settings.show_uncertainty);
+    toast.success(`Loaded view: ${view.name}`);
+  };
+
+  // Delete a saved view
+  const handleDeleteView = async (viewId: string) => {
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('gantt_views')
+        .delete()
+        .eq('id', viewId);
+
+      if (error) {
+        toast.error('Failed to delete view');
+      } else {
+        toast.success('View deleted');
+        if (activeViewId === viewId) setActiveViewId(null);
+        fetchSavedViews();
+      }
+    } catch (error) {
+      console.error('Error deleting view:', error);
+      toast.error('Failed to delete view');
+    }
+  };
+
+  // Clear all filters
+  const handleClearFilters = () => {
+    setFilterWorkstreams([]);
+    setFilterAssignees([]);
+    setShowCompleted(true);
+    setActiveViewId(null);
+  };
+
+  // Check if any filters are active
+  const hasActiveFilters = filterWorkstreams.length > 0 || filterAssignees.length > 0 || !showCompleted;
+
   // useRealtime({
   //   table: 'gantt_tasks',
   //   onInsert: () => fetchTasks(),
   //   onUpdate: () => fetchTasks(),
   //   onDelete: () => fetchTasks(),
   // });
+
+  // Apply filters to tasks
+  const filteredTasks = useMemo(() => {
+    return tasks.filter(task => {
+      // Filter by workstream
+      if (filterWorkstreams.length > 0 && task.workstream_id && !filterWorkstreams.includes(task.workstream_id)) {
+        return false;
+      }
+      // Filter by assignee
+      if (filterAssignees.length > 0 && task.assigned_to && !filterAssignees.includes(task.assigned_to)) {
+        return false;
+      }
+      // Filter completed tasks
+      if (!showCompleted && task.progress === 100) {
+        return false;
+      }
+      return true;
+    });
+  }, [tasks, filterWorkstreams, filterAssignees, showCompleted]);
 
   const criticalPath = useMemo(() => {
     console.log('[GanttPage] criticalPath useMemo - tasks:', tasks.length);
@@ -994,6 +1139,28 @@ export default function GanttPage() {
     }
   };
 
+  // Handle drag-to-reschedule task
+  const handleDragTask = async (taskId: string, newStartDate: Date, newEndDate: Date) => {
+    const supabase = createClient();
+
+    const { error } = await supabase
+      .from('gantt_tasks')
+      .update({
+        start_date: newStartDate.toISOString(),
+        end_date: newEndDate.toISOString(),
+      })
+      .eq('id', taskId);
+
+    if (error) {
+      toast.error('Failed to reschedule task');
+    } else {
+      toast.success('Task rescheduled');
+      // Cascade to dependent tasks
+      await cascadeDependencyUpdates(taskId, newEndDate, newStartDate);
+      fetchTasks();
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen">
@@ -1326,6 +1493,10 @@ export default function GanttPage() {
                         setEditTaskModalOpen(true);
                       }}
                       todayPosition={todayPosition}
+                      onDrag={handleDragTask}
+                      dateRange={dateRange}
+                      daysBetween={daysBetween}
+                      canEdit={canEdit}
                     />
                   ))}
 
@@ -1375,6 +1546,10 @@ export default function GanttPage() {
                             setEditTaskModalOpen(true);
                           }}
                           todayPosition={todayPosition}
+                          onDrag={handleDragTask}
+                          dateRange={dateRange}
+                          daysBetween={daysBetween}
+                          canEdit={canEdit}
                         />
                       ))}
                     </div>
