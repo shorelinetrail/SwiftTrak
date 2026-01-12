@@ -45,6 +45,7 @@ CREATE TABLE workstreams (
     description TEXT,
     color TEXT NOT NULL DEFAULT '#dc2626',
     order_index INTEGER NOT NULL DEFAULT 0,
+    parent_id UUID REFERENCES workstreams(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_by UUID REFERENCES users(id) ON DELETE SET NULL

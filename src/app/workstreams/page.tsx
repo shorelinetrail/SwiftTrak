@@ -16,7 +16,10 @@ import {
   PencilIcon,
   TrashIcon,
   SwatchIcon,
+  ChevronRightIcon,
 } from '@heroicons/react/24/outline';
+import { Select } from '@/components/ui/select';
+import { useMemo } from 'react';
 import type { User, Workstream } from '@/types/database';
 
 export default function WorkstreamsPage() {
@@ -137,6 +140,22 @@ export default function WorkstreamsPage() {
     }
   }, [setWorkstreams]);
 
+  // Organize workstreams into hierarchy
+  const workstreamHierarchy = useMemo(() => {
+    const rootWorkstreams = workstreams.filter(ws => !ws.parent_id);
+    const childrenMap = new Map<string, Workstream[]>();
+
+    workstreams.forEach(ws => {
+      if (ws.parent_id) {
+        const existing = childrenMap.get(ws.parent_id) || [];
+        existing.push(ws);
+        childrenMap.set(ws.parent_id, existing);
+      }
+    });
+
+    return { rootWorkstreams, childrenMap };
+  }, [workstreams]);
+
   const handleCreateWorkstream = async (data: Partial<Workstream>) => {
     console.log('[WorkstreamsPage] handleCreateWorkstream called with:', data);
     const supabase = createClient();
@@ -146,6 +165,7 @@ export default function WorkstreamsPage() {
       description: data.description,
       color: data.color || '#dc2626',
       order_index: workstreams.length,
+      parent_id: data.parent_id || null,
     };
     console.log('[WorkstreamsPage] Inserting workstream:', insertData);
 
@@ -245,46 +265,112 @@ export default function WorkstreamsPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {workstreams.map((workstream) => (
-                <div
-                  key={workstream.id}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="w-4 h-4 rounded-full"
-                      style={{ backgroundColor: workstream.color }}
-                    />
-                    <div>
-                      <p className="font-medium text-gray-900">{workstream.name}</p>
-                      {workstream.description && (
-                        <p className="text-sm text-gray-500">{workstream.description}</p>
-                      )}
+              {workstreamHierarchy.rootWorkstreams.map((workstream) => {
+                const children = workstreamHierarchy.childrenMap.get(workstream.id) || [];
+                return (
+                  <div key={workstream.id}>
+                    {/* Parent Workstream */}
+                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-4 h-4 rounded-full"
+                          style={{ backgroundColor: workstream.color }}
+                        />
+                        <div>
+                          <p className="font-medium text-gray-900">{workstream.name}</p>
+                          {workstream.description && (
+                            <p className="text-sm text-gray-500">{workstream.description}</p>
+                          )}
+                        </div>
+                        {children.length > 0 && (
+                          <span className="text-xs text-gray-400 ml-2">
+                            ({children.length} sub-workstream{children.length !== 1 ? 's' : ''})
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Add sub-workstream"
+                          onClick={() => {
+                            setSelectedWorkstream({ parent_id: workstream.id } as Workstream);
+                            setWorkstreamModalOpen(true);
+                          }}
+                        >
+                          <PlusIcon className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedWorkstream(workstream);
+                            setWorkstreamModalOpen(true);
+                          }}
+                        >
+                          <PencilIcon className="w-4 h-4" />
+                        </Button>
+                        {isAdmin && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteWorkstream(workstream.id)}
+                          >
+                            <TrashIcon className="w-4 h-4 text-red-500" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedWorkstream(workstream);
-                        setWorkstreamModalOpen(true);
-                      }}
-                    >
-                      <PencilIcon className="w-4 h-4" />
-                    </Button>
-                    {isAdmin && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDeleteWorkstream(workstream.id)}
-                      >
-                        <TrashIcon className="w-4 h-4 text-red-500" />
-                      </Button>
+
+                    {/* Child Workstreams (Sub-workstreams) */}
+                    {children.length > 0 && (
+                      <div className="ml-6 mt-2 space-y-2 border-l-2 border-gray-200 pl-4">
+                        {children.map((child) => (
+                          <div
+                            key={child.id}
+                            className="flex items-center justify-between p-2 bg-gray-50 rounded-lg"
+                          >
+                            <div className="flex items-center gap-3">
+                              <ChevronRightIcon className="w-3 h-3 text-gray-400" />
+                              <div
+                                className="w-3 h-3 rounded-full"
+                                style={{ backgroundColor: child.color }}
+                              />
+                              <div>
+                                <p className="text-sm font-medium text-gray-900">{child.name}</p>
+                                {child.description && (
+                                  <p className="text-xs text-gray-500">{child.description}</p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedWorkstream(child);
+                                  setWorkstreamModalOpen(true);
+                                }}
+                              >
+                                <PencilIcon className="w-3 h-3" />
+                              </Button>
+                              {isAdmin && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDeleteWorkstream(child.id)}
+                                >
+                                  <TrashIcon className="w-3 h-3 text-red-500" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
               {workstreams.length === 0 && (
                 <p className="text-center text-gray-500 py-8">
                   No workstreams configured. Add workstreams to organize your crisis response.
@@ -303,8 +389,9 @@ export default function WorkstreamsPage() {
           setSelectedWorkstream(null);
         }}
         workstream={selectedWorkstream}
+        allWorkstreams={workstreams}
         onSave={(data) => {
-          if (selectedWorkstream) {
+          if (selectedWorkstream?.id) {
             handleUpdateWorkstream(selectedWorkstream.id, data);
           } else {
             handleCreateWorkstream(data);
@@ -319,30 +406,61 @@ function WorkstreamModal({
   open,
   onClose,
   workstream,
+  allWorkstreams,
   onSave,
 }: {
   open: boolean;
   onClose: () => void;
   workstream: Workstream | null;
+  allWorkstreams: Workstream[];
   onSave: (data: Partial<Workstream>) => void;
 }) {
   const [formData, setFormData] = useState({
     name: workstream?.name || '',
     description: workstream?.description || '',
     color: workstream?.color || '#dc2626',
+    parent_id: workstream?.parent_id || '',
   });
 
+  // Get only root workstreams (no parent) for parent selection
+  // Exclude current workstream and its children from selection
+  const availableParents = useMemo(() => {
+    return allWorkstreams.filter(ws =>
+      !ws.parent_id && // Only root workstreams can be parents
+      ws.id !== workstream?.id // Can't be parent of itself
+    );
+  }, [allWorkstreams, workstream]);
+
+  const isEditing = workstream?.id;
+  const isCreatingSubworkstream = !workstream?.id && workstream?.parent_id;
+
   useEffect(() => {
-    if (workstream) {
+    if (workstream?.id) {
+      // Editing existing workstream
       setFormData({
         name: workstream.name,
         description: workstream.description || '',
         color: workstream.color,
+        parent_id: workstream.parent_id || '',
+      });
+    } else if (workstream?.parent_id) {
+      // Creating new sub-workstream
+      const parent = allWorkstreams.find(ws => ws.id === workstream.parent_id);
+      setFormData({
+        name: '',
+        description: '',
+        color: parent?.color || '#dc2626',
+        parent_id: workstream.parent_id,
       });
     } else {
-      setFormData({ name: '', description: '', color: '#dc2626' });
+      // Creating new root workstream
+      setFormData({ name: '', description: '', color: '#dc2626', parent_id: '' });
     }
-  }, [workstream]);
+  }, [workstream, allWorkstreams]);
+
+  const parentWorkstream = formData.parent_id
+    ? allWorkstreams.find(ws => ws.id === formData.parent_id)
+    : null;
 
   const colors = [
     '#dc2626', '#ea580c', '#d97706', '#ca8a04', '#65a30d',
@@ -351,18 +469,36 @@ function WorkstreamModal({
     '#db2777', '#e11d48',
   ];
 
+  const getModalTitle = () => {
+    if (isEditing) return 'Edit Workstream';
+    if (isCreatingSubworkstream) return 'Add Sub-workstream';
+    return 'Add Workstream';
+  };
+
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title={workstream ? 'Edit Workstream' : 'Add Workstream'}
+      title={getModalTitle()}
     >
       <div className="space-y-4">
+        {/* Show parent info if creating sub-workstream */}
+        {parentWorkstream && (
+          <div className="flex items-center gap-2 p-2 bg-gray-100 rounded-lg text-sm">
+            <span className="text-gray-500">Parent:</span>
+            <div
+              className="w-3 h-3 rounded-full"
+              style={{ backgroundColor: parentWorkstream.color }}
+            />
+            <span className="font-medium">{parentWorkstream.name}</span>
+          </div>
+        )}
+
         <Input
           label="Name"
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          placeholder="e.g., Mechanical, Electrical, Operations"
+          placeholder={isCreatingSubworkstream ? "e.g., Electrical Systems, HVAC" : "e.g., Mechanical, Electrical, Operations"}
           required
         />
         <Textarea
@@ -372,6 +508,20 @@ function WorkstreamModal({
           placeholder="Brief description of this workstream"
           rows={2}
         />
+
+        {/* Parent selector - only show when not creating a sub-workstream */}
+        {!isCreatingSubworkstream && availableParents.length > 0 && (
+          <Select
+            label="Parent Workstream (Optional)"
+            options={[
+              { value: '', label: 'None (Root workstream)' },
+              ...availableParents.map(ws => ({ value: ws.id, label: ws.name })),
+            ]}
+            value={formData.parent_id}
+            onChange={(value) => setFormData({ ...formData, parent_id: value })}
+          />
+        )}
+
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Color</label>
           <div className="flex flex-wrap gap-2">
@@ -394,7 +544,7 @@ function WorkstreamModal({
           Cancel
         </Button>
         <Button onClick={() => onSave(formData)}>
-          {workstream ? 'Save Changes' : 'Create Workstream'}
+          {isEditing ? 'Save Changes' : isCreatingSubworkstream ? 'Create Sub-workstream' : 'Create Workstream'}
         </Button>
       </div>
     </Modal>

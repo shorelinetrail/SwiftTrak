@@ -28,9 +28,13 @@ export interface Workstream {
   description?: string;
   color: string;
   order_index: number;
+  parent_id?: string;
   created_at: string;
   updated_at: string;
   created_by: string;
+  // Joined/computed fields
+  parent?: Workstream;
+  children?: Workstream[];
 }
 
 export interface Action {

@@ -24,6 +24,9 @@ import {
   ExclamationTriangleIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  ChevronDownIcon,
+  LinkIcon,
+  TrashIcon,
 } from '@heroicons/react/24/outline';
 import type { GanttTask, GanttDependency, Workstream, User } from '@/types/database';
 
@@ -43,6 +46,8 @@ export default function GanttPage() {
   const [viewMode, setViewMode] = useState<'gantt' | 'resource'>('gantt');
   const [showCriticalPath, setShowCriticalPath] = useState(true);
   const [showUncertainty, setShowUncertainty] = useState(false);
+  const [showDependencies, setShowDependencies] = useState(true);
+  const [allDependencies, setAllDependencies] = useState<GanttDependency[]>([]);
 
   const [addTaskModalOpen, setAddTaskModalOpen] = useState(false);
   const [editTaskModalOpen, setEditTaskModalOpen] = useState(false);
@@ -81,6 +86,7 @@ export default function GanttPage() {
         }));
 
         setTasks(tasksWithDeps as unknown as GanttTaskWithRelations[]);
+        setAllDependencies((depsData || []) as GanttDependency[]);
 
         // Calculate date range from tasks
         if (tasksWithDeps.length > 0) {
@@ -126,6 +132,70 @@ export default function GanttPage() {
     if (!showCriticalPath || tasks.length === 0) return [];
     return calculateCriticalPath(tasks);
   }, [tasks, showCriticalPath]);
+
+  // Group tasks by workstream with hierarchy support
+  const tasksByWorkstream = useMemo(() => {
+    const grouped = new Map<string, GanttTaskWithRelations[]>();
+    const unassigned: GanttTaskWithRelations[] = [];
+
+    tasks.forEach(task => {
+      if (task.workstream_id && task.workstream) {
+        const existing = grouped.get(task.workstream_id) || [];
+        existing.push(task);
+        grouped.set(task.workstream_id, existing);
+      } else {
+        unassigned.push(task);
+      }
+    });
+
+    // Build hierarchy: parent workstreams with their children
+    type WorkstreamGroup = {
+      workstream: Workstream | null;
+      tasks: GanttTaskWithRelations[];
+      isSubworkstream?: boolean;
+      children?: WorkstreamGroup[];
+    };
+
+    const result: WorkstreamGroup[] = [];
+    const rootWorkstreams = workstreams.filter(ws => !ws.parent_id);
+    const childrenMap = new Map<string, Workstream[]>();
+
+    workstreams.forEach(ws => {
+      if (ws.parent_id) {
+        const existing = childrenMap.get(ws.parent_id) || [];
+        existing.push(ws);
+        childrenMap.set(ws.parent_id, existing);
+      }
+    });
+
+    rootWorkstreams.forEach(ws => {
+      const wsTasks = grouped.get(ws.id) || [];
+      const children = childrenMap.get(ws.id) || [];
+
+      // Add parent workstream with its tasks
+      if (wsTasks.length > 0 || children.some(c => (grouped.get(c.id) || []).length > 0)) {
+        const childGroups: WorkstreamGroup[] = children
+          .filter(c => (grouped.get(c.id) || []).length > 0)
+          .map(c => ({
+            workstream: c,
+            tasks: grouped.get(c.id) || [],
+            isSubworkstream: true,
+          }));
+
+        result.push({
+          workstream: ws,
+          tasks: wsTasks,
+          children: childGroups,
+        });
+      }
+    });
+
+    if (unassigned.length > 0) {
+      result.push({ workstream: null, tasks: unassigned });
+    }
+
+    return result;
+  }, [tasks, workstreams]);
 
   const daysBetween = Math.ceil(
     (dateRange.end.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60 * 24)
@@ -359,85 +429,89 @@ export default function GanttPage() {
               </div>
             </div>
 
-            {/* Tasks */}
+            {/* Tasks grouped by workstream */}
             <div>
-              {tasks.map((task) => {
-                const position = getTaskPosition(task);
-                const isCritical = criticalPath.includes(task.id);
-                const pert = task.optimistic_duration && task.pessimistic_duration && task.most_likely_duration
-                  ? calculatePERT(task.optimistic_duration, task.pessimistic_duration, task.most_likely_duration)
-                  : null;
-
-                return (
-                  <div
-                    key={task.id}
-                    className="flex border-b border-gray-100 hover:bg-gray-50 cursor-pointer"
-                    onClick={() => {
-                      setSelectedTask(task);
-                      setEditTaskModalOpen(true);
-                    }}
-                  >
-                    {/* Task name */}
-                    <div className="w-64 flex-shrink-0 p-3 border-r border-gray-200">
+              {tasksByWorkstream.map(({ workstream, tasks: wsTasks, children }) => (
+                <div key={workstream?.id || 'unassigned'}>
+                  {/* Workstream header */}
+                  <div className="flex border-b border-gray-200 bg-gray-100">
+                    <div className="w-64 flex-shrink-0 p-2 border-r border-gray-200">
                       <div className="flex items-center gap-2">
-                        {task.workstream && (
-                          <div
-                            className="w-2 h-2 rounded-full"
-                            style={{ backgroundColor: task.workstream.color }}
-                          />
-                        )}
-                        <span className="text-sm font-medium text-gray-900 truncate">
-                          {task.title}
+                        <div
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: workstream?.color || '#6b7280' }}
+                        />
+                        <span className="text-sm font-semibold text-gray-700">
+                          {workstream?.name || 'Unassigned'}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          ({wsTasks.length} task{wsTasks.length !== 1 ? 's' : ''})
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        {task.assignee && (
-                          <Avatar
-                            src={task.assignee.avatar_url}
-                            name={task.assignee.full_name}
-                            size="xs"
-                          />
-                        )}
-                        <span className="text-xs text-gray-500">{task.progress}%</span>
-                      </div>
                     </div>
+                    <div className="flex-1 h-8" />
+                  </div>
 
-                    {/* Task bar */}
-                    <div className="flex-1 relative h-16 py-2">
-                      {/* Uncertainty range */}
-                      {showUncertainty && pert && (
-                        <div
-                          className="absolute h-3 bg-yellow-100 rounded-sm top-1/2 -translate-y-1/2"
-                          style={{
-                            left: position.left,
-                            width: `${parseFloat(position.width) * 1.5}%`,
-                            opacity: 0.5,
+                  {/* Tasks in this workstream */}
+                  {wsTasks.map((task) => (
+                    <TaskRow
+                      key={task.id}
+                      task={task}
+                      workstream={workstream}
+                      indent={1}
+                      getTaskPosition={getTaskPosition}
+                      criticalPath={criticalPath}
+                      showUncertainty={showUncertainty}
+                      onClick={() => {
+                        setSelectedTask(task);
+                        setEditTaskModalOpen(true);
+                      }}
+                    />
+                  ))}
+
+                  {/* Sub-workstreams */}
+                  {children?.map(({ workstream: subWs, tasks: subTasks }) => (
+                    <div key={subWs?.id}>
+                      {/* Sub-workstream header */}
+                      <div className="flex border-b border-gray-200 bg-gray-50">
+                        <div className="w-64 flex-shrink-0 p-2 pl-6 border-r border-gray-200">
+                          <div className="flex items-center gap-2">
+                            <ChevronRightIcon className="w-3 h-3 text-gray-400" />
+                            <div
+                              className="w-2 h-2 rounded-full"
+                              style={{ backgroundColor: subWs?.color || '#6b7280' }}
+                            />
+                            <span className="text-xs font-medium text-gray-600">
+                              {subWs?.name}
+                            </span>
+                            <span className="text-xs text-gray-400">
+                              ({subTasks.length})
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex-1 h-7" />
+                      </div>
+
+                      {/* Tasks in sub-workstream */}
+                      {subTasks.map((task) => (
+                        <TaskRow
+                          key={task.id}
+                          task={task}
+                          workstream={subWs}
+                          indent={2}
+                          getTaskPosition={getTaskPosition}
+                          criticalPath={criticalPath}
+                          showUncertainty={showUncertainty}
+                          onClick={() => {
+                            setSelectedTask(task);
+                            setEditTaskModalOpen(true);
                           }}
                         />
-                      )}
-
-                      {/* Main bar */}
-                      <div
-                        className={cn(
-                          'absolute h-8 rounded gantt-task top-1/2 -translate-y-1/2',
-                          isCritical ? 'gantt-critical' : ''
-                        )}
-                        style={{
-                          left: position.left,
-                          width: position.width,
-                          backgroundColor: task.workstream?.color || '#6b7280',
-                        }}
-                      >
-                        {/* Progress */}
-                        <div
-                          className="h-full rounded opacity-30 bg-black"
-                          style={{ width: `${task.progress}%` }}
-                        />
-                      </div>
+                      ))}
                     </div>
-                  </div>
-                );
-              })}
+                  ))}
+                </div>
+              ))}
             </div>
           </Card>
         ) : (
@@ -685,5 +759,92 @@ function TaskModal({
         </div>
       </form>
     </Modal>
+  );
+}
+
+// TaskRow component for rendering individual task rows
+function TaskRow({
+  task,
+  workstream,
+  indent,
+  getTaskPosition,
+  criticalPath,
+  showUncertainty,
+  onClick,
+}: {
+  task: GanttTaskWithRelations;
+  workstream: Workstream | null;
+  indent: number;
+  getTaskPosition: (task: GanttTaskWithRelations) => { left: string; width: string };
+  criticalPath: string[];
+  showUncertainty: boolean;
+  onClick: () => void;
+}) {
+  const position = getTaskPosition(task);
+  const isCritical = criticalPath.includes(task.id);
+  const pert = task.optimistic_duration && task.pessimistic_duration && task.most_likely_duration
+    ? calculatePERT(task.optimistic_duration, task.pessimistic_duration, task.most_likely_duration)
+    : null;
+
+  const paddingLeft = indent === 1 ? 'pl-6' : indent === 2 ? 'pl-10' : 'pl-3';
+
+  return (
+    <div
+      className="flex border-b border-gray-100 hover:bg-gray-50 cursor-pointer"
+      onClick={onClick}
+    >
+      {/* Task name */}
+      <div className={cn("w-64 flex-shrink-0 p-3 border-r border-gray-200", paddingLeft)}>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-gray-900 truncate">
+            {task.title}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 mt-1">
+          {task.assignee && (
+            <Avatar
+              src={task.assignee.avatar_url}
+              name={task.assignee.full_name}
+              size="xs"
+            />
+          )}
+          <span className="text-xs text-gray-500">{task.progress}%</span>
+        </div>
+      </div>
+
+      {/* Task bar */}
+      <div className="flex-1 relative h-16 py-2">
+        {/* Uncertainty range */}
+        {showUncertainty && pert && (
+          <div
+            className="absolute h-3 bg-yellow-100 rounded-sm top-1/2 -translate-y-1/2"
+            style={{
+              left: position.left,
+              width: `${parseFloat(position.width) * 1.5}%`,
+              opacity: 0.5,
+            }}
+          />
+        )}
+
+        {/* Main bar */}
+        <div
+          className={cn(
+            'absolute h-8 rounded gantt-task top-1/2 -translate-y-1/2',
+            isCritical ? 'gantt-critical' : ''
+          )}
+          style={{
+            left: position.left,
+            width: position.width,
+            backgroundColor: workstream?.color || '#6b7280',
+          }}
+        >
+          {/* Progress */}
+          <div
+            className="h-full rounded opacity-30 bg-black"
+            style={{ width: `${task.progress}%` }}
+          />
+        </div>
+      </div>
+    </div>
   );
 }
