@@ -149,11 +149,25 @@ export function calculateCriticalPath(tasks: Array<{
     return (end - start) / (1000 * 60 * 60 * 24);
   };
 
+  // Track visited nodes to prevent infinite recursion from circular dependencies
+  const visitingEarly = new Set<string>();
+  const visitingLate = new Set<string>();
+
   const calculateEarly = (taskId: string): number => {
     if (earlyFinish.has(taskId)) return earlyFinish.get(taskId)!;
 
+    // Circular dependency protection
+    if (visitingEarly.has(taskId)) {
+      console.warn('Circular dependency detected in calculateEarly for task:', taskId);
+      return 0;
+    }
+    visitingEarly.add(taskId);
+
     const task = taskMap.get(taskId);
-    if (!task) return 0;
+    if (!task) {
+      visitingEarly.delete(taskId);
+      return 0;
+    }
 
     const preds = predecessors.get(taskId) || [];
     const es = preds.length > 0
@@ -163,21 +177,32 @@ export function calculateCriticalPath(tasks: Array<{
     earlyStart.set(taskId, es);
     const ef = es + getDuration(task);
     earlyFinish.set(taskId, ef);
+    visitingEarly.delete(taskId);
     return ef;
   };
 
   tasks.forEach(t => calculateEarly(t.id));
 
   // Calculate latest start/finish times (backward pass)
-  const projectEnd = Math.max(...Array.from(earlyFinish.values()));
+  const projectEnd = earlyFinish.size > 0 ? Math.max(...Array.from(earlyFinish.values())) : 0;
   const lateStart = new Map<string, number>();
   const lateFinish = new Map<string, number>();
 
   const calculateLate = (taskId: string): number => {
     if (lateStart.has(taskId)) return lateStart.get(taskId)!;
 
+    // Circular dependency protection
+    if (visitingLate.has(taskId)) {
+      console.warn('Circular dependency detected in calculateLate for task:', taskId);
+      return projectEnd;
+    }
+    visitingLate.add(taskId);
+
     const task = taskMap.get(taskId);
-    if (!task) return projectEnd;
+    if (!task) {
+      visitingLate.delete(taskId);
+      return projectEnd;
+    }
 
     const succs = successors.get(taskId) || [];
     const lf = succs.length > 0
@@ -187,6 +212,7 @@ export function calculateCriticalPath(tasks: Array<{
     lateFinish.set(taskId, lf);
     const ls = lf - getDuration(task);
     lateStart.set(taskId, ls);
+    visitingLate.delete(taskId);
     return ls;
   };
 
