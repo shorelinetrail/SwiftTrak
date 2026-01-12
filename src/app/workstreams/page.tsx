@@ -157,27 +157,28 @@ export default function WorkstreamsPage() {
   }, [workstreams]);
 
   const handleCreateWorkstream = async (data: Partial<Workstream>) => {
-    console.log('[WorkstreamsPage] handleCreateWorkstream called with:', data);
     const supabase = createClient();
 
+    // Validate required fields
+    if (!data.name?.trim()) {
+      toast.error('Workstream name is required');
+      return;
+    }
+
     const insertData = {
-      name: data.name,
-      description: data.description,
+      name: data.name.trim(),
+      description: data.description?.trim() || null,
       color: data.color || '#dc2626',
       order_index: workstreams.length,
       parent_id: data.parent_id || null,
     };
-    console.log('[WorkstreamsPage] Inserting workstream:', insertData);
 
-    const { data: result, error } = await supabase.from('workstreams').insert(insertData).select();
-
-    console.log('[WorkstreamsPage] Workstream insert result:', { result, error });
+    const { error } = await supabase.from('workstreams').insert(insertData).select();
 
     if (error) {
       console.error('[WorkstreamsPage] Failed to create workstream:', error);
       toast.error(`Failed to create workstream: ${error.message}`);
     } else {
-      console.log('[WorkstreamsPage] Workstream created successfully');
       toast.success('Workstream created');
       setWorkstreamModalOpen(false);
       fetchWorkstreams();
@@ -187,13 +188,20 @@ export default function WorkstreamsPage() {
   const handleUpdateWorkstream = async (workstreamId: string, data: Partial<Workstream>) => {
     const supabase = createClient();
 
+    // Transform empty string parent_id to null for database compatibility
+    const updateData = {
+      ...data,
+      parent_id: data.parent_id || null,
+    };
+
     const { error } = await supabase
       .from('workstreams')
-      .update(data)
+      .update(updateData)
       .eq('id', workstreamId);
 
     if (error) {
-      toast.error('Failed to update workstream');
+      console.error('[WorkstreamsPage] Failed to update workstream:', error);
+      toast.error(`Failed to update workstream: ${error.message}`);
     } else {
       toast.success('Workstream updated');
       setWorkstreamModalOpen(false);

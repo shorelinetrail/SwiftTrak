@@ -399,8 +399,55 @@ export default function GanttPage() {
     }
   };
 
+  // Check for circular dependencies before adding a new one
+  const wouldCreateCircularDependency = (taskId: string, dependsOnId: string): boolean => {
+    // Check if adding this dependency would create a cycle
+    // We traverse from dependsOnId's dependencies to see if we can reach taskId
+    const visited = new Set<string>();
+    const stack = [dependsOnId];
+
+    while (stack.length > 0) {
+      const currentId = stack.pop()!;
+      if (currentId === taskId) {
+        return true; // Circular dependency detected
+      }
+
+      if (visited.has(currentId)) continue;
+      visited.add(currentId);
+
+      // Find all tasks that currentId depends on
+      const currentTaskDeps = allDependencies.filter(d => d.task_id === currentId);
+      for (const dep of currentTaskDeps) {
+        stack.push(dep.depends_on_id);
+      }
+    }
+
+    return false;
+  };
+
   const handleAddDependency = async (taskId: string, dependsOnId: string, dependencyType: GanttDependency['dependency_type']) => {
     const supabase = createClient();
+
+    // Prevent self-dependency
+    if (taskId === dependsOnId) {
+      toast.error('A task cannot depend on itself');
+      return;
+    }
+
+    // Check for circular dependencies
+    if (wouldCreateCircularDependency(taskId, dependsOnId)) {
+      toast.error('Cannot add this dependency - it would create a circular dependency chain');
+      return;
+    }
+
+    // Check if dependency already exists
+    const existingDep = allDependencies.find(
+      d => d.task_id === taskId && d.depends_on_id === dependsOnId
+    );
+    if (existingDep) {
+      toast.error('This dependency already exists');
+      return;
+    }
 
     // Get the predecessor task and the dependent task
     const predecessorTask = tasks.find(t => t.id === dependsOnId);
@@ -484,25 +531,48 @@ export default function GanttPage() {
       toast.success('Dependency added');
     }
 
-    fetchTasks();
+    // Refresh data and update selectedTask
+    await refreshTasksAndUpdateSelected();
   };
 
-  // Cascade date changes to dependent tasks
-  const cascadeDependencyUpdates = async (changedTaskId: string, newEndDate: Date, newStartDate?: Date) => {
+  // Cascade date changes to dependent tasks with circular dependency protection
+  const cascadeDependencyUpdates = async (
+    changedTaskId: string,
+    newEndDate: Date,
+    newStartDate?: Date,
+    visitedTasks: Set<string> = new Set()
+  ) => {
+    // Prevent infinite loops
+    if (visitedTasks.has(changedTaskId)) {
+      console.warn('Circular dependency detected during cascade, stopping');
+      return;
+    }
+    visitedTasks.add(changedTaskId);
+
     const supabase = createClient();
 
     // Fetch fresh dependencies to avoid stale state
-    const { data: freshDeps } = await supabase
+    const { data: freshDeps, error: depsError } = await supabase
       .from('gantt_dependencies')
       .select('*')
       .eq('depends_on_id', changedTaskId);
 
+    if (depsError) {
+      console.error('Error fetching dependencies during cascade:', depsError);
+      return;
+    }
+
     if (!freshDeps || freshDeps.length === 0) return;
 
     // Also fetch fresh task data
-    const { data: freshTasks } = await supabase
+    const { data: freshTasks, error: tasksError } = await supabase
       .from('gantt_tasks')
       .select('*');
+
+    if (tasksError) {
+      console.error('Error fetching tasks during cascade:', tasksError);
+      return;
+    }
 
     if (!freshTasks) return;
 
@@ -514,32 +584,37 @@ export default function GanttPage() {
       const dependentEnd = new Date(dependentTask.end_date);
       const duration = dependentEnd.getTime() - dependentStart.getTime();
 
+      // Validate duration
+      if (duration < 0) {
+        console.warn(`Invalid task duration for task ${dep.task_id}`);
+        continue;
+      }
+
       let requiredStart: Date | null = null;
 
       switch (dep.dependency_type) {
         case 'finish_to_start':
           // Dependent starts after predecessor finishes
-          if (dependentStart < newEndDate) {
+          if (dependentStart.getTime() < newEndDate.getTime()) {
             requiredStart = new Date(newEndDate);
           }
           break;
         case 'start_to_start':
           // Both start at same time
-          if (newStartDate && dependentStart < newStartDate) {
+          if (newStartDate && dependentStart.getTime() < newStartDate.getTime()) {
             requiredStart = new Date(newStartDate);
           }
           break;
         case 'finish_to_finish':
           // Both finish at same time - adjust start to maintain duration
-          const requiredEnd = newEndDate;
-          const calculatedStart = new Date(requiredEnd.getTime() - duration);
-          if (dependentEnd < newEndDate) {
+          const calculatedStart = new Date(newEndDate.getTime() - duration);
+          if (dependentEnd.getTime() < newEndDate.getTime()) {
             requiredStart = calculatedStart;
           }
           break;
         case 'start_to_finish':
           // Dependent finishes when predecessor starts
-          if (newStartDate && dependentEnd < newStartDate) {
+          if (newStartDate && dependentEnd.getTime() < newStartDate.getTime()) {
             requiredStart = new Date(newStartDate.getTime() - duration);
           }
           break;
@@ -547,7 +622,14 @@ export default function GanttPage() {
 
       if (requiredStart) {
         const newDepEnd = new Date(requiredStart.getTime() + duration);
-        await supabase
+
+        // Validate dates before updating
+        if (isNaN(requiredStart.getTime()) || isNaN(newDepEnd.getTime())) {
+          console.error('Invalid dates calculated for task:', dep.task_id);
+          continue;
+        }
+
+        const { error: updateError } = await supabase
           .from('gantt_tasks')
           .update({
             start_date: requiredStart.toISOString(),
@@ -555,8 +637,13 @@ export default function GanttPage() {
           })
           .eq('id', dep.task_id);
 
+        if (updateError) {
+          console.error(`Failed to update task ${dep.task_id}:`, updateError);
+          continue;
+        }
+
         // Recursively cascade with both start and end dates
-        await cascadeDependencyUpdates(dep.task_id, newDepEnd, requiredStart);
+        await cascadeDependencyUpdates(dep.task_id, newDepEnd, requiredStart, visitedTasks);
       }
     }
   };
@@ -573,7 +660,46 @@ export default function GanttPage() {
       toast.error('Failed to remove dependency');
     } else {
       toast.success('Dependency removed');
-      fetchTasks();
+      // Refresh data and update selectedTask
+      await refreshTasksAndUpdateSelected();
+    }
+  };
+
+  // Helper to refresh tasks and update selectedTask with fresh data
+  const refreshTasksAndUpdateSelected = async () => {
+    try {
+      const supabase = createClient();
+
+      const { data: tasksData } = await supabase
+        .from('gantt_tasks')
+        .select(`
+          *,
+          workstream:workstreams(id, name, color),
+          assignee:users!gantt_tasks_assigned_to_fkey(id, full_name, avatar_url)
+        `)
+        .order('order_index');
+
+      const { data: depsData } = await supabase
+        .from('gantt_dependencies')
+        .select('*');
+
+      const tasksWithDeps = (tasksData || []).map(task => ({
+        ...task,
+        dependencies: (depsData || []).filter(d => d.task_id === task.id),
+      }));
+
+      setTasks(tasksWithDeps as unknown as GanttTaskWithRelations[]);
+      setAllDependencies((depsData || []) as GanttDependency[]);
+
+      // Update selectedTask with fresh data if it's set
+      if (selectedTask) {
+        const freshTask = tasksWithDeps.find(t => t.id === selectedTask.id);
+        if (freshTask) {
+          setSelectedTask(freshTask as unknown as GanttTaskWithRelations);
+        }
+      }
+    } catch (error) {
+      console.error('Error refreshing tasks:', error);
     }
   };
 
@@ -656,7 +782,8 @@ export default function GanttPage() {
       toast.success('Dependency updated');
     }
 
-    fetchTasks();
+    // Refresh data and update selectedTask
+    await refreshTasksAndUpdateSelected();
   };
 
   const handleAddMilestone = async (data: Partial<Milestone>) => {

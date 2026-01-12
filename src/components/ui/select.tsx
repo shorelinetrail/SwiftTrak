@@ -1,6 +1,6 @@
 'use client';
 
-import { forwardRef, Fragment, useState, useRef, useEffect } from 'react';
+import { forwardRef, Fragment, useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Listbox, Transition } from '@headlessui/react';
 import { CheckIcon, ChevronUpDownIcon } from '@heroicons/react/20/solid';
@@ -24,19 +24,22 @@ interface SelectProps {
   className?: string;
 }
 
+// Custom hook to safely use layoutEffect on server
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
+
 export const Select = forwardRef<HTMLDivElement, SelectProps>(
   ({ label, options, value, onChange, placeholder = 'Select...', error, disabled, className }, ref) => {
     const selectedOption = options.find(o => o.value === value);
     const buttonRef = useRef<HTMLButtonElement>(null);
     const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
-    const [isOpen, setIsOpen] = useState(false);
     const [mounted, setMounted] = useState(false);
+    const openRef = useRef(false);
 
     useEffect(() => {
       setMounted(true);
     }, []);
 
-    const updatePosition = () => {
+    const updatePosition = useCallback(() => {
       if (buttonRef.current) {
         const rect = buttonRef.current.getBoundingClientRect();
         setDropdownPosition({
@@ -45,7 +48,21 @@ export const Select = forwardRef<HTMLDivElement, SelectProps>(
           width: rect.width,
         });
       }
-    };
+    }, []);
+
+    // Update position on scroll/resize when open
+    useEffect(() => {
+      if (!openRef.current) return;
+
+      const handlePositionUpdate = () => updatePosition();
+      window.addEventListener('scroll', handlePositionUpdate, true);
+      window.addEventListener('resize', handlePositionUpdate);
+
+      return () => {
+        window.removeEventListener('scroll', handlePositionUpdate, true);
+        window.removeEventListener('resize', handlePositionUpdate);
+      };
+    }, [updatePosition]);
 
     return (
       <div ref={ref} className={cn('space-y-1', className)}>
@@ -54,93 +71,89 @@ export const Select = forwardRef<HTMLDivElement, SelectProps>(
         )}
         <Listbox value={value} onChange={onChange} disabled={disabled}>
           {({ open }) => {
-            // Update position when dropdown opens
-            if (open && !isOpen) {
-              updatePosition();
-              setIsOpen(true);
-            } else if (!open && isOpen) {
-              setIsOpen(false);
-            }
-
+            // Track open state in ref to avoid state updates during render
+            // We use useEffect below to handle position updates
             return (
-              <div className="relative">
-                <Listbox.Button
-                  ref={buttonRef}
-                  className={cn(
-                    'relative w-full cursor-pointer rounded-lg border bg-white py-2 pl-3 pr-10 text-left',
-                    'focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500',
-                    disabled && 'bg-gray-50 cursor-not-allowed',
-                    error ? 'border-red-500' : 'border-gray-300'
-                  )}
-                >
-                  <span className={cn('block truncate', !selectedOption && 'text-gray-400')}>
-                    {selectedOption ? (
-                      <span className="flex items-center gap-2">
-                        {selectedOption.icon}
-                        {selectedOption.label}
-                      </span>
-                    ) : (
-                      placeholder
+              <OpenStateTracker open={open} openRef={openRef} updatePosition={updatePosition}>
+                <div className="relative">
+                  <Listbox.Button
+                    ref={buttonRef}
+                    className={cn(
+                      'relative w-full cursor-pointer rounded-lg border bg-white py-2 pl-3 pr-10 text-left',
+                      'focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500',
+                      disabled && 'bg-gray-50 cursor-not-allowed',
+                      error ? 'border-red-500' : 'border-gray-300'
                     )}
-                  </span>
-                  <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
-                    <ChevronUpDownIcon className="h-5 w-5 text-gray-400" />
-                  </span>
-                </Listbox.Button>
-
-                {mounted && createPortal(
-                  <Transition
-                    show={open}
-                    as={Fragment}
-                    leave="transition ease-in duration-100"
-                    leaveFrom="opacity-100"
-                    leaveTo="opacity-0"
                   >
-                    <Listbox.Options
-                      static
-                      className="fixed z-[9999] max-h-60 overflow-auto rounded-lg bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none"
-                      style={{
-                        top: dropdownPosition.top,
-                        left: dropdownPosition.left,
-                        width: dropdownPosition.width,
-                      }}
+                    <span className={cn('block truncate', !selectedOption && 'text-gray-400')}>
+                      {selectedOption ? (
+                        <span className="flex items-center gap-2">
+                          {selectedOption.icon}
+                          {selectedOption.label}
+                        </span>
+                      ) : (
+                        placeholder
+                      )}
+                    </span>
+                    <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+                      <ChevronUpDownIcon className="h-5 w-5 text-gray-400" />
+                    </span>
+                  </Listbox.Button>
+
+                  {mounted && createPortal(
+                    <Transition
+                      show={open}
+                      as={Fragment}
+                      leave="transition ease-in duration-100"
+                      leaveFrom="opacity-100"
+                      leaveTo="opacity-0"
                     >
-                      {options.map((option) => (
-                        <Listbox.Option
-                          key={option.value}
-                          value={option.value}
-                          className={({ active }) =>
-                            cn(
-                              'relative cursor-pointer select-none py-2 pl-10 pr-4',
-                              active ? 'bg-red-50 text-red-900' : 'text-gray-900'
-                            )
-                          }
-                        >
-                          {({ selected }) => (
-                            <>
-                              <span className={cn('block truncate', selected && 'font-medium')}>
-                                <span className="flex items-center gap-2">
-                                  {option.icon}
-                                  {option.label}
+                      <Listbox.Options
+                        static
+                        className="fixed z-[9999] max-h-60 overflow-auto rounded-lg bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none"
+                        style={{
+                          top: dropdownPosition.top,
+                          left: dropdownPosition.left,
+                          width: dropdownPosition.width,
+                        }}
+                      >
+                        {options.map((option) => (
+                          <Listbox.Option
+                            key={option.value}
+                            value={option.value}
+                            className={({ active }) =>
+                              cn(
+                                'relative cursor-pointer select-none py-2 pl-10 pr-4',
+                                active ? 'bg-red-50 text-red-900' : 'text-gray-900'
+                              )
+                            }
+                          >
+                            {({ selected }) => (
+                              <>
+                                <span className={cn('block truncate', selected && 'font-medium')}>
+                                  <span className="flex items-center gap-2">
+                                    {option.icon}
+                                    {option.label}
+                                  </span>
+                                  {option.description && (
+                                    <span className="text-xs text-gray-500">{option.description}</span>
+                                  )}
                                 </span>
-                                {option.description && (
-                                  <span className="text-xs text-gray-500">{option.description}</span>
+                                {selected && (
+                                  <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-red-600">
+                                    <CheckIcon className="h-5 w-5" />
+                                  </span>
                                 )}
-                              </span>
-                              {selected && (
-                                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-red-600">
-                                  <CheckIcon className="h-5 w-5" />
-                                </span>
-                              )}
-                            </>
-                          )}
-                        </Listbox.Option>
-                      ))}
-                    </Listbox.Options>
-                  </Transition>,
-                  document.body
-                )}
-              </div>
+                              </>
+                            )}
+                          </Listbox.Option>
+                        ))}
+                      </Listbox.Options>
+                    </Transition>,
+                    document.body
+                  )}
+                </div>
+              </OpenStateTracker>
             );
           }}
         </Listbox>
@@ -151,3 +164,25 @@ export const Select = forwardRef<HTMLDivElement, SelectProps>(
 );
 
 Select.displayName = 'Select';
+
+// Helper component to handle open state tracking in useEffect
+function OpenStateTracker({
+  open,
+  openRef,
+  updatePosition,
+  children
+}: {
+  open: boolean;
+  openRef: React.MutableRefObject<boolean>;
+  updatePosition: () => void;
+  children: React.ReactNode;
+}) {
+  useIsomorphicLayoutEffect(() => {
+    if (open && !openRef.current) {
+      updatePosition();
+    }
+    openRef.current = open;
+  }, [open, updatePosition, openRef]);
+
+  return <>{children}</>;
+}
