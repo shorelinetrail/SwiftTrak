@@ -1677,6 +1677,7 @@ ${tasks.filter(t => new Date(t.end_date) < new Date() && t.progress < 100).map(t
           workstreams={workstreams}
           users={users}
           allTasks={tasks}
+          allDependencies={allDependencies}
           onDependencyAdd={handleAddDependency}
           onDependencyRemove={handleRemoveDependency}
           onDependencyUpdate={handleUpdateDependency}
@@ -1715,6 +1716,7 @@ function TaskModal({
   workstreams,
   users,
   allTasks,
+  allDependencies,
   onDependencyAdd,
   onDependencyRemove,
   onDependencyUpdate,
@@ -1728,6 +1730,7 @@ function TaskModal({
   workstreams: Workstream[];
   users: User[];
   allTasks?: GanttTaskWithRelations[];
+  allDependencies?: GanttDependency[];
   onDependencyAdd?: (taskId: string, dependsOnId: string, type: GanttDependency['dependency_type'], lagDays?: number) => void;
   onDependencyRemove?: (dependencyId: string) => void;
   onDependencyUpdate?: (dependencyId: string, newType: GanttDependency['dependency_type'], lagDays?: number) => void;
@@ -1757,15 +1760,44 @@ function TaskModal({
   const [newDependencyType, setNewDependencyType] = useState<GanttDependency['dependency_type']>('finish_to_start');
   const [newDependencyLag, setNewDependencyLag] = useState<number>(0);
 
-  // Get tasks that are not this task and not already dependencies
+  // Check if adding a dependency would create a circular dependency
+  const wouldCreateCircularDependency = useCallback((taskId: string, dependsOnId: string): boolean => {
+    if (!allDependencies) return false;
+
+    // Check if adding this dependency would create a cycle
+    // We traverse from dependsOnId's dependencies to see if we can reach taskId
+    const visited = new Set<string>();
+    const stack = [dependsOnId];
+
+    while (stack.length > 0) {
+      const currentId = stack.pop()!;
+      if (currentId === taskId) {
+        return true; // Circular dependency detected
+      }
+
+      if (visited.has(currentId)) continue;
+      visited.add(currentId);
+
+      // Find all tasks that currentId depends on
+      const currentTaskDeps = allDependencies.filter(d => d.task_id === currentId);
+      for (const dep of currentTaskDeps) {
+        stack.push(dep.depends_on_id);
+      }
+    }
+
+    return false;
+  }, [allDependencies]);
+
+  // Get tasks that are not this task, not already dependencies, and won't create circular dependencies
   const availableDependencies = useMemo(() => {
     if (!task || !allTasks) return [];
     const existingDeps = (task.dependencies || []).map(d => d.depends_on_id);
     return allTasks.filter(t =>
       t.id !== task.id &&
-      !existingDeps.includes(t.id)
+      !existingDeps.includes(t.id) &&
+      !wouldCreateCircularDependency(task.id, t.id)
     );
-  }, [task, allTasks]);
+  }, [task, allTasks, wouldCreateCircularDependency]);
 
   useEffect(() => {
     if (task) {

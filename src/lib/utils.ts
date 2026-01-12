@@ -117,24 +117,28 @@ export function calculateCriticalPath(tasks: Array<{
   id: string;
   start_date: string;
   end_date: string;
-  dependencies?: Array<{ depends_on_id: string }>;
+  dependencies?: Array<{ depends_on_id: string; lag_days?: number; dependency_type?: string }>;
 }>): string[] {
-  // Build dependency graph
+  // Build dependency graph with lag information
   const taskMap = new Map(tasks.map(t => [t.id, t]));
-  const successors = new Map<string, string[]>();
-  const predecessors = new Map<string, string[]>();
+  // Store successors with their lag values: Map<taskId, Array<{successorId, lag}>>
+  const successors = new Map<string, Array<{ id: string; lag: number }>>();
+  // Store predecessors with their lag values: Map<taskId, Array<{predecessorId, lag}>>
+  const predecessors = new Map<string, Array<{ id: string; lag: number }>>();
 
   tasks.forEach(task => {
     if (!successors.has(task.id)) successors.set(task.id, []);
     if (!predecessors.has(task.id)) predecessors.set(task.id, []);
 
     task.dependencies?.forEach(dep => {
+      const lagDays = dep.lag_days || 0;
+
       const depList = successors.get(dep.depends_on_id) || [];
-      depList.push(task.id);
+      depList.push({ id: task.id, lag: lagDays });
       successors.set(dep.depends_on_id, depList);
 
       const predList = predecessors.get(task.id) || [];
-      predList.push(dep.depends_on_id);
+      predList.push({ id: dep.depends_on_id, lag: lagDays });
       predecessors.set(task.id, predList);
     });
   });
@@ -170,8 +174,9 @@ export function calculateCriticalPath(tasks: Array<{
     }
 
     const preds = predecessors.get(taskId) || [];
+    // Early Start = max(Early Finish of predecessor + lag) for all predecessors
     const es = preds.length > 0
-      ? Math.max(...preds.map(p => calculateEarly(p)))
+      ? Math.max(...preds.map(p => calculateEarly(p.id) + p.lag))
       : 0;
 
     earlyStart.set(taskId, es);
@@ -205,8 +210,12 @@ export function calculateCriticalPath(tasks: Array<{
     }
 
     const succs = successors.get(taskId) || [];
+    // Late Finish = min(Late Start of successor - lag) for all successors
     const lf = succs.length > 0
-      ? Math.min(...succs.map(s => calculateLate(s)))
+      ? Math.min(...succs.map(s => {
+          const succLateStart = calculateLate(s.id);
+          return succLateStart - s.lag;
+        }))
       : projectEnd;
 
     lateFinish.set(taskId, lf);
