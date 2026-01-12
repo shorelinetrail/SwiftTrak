@@ -27,10 +27,9 @@ let globalAuthSubscription: { unsubscribe: () => void } | null = null;
 let globalRefreshTimer: NodeJS.Timeout | null = null;
 let authHandled = false; // Track if we've already processed auth
 
-// Fetch user profile from database, with fallback to auth metadata
+// Fetch user profile via API (uses admin client to bypass RLS)
 async function fetchUserProfile(authUser: AuthUser): Promise<User> {
   console.log('[fetchUserProfile] Starting for user:', authUser.id);
-  const supabase = createClient();
 
   const defaultUser: User = {
     id: authUser.id,
@@ -43,34 +42,34 @@ async function fetchUserProfile(authUser: AuthUser): Promise<User> {
   };
 
   try {
-    console.log('[fetchUserProfile] Querying database...');
+    console.log('[fetchUserProfile] Calling /api/auth/profile...');
 
-    // Add timeout to prevent hanging - return default user if query takes too long
-    const queryPromise = supabase
-      .from('users')
-      .select('*')
-      .eq('id', authUser.id)
-      .single();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-    const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((resolve) => {
-      setTimeout(() => {
-        console.log('[fetchUserProfile] Query timeout after 3s');
-        resolve({ data: null, error: { message: 'Query timeout' } });
-      }, 3000);
+    const response = await fetch('/api/auth/profile', {
+      method: 'GET',
+      credentials: 'include',
+      signal: controller.signal,
     });
 
-    const { data: profile, error } = await Promise.race([queryPromise, timeoutPromise]);
+    clearTimeout(timeoutId);
 
-    console.log('[fetchUserProfile] Query result:', { hasProfile: !!profile, error: error?.message });
-
-    if (error || !profile) {
-      console.log('[fetchUserProfile] Using default user due to:', error?.message || 'no profile');
+    if (!response.ok) {
+      console.log('[fetchUserProfile] API error:', response.status);
       return defaultUser;
     }
 
+    const profile = await response.json();
+    console.log('[fetchUserProfile] Profile received:', { id: profile.id, role: profile.role, email: profile.email });
+
     return profile as User;
   } catch (err) {
-    console.error('[fetchUserProfile] Error:', err);
+    if (err instanceof Error && err.name === 'AbortError') {
+      console.log('[fetchUserProfile] Request timeout after 5s');
+    } else {
+      console.error('[fetchUserProfile] Error:', err);
+    }
     return defaultUser;
   }
 }
