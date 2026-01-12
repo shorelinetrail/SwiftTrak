@@ -2009,7 +2009,7 @@ function TaskModal({
                 { value: 'must_finish_on', label: 'Must Finish On' },
               ]}
               value={formData.constraint_type}
-              onChange={(value) => setFormData({ ...formData, constraint_type: value as GanttTask['constraint_type'] })}
+              onChange={(value) => setFormData({ ...formData, constraint_type: value as 'none' | 'start_no_earlier_than' | 'finish_no_later_than' | 'must_start_on' | 'must_finish_on' })}
             />
             {formData.constraint_type !== 'none' && (
               <Input
