@@ -250,15 +250,28 @@ export default function GanttPage() {
     return { left: `${left}%`, width: `${width}%` };
   };
 
-  // Calculate today line position
+  // Calculate today line position with UK time accuracy
   const todayPosition = useMemo(() => {
-    // Use start of day to avoid time comparison issues
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Get current time in UK timezone
+    const now = new Date();
+    const ukTimeStr = now.toLocaleString('en-GB', { timeZone: 'Europe/London' });
+    // Parse UK time string back to get hours/minutes for fractional day calculation
+    const [datePart, timePart] = ukTimeStr.split(', ');
+    const [day, month, year] = datePart.split('/').map(Number);
+    const [hours, minutes] = timePart.split(':').map(Number);
+
+    // Calculate fractional hours through the day (0-24)
+    const fractionalHours = hours + minutes / 60;
+    const dayFraction = fractionalHours / 24;
+
+    // Get the start of today in UK time
+    const todayStart = new Date(year, month - 1, day, 0, 0, 0, 0);
     const startDate = new Date(dateRange.start);
     startDate.setHours(0, 0, 0, 0);
 
-    const offset = (today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
+    // Calculate days from start, adding the fractional day for current time
+    const daysDiff = Math.floor((todayStart.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    const offset = daysDiff + dayFraction;
     const percentage = (offset / daysBetween) * 100;
     return percentage >= 0 && percentage <= 100 ? percentage : null;
   }, [dateRange.start, daysBetween]);
@@ -1425,8 +1438,8 @@ function TaskModal({
   const [formData, setFormData] = useState({
     title: task?.title || '',
     workstream_id: task?.workstream_id || '',
-    start_date: task?.start_date ? new Date(task.start_date).toISOString().slice(0, 16) : '',
-    end_date: task?.end_date ? new Date(task.end_date).toISOString().slice(0, 16) : '',
+    start_date: task?.start_date ? new Date(task.start_date).toISOString().slice(0, 10) : '',
+    end_date: task?.end_date ? new Date(task.end_date).toISOString().slice(0, 10) : '',
     assigned_to: task?.assigned_to || '',
     progress: task?.progress || 0,
     optimistic_duration: task?.optimistic_duration || '',
@@ -1452,8 +1465,8 @@ function TaskModal({
       setFormData({
         title: task.title,
         workstream_id: task.workstream_id || '',
-        start_date: new Date(task.start_date).toISOString().slice(0, 16),
-        end_date: new Date(task.end_date).toISOString().slice(0, 16),
+        start_date: new Date(task.start_date).toISOString().slice(0, 10),
+        end_date: new Date(task.end_date).toISOString().slice(0, 10),
         assigned_to: task.assigned_to || '',
         progress: task.progress,
         optimistic_duration: task.optimistic_duration || '',
@@ -1498,14 +1511,14 @@ function TaskModal({
         <div className="grid grid-cols-2 gap-4">
           <Input
             label="Start Date"
-            type="datetime-local"
+            type="date"
             value={formData.start_date}
             onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
             required
           />
           <Input
             label="End Date"
-            type="datetime-local"
+            type="date"
             value={formData.end_date}
             onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
             required

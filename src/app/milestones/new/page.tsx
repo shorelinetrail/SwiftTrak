@@ -131,7 +131,7 @@ export default function NewMilestonePage() {
 
               <Input
                 label="Target Date"
-                type="datetime-local"
+                type="date"
                 value={formData.target_date}
                 onChange={(e) => setFormData({ ...formData, target_date: e.target.value })}
                 required

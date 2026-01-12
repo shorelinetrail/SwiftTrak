@@ -662,8 +662,8 @@ export default function ActionDetailPage() {
           </div>
           <Input
             label="Due Date"
-            type="datetime-local"
-            value={editForm.due_date ? new Date(editForm.due_date).toISOString().slice(0, 16) : ''}
+            type="date"
+            value={editForm.due_date ? new Date(editForm.due_date).toISOString().slice(0, 10) : ''}
             onChange={(e) => setEditForm({ ...editForm, due_date: e.target.value })}
           />
         </div>

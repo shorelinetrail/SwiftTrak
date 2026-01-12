@@ -170,7 +170,7 @@ export default function NewActionPage() {
 
               <Input
                 label="Due Date"
-                type="datetime-local"
+                type="date"
                 value={formData.due_date}
                 onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
               />
