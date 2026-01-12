@@ -29,11 +29,9 @@ import {
   TrashIcon,
   FlagIcon,
   ChatBubbleLeftIcon,
-  FunnelIcon,
-  BookmarkIcon,
-  XMarkIcon,
+  DocumentArrowDownIcon,
 } from '@heroicons/react/24/outline';
-import type { GanttTask, GanttDependency, GanttTaskComment, GanttView, Workstream, User, Milestone } from '@/types/database';
+import type { GanttTask, GanttDependency, GanttTaskComment, Workstream, User, Milestone } from '@/types/database';
 
 type GanttTaskWithRelations = GanttTask & {
   workstream?: Workstream;
@@ -74,18 +72,6 @@ export default function GanttPage() {
     start: new Date(),
     end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
   });
-
-  // Filter state
-  const [filterWorkstreams, setFilterWorkstreams] = useState<string[]>([]);
-  const [filterAssignees, setFilterAssignees] = useState<string[]>([]);
-  const [showCompleted, setShowCompleted] = useState(true);
-  const [showFilters, setShowFilters] = useState(false);
-
-  // Saved views state
-  const [savedViews, setSavedViews] = useState<GanttView[]>([]);
-  const [activeViewId, setActiveViewId] = useState<string | null>(null);
-  const [saveViewModalOpen, setSaveViewModalOpen] = useState(false);
-  const [newViewName, setNewViewName] = useState('');
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -212,142 +198,12 @@ export default function GanttPage() {
     fetchTasks();
   }, [fetchTasks]);
 
-  // Fetch saved views
-  const fetchSavedViews = useCallback(async () => {
-    try {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from('gantt_views')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (!error && data) {
-        setSavedViews(data as GanttView[]);
-      }
-    } catch (error) {
-      console.error('Error fetching saved views:', error);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchSavedViews();
-  }, [fetchSavedViews]);
-
-  // Save current view
-  const handleSaveView = async () => {
-    if (!newViewName.trim()) {
-      toast.error('Please enter a view name');
-      return;
-    }
-
-    try {
-      const supabase = createClient();
-      const viewData = {
-        name: newViewName.trim(),
-        filters: {
-          workstream_ids: filterWorkstreams,
-          assignee_ids: filterAssignees,
-          show_completed: showCompleted,
-        },
-        settings: {
-          zoom_level: zoomLevel,
-          show_critical_path: showCriticalPath,
-          show_dependencies: showDependencies,
-          show_milestones: showMilestones,
-          show_uncertainty: showUncertainty,
-        },
-      };
-
-      const { error } = await supabase
-        .from('gantt_views')
-        .insert(viewData);
-
-      if (error) {
-        toast.error('Failed to save view');
-      } else {
-        toast.success('View saved');
-        setSaveViewModalOpen(false);
-        setNewViewName('');
-        fetchSavedViews();
-      }
-    } catch (error) {
-      console.error('Error saving view:', error);
-      toast.error('Failed to save view');
-    }
-  };
-
-  // Load a saved view
-  const handleLoadView = (view: GanttView) => {
-    setActiveViewId(view.id);
-    if (view.filters.workstream_ids) setFilterWorkstreams(view.filters.workstream_ids);
-    if (view.filters.assignee_ids) setFilterAssignees(view.filters.assignee_ids);
-    if (view.filters.show_completed !== undefined) setShowCompleted(view.filters.show_completed);
-    if (view.settings.zoom_level) setZoomLevel(view.settings.zoom_level);
-    if (view.settings.show_critical_path !== undefined) setShowCriticalPath(view.settings.show_critical_path);
-    if (view.settings.show_dependencies !== undefined) setShowDependencies(view.settings.show_dependencies);
-    if (view.settings.show_milestones !== undefined) setShowMilestones(view.settings.show_milestones);
-    if (view.settings.show_uncertainty !== undefined) setShowUncertainty(view.settings.show_uncertainty);
-    toast.success(`Loaded view: ${view.name}`);
-  };
-
-  // Delete a saved view
-  const handleDeleteView = async (viewId: string) => {
-    try {
-      const supabase = createClient();
-      const { error } = await supabase
-        .from('gantt_views')
-        .delete()
-        .eq('id', viewId);
-
-      if (error) {
-        toast.error('Failed to delete view');
-      } else {
-        toast.success('View deleted');
-        if (activeViewId === viewId) setActiveViewId(null);
-        fetchSavedViews();
-      }
-    } catch (error) {
-      console.error('Error deleting view:', error);
-      toast.error('Failed to delete view');
-    }
-  };
-
-  // Clear all filters
-  const handleClearFilters = () => {
-    setFilterWorkstreams([]);
-    setFilterAssignees([]);
-    setShowCompleted(true);
-    setActiveViewId(null);
-  };
-
-  // Check if any filters are active
-  const hasActiveFilters = filterWorkstreams.length > 0 || filterAssignees.length > 0 || !showCompleted;
-
   // useRealtime({
   //   table: 'gantt_tasks',
   //   onInsert: () => fetchTasks(),
   //   onUpdate: () => fetchTasks(),
   //   onDelete: () => fetchTasks(),
   // });
-
-  // Apply filters to tasks
-  const filteredTasks = useMemo(() => {
-    return tasks.filter(task => {
-      // Filter by workstream
-      if (filterWorkstreams.length > 0 && task.workstream_id && !filterWorkstreams.includes(task.workstream_id)) {
-        return false;
-      }
-      // Filter by assignee
-      if (filterAssignees.length > 0 && task.assigned_to && !filterAssignees.includes(task.assigned_to)) {
-        return false;
-      }
-      // Filter completed tasks
-      if (!showCompleted && task.progress === 100) {
-        return false;
-      }
-      return true;
-    });
-  }, [tasks, filterWorkstreams, filterAssignees, showCompleted]);
 
   const criticalPath = useMemo(() => {
     console.log('[GanttPage] criticalPath useMemo - tasks:', tasks.length);
@@ -1161,6 +1017,109 @@ export default function GanttPage() {
     }
   };
 
+  // Export to CSV
+  const handleExportCSV = () => {
+    const headers = [
+      'Title',
+      'Start Date',
+      'End Date',
+      'Progress',
+      'Workstream',
+      'Assigned To',
+      'Constraint Type',
+      'Constraint Date',
+      'Parent Task',
+    ];
+
+    const rows = tasks.map(task => {
+      const parentTask = task.parent_id ? tasks.find(t => t.id === task.parent_id) : null;
+      return [
+        task.title,
+        new Date(task.start_date).toISOString().slice(0, 10),
+        new Date(task.end_date).toISOString().slice(0, 10),
+        `${task.progress}%`,
+        task.workstream?.name || '',
+        task.assignee?.full_name || '',
+        task.constraint_type || 'none',
+        task.constraint_date ? new Date(task.constraint_date).toISOString().slice(0, 10) : '',
+        parentTask?.title || '',
+      ];
+    });
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')),
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `gantt-export-${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success('Exported to CSV');
+  };
+
+  // Generate report summary
+  const generateReport = () => {
+    const totalTasks = tasks.length;
+    const completedTasks = tasks.filter(t => t.progress === 100).length;
+    const criticalTaskCount = criticalPath.length;
+    const overdueTasks = tasks.filter(t => {
+      const endDate = new Date(t.end_date);
+      return endDate < new Date() && t.progress < 100;
+    }).length;
+
+    const report = `
+GANTT CHART REPORT
+Generated: ${new Date().toLocaleString()}
+==========================================
+
+SUMMARY
+-------
+Total Tasks: ${totalTasks}
+Completed: ${completedTasks} (${totalTasks > 0 ? Math.round(completedTasks / totalTasks * 100) : 0}%)
+In Progress: ${totalTasks - completedTasks}
+Critical Path Tasks: ${criticalTaskCount}
+Overdue Tasks: ${overdueTasks}
+
+WORKSTREAM BREAKDOWN
+--------------------
+${workstreams.map(ws => {
+  const wsTasks = tasks.filter(t => t.workstream_id === ws.id);
+  const wsComplete = wsTasks.filter(t => t.progress === 100).length;
+  return `${ws.name}: ${wsTasks.length} tasks (${wsComplete} complete)`;
+}).join('\n')}
+
+CRITICAL PATH TASKS
+-------------------
+${criticalPath.map(taskId => {
+  const task = tasks.find(t => t.id === taskId);
+  return task ? `- ${task.title} (${new Date(task.start_date).toLocaleDateString()} - ${new Date(task.end_date).toLocaleDateString()})` : '';
+}).filter(Boolean).join('\n') || 'No critical path identified'}
+
+OVERDUE TASKS
+-------------
+${tasks.filter(t => new Date(t.end_date) < new Date() && t.progress < 100).map(t =>
+  `- ${t.title}: Due ${new Date(t.end_date).toLocaleDateString()}, ${t.progress}% complete`
+).join('\n') || 'No overdue tasks'}
+`.trim();
+
+    const blob = new Blob([report], { type: 'text/plain;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `gantt-report-${new Date().toISOString().slice(0, 10)}.txt`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success('Report generated');
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen">
@@ -1317,6 +1276,28 @@ export default function GanttPage() {
                 >
                   <ChevronRightIcon className="w-4 h-4" />
                 </Button>
+
+                {/* Export buttons */}
+                <div className="border-l border-gray-200 pl-4 ml-2 flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportCSV}
+                    className="text-xs"
+                  >
+                    <DocumentArrowDownIcon className="w-4 h-4 mr-1" />
+                    Export CSV
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={generateReport}
+                    className="text-xs"
+                  >
+                    <ChartBarIcon className="w-4 h-4 mr-1" />
+                    Report
+                  </Button>
+                </div>
               </div>
             </div>
           </CardContent>
@@ -1767,6 +1748,9 @@ function TaskModal({
     optimistic_duration: task?.optimistic_duration || '',
     pessimistic_duration: task?.pessimistic_duration || '',
     most_likely_duration: task?.most_likely_duration || '',
+    constraint_type: task?.constraint_type || 'none',
+    constraint_date: task?.constraint_date ? new Date(task.constraint_date).toISOString().slice(0, 10) : '',
+    parent_id: task?.parent_id || '',
   });
 
   const [newDependencyTask, setNewDependencyTask] = useState('');
@@ -1795,6 +1779,9 @@ function TaskModal({
         optimistic_duration: task.optimistic_duration || '',
         pessimistic_duration: task.pessimistic_duration || '',
         most_likely_duration: task.most_likely_duration || '',
+        constraint_type: task.constraint_type || 'none',
+        constraint_date: task.constraint_date ? new Date(task.constraint_date).toISOString().slice(0, 10) : '',
+        parent_id: task.parent_id || '',
       });
       setNewDependencyTask('');
       setNewDependencyType('finish_to_start');
@@ -1893,6 +1880,12 @@ function TaskModal({
     }
   };
 
+  // Get potential parent tasks (exclude current task and its children)
+  const availableParentTasks = useMemo(() => {
+    if (!allTasks) return [];
+    return allTasks.filter(t => t.id !== task?.id && t.parent_id !== task?.id);
+  }, [allTasks, task?.id]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSave({
@@ -1905,6 +1898,9 @@ function TaskModal({
       optimistic_duration: formData.optimistic_duration ? Number(formData.optimistic_duration) : undefined,
       pessimistic_duration: formData.pessimistic_duration ? Number(formData.pessimistic_duration) : undefined,
       most_likely_duration: formData.most_likely_duration ? Number(formData.most_likely_duration) : undefined,
+      constraint_type: formData.constraint_type as GanttTask['constraint_type'],
+      constraint_date: formData.constraint_date || undefined,
+      parent_id: formData.parent_id || undefined,
     });
   };
 
@@ -1998,6 +1994,52 @@ function TaskModal({
             />
           </div>
         </div>
+
+        {/* Task Constraints Section */}
+        <div className="border-t border-gray-200 pt-4">
+          <p className="text-sm font-medium text-gray-700 mb-2">Task Constraints</p>
+          <div className="grid grid-cols-2 gap-4">
+            <Select
+              label="Constraint Type"
+              options={[
+                { value: 'none', label: 'None' },
+                { value: 'start_no_earlier_than', label: 'Start No Earlier Than' },
+                { value: 'finish_no_later_than', label: 'Finish No Later Than' },
+                { value: 'must_start_on', label: 'Must Start On' },
+                { value: 'must_finish_on', label: 'Must Finish On' },
+              ]}
+              value={formData.constraint_type}
+              onChange={(value) => setFormData({ ...formData, constraint_type: value })}
+            />
+            {formData.constraint_type !== 'none' && (
+              <Input
+                label="Constraint Date"
+                type="date"
+                value={formData.constraint_date}
+                onChange={(e) => setFormData({ ...formData, constraint_date: e.target.value })}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Parent Task Section (Summary Tasks) */}
+        {allTasks && allTasks.length > 0 && (
+          <div className="border-t border-gray-200 pt-4">
+            <p className="text-sm font-medium text-gray-700 mb-2">Parent Task (Summary)</p>
+            <Select
+              label=""
+              options={[
+                { value: '', label: 'None (Top-level task)' },
+                ...availableParentTasks.map(t => ({ value: t.id, label: t.title })),
+              ]}
+              value={formData.parent_id}
+              onChange={(value) => setFormData({ ...formData, parent_id: value })}
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Set a parent to create a task hierarchy. Parent tasks summarize their children.
+            </p>
+          </div>
+        )}
 
         {/* Dependencies Section - only for editing existing tasks */}
         {task && onDependencyAdd && onDependencyRemove && (
