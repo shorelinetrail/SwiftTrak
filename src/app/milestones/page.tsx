@@ -20,6 +20,7 @@ import {
   CheckCircleIcon,
   ClockIcon,
   ExclamationCircleIcon,
+  PencilIcon,
 } from '@heroicons/react/24/outline';
 import type { Milestone, Workstream, User } from '@/types/database';
 
@@ -162,6 +163,7 @@ export default function MilestonesPage() {
                   key={milestone.id}
                   milestone={milestone}
                   onToggleComplete={canEdit ? () => handleToggleComplete(milestone) : undefined}
+                  canEdit={canEdit}
                 />
               ))}
             </div>
@@ -178,6 +180,7 @@ export default function MilestonesPage() {
                   key={milestone.id}
                   milestone={milestone}
                   onToggleComplete={canEdit ? () => handleToggleComplete(milestone) : undefined}
+                  canEdit={canEdit}
                 />
               ))}
             </div>
@@ -203,9 +206,11 @@ export default function MilestonesPage() {
 function MilestoneCard({
   milestone,
   onToggleComplete,
+  canEdit,
 }: {
   milestone: MilestoneWithRelations;
   onToggleComplete?: () => void;
+  canEdit?: boolean;
 }) {
   const isCompleted = milestone.status === 'completed';
   const isPast = new Date(milestone.target_date) < new Date();
@@ -261,25 +266,34 @@ function MilestoneCard({
             )}
           </div>
 
-          <div className="text-right">
-            <p className={cn(
-              'text-sm font-medium',
-              isCompleted ? 'text-green-600' : isPast ? 'text-red-600' : 'text-gray-900'
-            )}>
-              {formatDate(milestone.target_date, { month: 'short', day: 'numeric', year: 'numeric' })}
-            </p>
-            {!isCompleted && (
+          <div className="flex items-center gap-4">
+            <div className="text-right">
               <p className={cn(
-                'text-xs',
-                isPast ? 'text-red-500' : 'text-gray-500'
+                'text-sm font-medium',
+                isCompleted ? 'text-green-600' : isPast ? 'text-red-600' : 'text-gray-900'
               )}>
-                {isPast ? `${Math.abs(daysUntil)} days overdue` : `${daysUntil} days`}
+                {formatDate(milestone.target_date, { month: 'short', day: 'numeric', year: 'numeric' })}
               </p>
-            )}
-            {isCompleted && milestone.completed_at && (
-              <p className="text-xs text-green-600">
-                Completed {formatDate(milestone.completed_at, { month: 'short', day: 'numeric' })}
-              </p>
+              {!isCompleted && (
+                <p className={cn(
+                  'text-xs',
+                  isPast ? 'text-red-500' : 'text-gray-500'
+                )}>
+                  {isPast ? `${Math.abs(daysUntil)} days overdue` : `${daysUntil} days`}
+                </p>
+              )}
+              {isCompleted && milestone.completed_at && (
+                <p className="text-xs text-green-600">
+                  Completed {formatDate(milestone.completed_at, { month: 'short', day: 'numeric' })}
+                </p>
+              )}
+            </div>
+            {canEdit && (
+              <Link href={`/milestones/${milestone.id}`}>
+                <Button variant="ghost" size="sm" title="Edit milestone">
+                  <PencilIcon className="w-4 h-4" />
+                </Button>
+              </Link>
             )}
           </div>
         </div>
