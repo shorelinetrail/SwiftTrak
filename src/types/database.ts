@@ -367,3 +367,18 @@ export interface VendorActivityAudit {
   // Joined fields
   user?: User;
 }
+
+export interface VendorContact {
+  id: string;
+  vendor_id: string;
+  name: string;
+  job_title?: string;
+  email?: string;
+  phone?: string;
+  is_primary: boolean;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+  // Joined fields
+  creator?: User;
+}

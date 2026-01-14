@@ -20,10 +20,11 @@ import {
   TableCellsIcon,
   Squares2X2Icon,
 } from '@heroicons/react/24/outline';
-import type { Vendor, VendorActivity } from '@/types/database';
+import type { Vendor, VendorActivity, VendorContact } from '@/types/database';
 
 type VendorWithRelations = Vendor & {
   activities?: VendorActivity[];
+  contacts?: VendorContact[];
   _count?: { activities: number; linked_actions: number };
 };
 
@@ -51,7 +52,8 @@ function VendorsPageContent() {
       .from('vendors')
       .select(`
         *,
-        activities:vendor_activities(id, description, status, purchase_order, purchase_order_value, provisional_start_date, confirmed_start_date)
+        activities:vendor_activities(id, description, status, purchase_order, purchase_order_value, provisional_start_date, confirmed_start_date),
+        contacts:vendor_contacts(id, name, job_title, email, phone, is_primary)
       `)
       .order('name');
 
@@ -73,11 +75,17 @@ function VendorsPageContent() {
 
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(v =>
-        v.name.toLowerCase().includes(query) ||
-        v.contact_name?.toLowerCase().includes(query) ||
-        v.contact_email?.toLowerCase().includes(query)
-      );
+      filtered = filtered.filter(v => {
+        // Search vendor name
+        if (v.name.toLowerCase().includes(query)) return true;
+        // Search contacts
+        const contacts = v.contacts || [];
+        return contacts.some(c =>
+          c.name.toLowerCase().includes(query) ||
+          c.email?.toLowerCase().includes(query) ||
+          c.phone?.toLowerCase().includes(query)
+        );
+      });
     }
 
     setFilteredVendors(filtered);
@@ -99,6 +107,11 @@ function VendorsPageContent() {
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(value);
+  };
+
+  const getPrimaryContact = (vendor: VendorWithRelations) => {
+    const contacts = vendor.contacts || [];
+    return contacts.find(c => c.is_primary) || contacts[0] || null;
   };
 
   if (loading) {
@@ -195,6 +208,7 @@ function VendorsPageContent() {
             {filteredVendors.map((vendor) => {
               const stats = getActivityStats(vendor);
               const totalValue = getTotalValue(vendor);
+              const primaryContact = getPrimaryContact(vendor);
 
               return (
                 <Link key={vendor.id} href={`/vendors/${vendor.id}`}>
@@ -207,25 +221,28 @@ function VendorsPageContent() {
                           </div>
                           <div>
                             <h3 className="font-medium text-gray-900">{vendor.name}</h3>
-                            {vendor.contact_name && (
-                              <p className="text-sm text-gray-500">{vendor.contact_name}</p>
+                            {primaryContact && (
+                              <p className="text-sm text-gray-500">
+                                {primaryContact.name}
+                                {primaryContact.job_title && ` · ${primaryContact.job_title}`}
+                              </p>
                             )}
                           </div>
                         </div>
                       </div>
 
-                      {(vendor.contact_email || vendor.contact_phone) && (
+                      {primaryContact && (primaryContact.email || primaryContact.phone) && (
                         <div className="space-y-1 mb-3 text-sm text-gray-500">
-                          {vendor.contact_email && (
+                          {primaryContact.email && (
                             <div className="flex items-center gap-2">
                               <EnvelopeIcon className="w-4 h-4" />
-                              <span className="truncate">{vendor.contact_email}</span>
+                              <span className="truncate">{primaryContact.email}</span>
                             </div>
                           )}
-                          {vendor.contact_phone && (
+                          {primaryContact.phone && (
                             <div className="flex items-center gap-2">
                               <PhoneIcon className="w-4 h-4" />
-                              <span>{vendor.contact_phone}</span>
+                              <span>{primaryContact.phone}</span>
                             </div>
                           )}
                         </div>
@@ -263,6 +280,9 @@ function VendorsPageContent() {
                       Contact
                     </th>
                     <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
+                      Phone
+                    </th>
+                    <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
                       Activities
                     </th>
                     <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
@@ -277,6 +297,7 @@ function VendorsPageContent() {
                   {filteredVendors.map((vendor) => {
                     const stats = getActivityStats(vendor);
                     const totalValue = getTotalValue(vendor);
+                    const primaryContact = getPrimaryContact(vendor);
 
                     return (
                       <tr
@@ -294,13 +315,24 @@ function VendorsPageContent() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="text-sm">
-                            {vendor.contact_name && (
-                              <p className="text-gray-900">{vendor.contact_name}</p>
-                            )}
-                            {vendor.contact_email && (
-                              <p className="text-gray-500 text-xs">{vendor.contact_email}</p>
+                            {primaryContact ? (
+                              <>
+                                <p className="text-gray-900">{primaryContact.name}</p>
+                                {primaryContact.job_title && (
+                                  <p className="text-gray-500 text-xs">{primaryContact.job_title}</p>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-gray-400 text-xs">-</span>
                             )}
                           </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          {primaryContact?.phone ? (
+                            <span className="text-sm text-gray-700">{primaryContact.phone}</span>
+                          ) : (
+                            <span className="text-xs text-gray-400">-</span>
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           <span className="text-sm text-gray-700">{stats.total}</span>

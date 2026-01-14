@@ -23,8 +23,9 @@ import {
   ClockIcon,
   LinkIcon,
   DocumentTextIcon,
+  UserIcon,
 } from '@heroicons/react/24/outline';
-import type { Vendor, VendorActivity, VendorAudit, VendorActivityStatus, Action, User } from '@/types/database';
+import type { Vendor, VendorActivity, VendorAudit, VendorActivityStatus, VendorContact, Action, User } from '@/types/database';
 
 type VendorWithRelations = Vendor & {
   creator?: User;
@@ -47,6 +48,7 @@ export default function VendorDetailPage() {
   const { canEdit, canAdmin } = usePermission();
   const [loading, setLoading] = useState(true);
   const [vendor, setVendor] = useState<VendorWithRelations | null>(null);
+  const [contacts, setContacts] = useState<VendorContact[]>([]);
   const [activities, setActivities] = useState<VendorActivityWithRelations[]>([]);
   const [linkedActions, setLinkedActions] = useState<LinkedAction[]>([]);
   const [auditLog, setAuditLog] = useState<(VendorAudit & { user?: User })[]>([]);
@@ -58,14 +60,21 @@ export default function VendorDetailPage() {
   const [activityModalOpen, setActivityModalOpen] = useState(false);
   const [editingActivity, setEditingActivity] = useState<VendorActivityWithRelations | null>(null);
   const [linkActionModalOpen, setLinkActionModalOpen] = useState(false);
+  const [contactModalOpen, setContactModalOpen] = useState(false);
+  const [editingContact, setEditingContact] = useState<VendorContact | null>(null);
 
   // Form states
   const [vendorForm, setVendorForm] = useState({
     name: '',
-    contact_name: '',
-    contact_email: '',
-    contact_phone: '',
     notes: '',
+  });
+
+  const [contactForm, setContactForm] = useState({
+    name: '',
+    job_title: '',
+    email: '',
+    phone: '',
+    is_primary: false,
   });
 
   const [activityForm, setActivityForm] = useState({
@@ -85,12 +94,18 @@ export default function VendorDetailPage() {
   const fetchVendor = useCallback(async () => {
     const supabase = createClient();
 
-    const [vendorRes, activitiesRes, linksRes, auditRes, actionsRes] = await Promise.all([
+    const [vendorRes, contactsRes, activitiesRes, linksRes, auditRes, actionsRes] = await Promise.all([
       supabase
         .from('vendors')
         .select('*, creator:users!vendors_created_by_fkey(id, full_name)')
         .eq('id', vendorId)
         .single(),
+      supabase
+        .from('vendor_contacts')
+        .select('*')
+        .eq('vendor_id', vendorId)
+        .order('is_primary', { ascending: false })
+        .order('name'),
       supabase
         .from('vendor_activities')
         .select('*, creator:users!vendor_activities_created_by_fkey(id, full_name)')
@@ -120,12 +135,10 @@ export default function VendorDetailPage() {
     setVendor(vendorRes.data as VendorWithRelations);
     setVendorForm({
       name: vendorRes.data.name,
-      contact_name: vendorRes.data.contact_name || '',
-      contact_email: vendorRes.data.contact_email || '',
-      contact_phone: vendorRes.data.contact_phone || '',
       notes: vendorRes.data.notes || '',
     });
 
+    setContacts((contactsRes.data || []) as VendorContact[]);
     setActivities((activitiesRes.data || []) as VendorActivityWithRelations[]);
     setAuditLog((auditRes.data || []) as (VendorAudit & { user?: User })[]);
     setAllActions((actionsRes.data || []) as LinkedAction[]);
@@ -164,23 +177,11 @@ export default function VendorDetailPage() {
       if (vendor?.name !== vendorForm.name) {
         changes.push({ field: 'name', old_value: vendor?.name || '', new_value: vendorForm.name });
       }
-      if (vendor?.contact_name !== vendorForm.contact_name) {
-        changes.push({ field: 'contact_name', old_value: vendor?.contact_name || '', new_value: vendorForm.contact_name });
-      }
-      if (vendor?.contact_email !== vendorForm.contact_email) {
-        changes.push({ field: 'contact_email', old_value: vendor?.contact_email || '', new_value: vendorForm.contact_email });
-      }
-      if (vendor?.contact_phone !== vendorForm.contact_phone) {
-        changes.push({ field: 'contact_phone', old_value: vendor?.contact_phone || '', new_value: vendorForm.contact_phone });
-      }
 
       const { error } = await supabase
         .from('vendors')
         .update({
           name: vendorForm.name.trim(),
-          contact_name: vendorForm.contact_name.trim() || null,
-          contact_email: vendorForm.contact_email.trim() || null,
-          contact_phone: vendorForm.contact_phone.trim() || null,
           notes: vendorForm.notes.trim() || null,
           updated_at: new Date().toISOString(),
         })
@@ -209,6 +210,105 @@ export default function VendorDetailPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSaveContact = async () => {
+    if (!contactForm.name.trim()) {
+      toast.error('Contact name is required');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const supabase = createClient();
+
+      // If setting as primary, unset other primary contacts first
+      if (contactForm.is_primary) {
+        await supabase
+          .from('vendor_contacts')
+          .update({ is_primary: false })
+          .eq('vendor_id', vendorId);
+      }
+
+      if (editingContact) {
+        const { error } = await supabase
+          .from('vendor_contacts')
+          .update({
+            name: contactForm.name.trim(),
+            job_title: contactForm.job_title.trim() || null,
+            email: contactForm.email.trim() || null,
+            phone: contactForm.phone.trim() || null,
+            is_primary: contactForm.is_primary,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', editingContact.id);
+
+        if (error) throw error;
+        toast.success('Contact updated');
+      } else {
+        const { error } = await supabase.from('vendor_contacts').insert({
+          vendor_id: vendorId,
+          name: contactForm.name.trim(),
+          job_title: contactForm.job_title.trim() || null,
+          email: contactForm.email.trim() || null,
+          phone: contactForm.phone.trim() || null,
+          is_primary: contactForm.is_primary,
+          created_by: user?.id,
+        });
+
+        if (error) throw error;
+        toast.success('Contact added');
+      }
+
+      setContactModalOpen(false);
+      setEditingContact(null);
+      resetContactForm();
+      fetchVendor();
+    } catch (error) {
+      console.error('Error saving contact:', error);
+      toast.error('Failed to save contact');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteContact = async (contactId: string) => {
+    if (!confirm('Are you sure you want to delete this contact?')) return;
+
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.from('vendor_contacts').delete().eq('id', contactId);
+
+      if (error) throw error;
+
+      toast.success('Contact deleted');
+      fetchVendor();
+    } catch (error) {
+      console.error('Error deleting contact:', error);
+      toast.error('Failed to delete contact');
+    }
+  };
+
+  const openEditContact = (contact: VendorContact) => {
+    setEditingContact(contact);
+    setContactForm({
+      name: contact.name,
+      job_title: contact.job_title || '',
+      email: contact.email || '',
+      phone: contact.phone || '',
+      is_primary: contact.is_primary,
+    });
+    setContactModalOpen(true);
+  };
+
+  const resetContactForm = () => {
+    setContactForm({
+      name: '',
+      job_title: '',
+      email: '',
+      phone: '',
+      is_primary: false,
+    });
   };
 
   const handleDeleteVendor = async () => {
@@ -509,40 +609,12 @@ export default function VendorDetailPage() {
                 </div>
               </div>
 
-              {/* Contact & Value Badges */}
-              {(vendor.contact_name || totalValue > 0) && (
+              {/* Value Badge */}
+              {totalValue > 0 && (
                 <div className="flex items-center flex-wrap gap-2 mb-6">
-                  {vendor.contact_name && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                      Contact: {vendor.contact_name}
-                    </span>
-                  )}
-                  {totalValue > 0 && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                      Total PO: {formatCurrency(totalValue)}
-                    </span>
-                  )}
-                </div>
-              )}
-
-              {/* Contact Details */}
-              {(vendor.contact_email || vendor.contact_phone) && (
-                <div className="mb-6">
-                  <h3 className="text-sm font-medium text-gray-500 mb-3">Contact Details</h3>
-                  <div className="grid grid-cols-2 gap-6 text-sm">
-                    {vendor.contact_email && (
-                      <div>
-                        <span className="text-gray-500 block mb-1">Email</span>
-                        <p className="font-medium text-gray-900">{vendor.contact_email}</p>
-                      </div>
-                    )}
-                    {vendor.contact_phone && (
-                      <div>
-                        <span className="text-gray-500 block mb-1">Phone</span>
-                        <p className="font-medium text-gray-900">{vendor.contact_phone}</p>
-                      </div>
-                    )}
-                  </div>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    Total PO: {formatCurrency(totalValue)}
+                  </span>
                 </div>
               )}
 
@@ -551,6 +623,80 @@ export default function VendorDetailPage() {
                 <div>
                   <h3 className="text-sm font-medium text-gray-500 mb-2">Notes</h3>
                   <p className="text-sm text-gray-700">{vendor.notes}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Contacts */}
+          <Card>
+            <CardHeader
+              actions={
+                canEdit && (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setEditingContact(null);
+                      resetContactForm();
+                      setContactModalOpen(true);
+                    }}
+                  >
+                    <PlusIcon className="w-4 h-4 mr-2" />
+                    Add Contact
+                  </Button>
+                )
+              }
+            >
+              <CardTitle className="flex items-center gap-2">
+                <UserIcon className="w-5 h-5 text-gray-400" />
+                Contacts ({contacts.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {contacts.length === 0 ? (
+                <p className="text-center text-gray-500 py-4">No contacts yet</p>
+              ) : (
+                <div className="space-y-3">
+                  {contacts.map((contact) => (
+                    <div
+                      key={contact.id}
+                      className="flex items-start justify-between p-3 bg-gray-50 rounded-lg"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-gray-900">{contact.name}</p>
+                          {contact.is_primary && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                              Primary
+                            </span>
+                          )}
+                        </div>
+                        {contact.job_title && (
+                          <p className="text-sm text-gray-600">{contact.job_title}</p>
+                        )}
+                        <div className="flex flex-wrap gap-4 mt-1 text-sm text-gray-500">
+                          {contact.email && <span>{contact.email}</span>}
+                          {contact.phone && <span>{contact.phone}</span>}
+                        </div>
+                      </div>
+                      {canEdit && (
+                        <div className="flex gap-1 ml-2">
+                          <button
+                            onClick={() => openEditContact(contact)}
+                            className="p-1.5 text-gray-400 hover:text-gray-600 rounded"
+                          >
+                            <PencilIcon className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteContact(contact.id)}
+                            className="p-1.5 text-gray-400 hover:text-red-600 rounded"
+                          >
+                            <TrashIcon className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
             </CardContent>
@@ -769,7 +915,6 @@ export default function VendorDetailPage() {
         open={editVendorModalOpen}
         onClose={() => setEditVendorModalOpen(false)}
         title="Edit Vendor"
-        size="lg"
       >
         <div className="space-y-4">
           <Input
@@ -777,24 +922,6 @@ export default function VendorDetailPage() {
             value={vendorForm.name}
             onChange={(e) => setVendorForm({ ...vendorForm, name: e.target.value })}
             required
-          />
-          <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="Contact Name"
-              value={vendorForm.contact_name}
-              onChange={(e) => setVendorForm({ ...vendorForm, contact_name: e.target.value })}
-            />
-            <Input
-              label="Contact Email"
-              type="email"
-              value={vendorForm.contact_email}
-              onChange={(e) => setVendorForm({ ...vendorForm, contact_email: e.target.value })}
-            />
-          </div>
-          <Input
-            label="Contact Phone"
-            value={vendorForm.contact_phone}
-            onChange={(e) => setVendorForm({ ...vendorForm, contact_phone: e.target.value })}
           />
           <Textarea
             label="Notes"
@@ -809,6 +936,69 @@ export default function VendorDetailPage() {
           </Button>
           <Button onClick={handleSaveVendor} loading={saving}>
             Save Changes
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Contact Modal */}
+      <Modal
+        open={contactModalOpen}
+        onClose={() => {
+          setContactModalOpen(false);
+          setEditingContact(null);
+          resetContactForm();
+        }}
+        title={editingContact ? 'Edit Contact' : 'Add Contact'}
+      >
+        <div className="space-y-4">
+          <Input
+            label="Name"
+            value={contactForm.name}
+            onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })}
+            required
+          />
+          <Input
+            label="Job Title"
+            value={contactForm.job_title}
+            onChange={(e) => setContactForm({ ...contactForm, job_title: e.target.value })}
+            placeholder="e.g. Account Manager"
+          />
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Email"
+              type="email"
+              value={contactForm.email}
+              onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
+            />
+            <Input
+              label="Phone"
+              value={contactForm.phone}
+              onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })}
+            />
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={contactForm.is_primary}
+              onChange={(e) => setContactForm({ ...contactForm, is_primary: e.target.checked })}
+              className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+            />
+            <span className="text-sm text-gray-700">Primary contact</span>
+          </label>
+        </div>
+        <div className="flex justify-end gap-3 mt-6">
+          <Button
+            variant="outline"
+            onClick={() => {
+              setContactModalOpen(false);
+              setEditingContact(null);
+              resetContactForm();
+            }}
+          >
+            Cancel
+          </Button>
+          <Button onClick={handleSaveContact} loading={saving}>
+            {editingContact ? 'Update Contact' : 'Add Contact'}
           </Button>
         </div>
       </Modal>
