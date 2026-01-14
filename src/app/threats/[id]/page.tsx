@@ -36,19 +36,19 @@ type ThreatWithRelations = Threat & {
 function formatAuditEntry(entry: ThreatAudit): string {
   switch (entry.change_type) {
     case 'created':
-      return `Threat created: "${entry.new_value}"`;
+      return 'created this threat';
     case 'status_changed':
-      return `Status changed from ${entry.old_value} to ${entry.new_value}`;
+      return `changed status from ${entry.old_value} to ${entry.new_value}`;
     case 'risk_changed':
-      return `Current risk changed from ${entry.old_value} to ${entry.new_value}`;
+      return `changed current risk from ${entry.old_value} to ${entry.new_value}`;
     case 'title_changed':
-      return `Title changed from "${entry.old_value}" to "${entry.new_value}"`;
+      return `changed title from "${entry.old_value}" to "${entry.new_value}"`;
     case 'mitigated_risk_changed':
-      return `Mitigated risk set to ${entry.new_value}`;
+      return `set mitigated risk to ${entry.new_value}`;
     case 'solution_added':
-      return 'Solution was added';
+      return 'added a solution';
     default:
-      return `${entry.change_type}: ${entry.old_value || ''} → ${entry.new_value || ''}`;
+      return `${entry.change_type.replace(/_/g, ' ')}`;
   }
 }
 
@@ -296,7 +296,6 @@ export default function ThreatDetailPage() {
     return (
       <div className="min-h-screen">
         <Header
-          title="Loading..."
           breadcrumbs={[
             { label: 'Threats', href: '/threats' },
             { label: 'Loading...' },
@@ -329,251 +328,244 @@ export default function ThreatDetailPage() {
   return (
     <div className="min-h-screen">
       <Header
-        title={
-          <div className="flex items-center gap-3">
-            <span>{threat.title}</span>
-            {threat.status === 'closed' ? (
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                Closed
-              </span>
-            ) : (
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
-                Open
-              </span>
-            )}
-          </div>
-        }
-        subtitle={threat.workstream?.name}
         breadcrumbs={[
           { label: 'Threats', href: '/threats' },
           { label: threat.title },
         ]}
-        actions={
-          !permissionLoading && (
-            <div className="flex gap-2">
-              {canEdit && threat.status === 'open' && (
-                <Button variant="secondary" size="sm" onClick={() => setCloseModalOpen(true)}>
-                  <CheckCircleIcon className="w-4 h-4 mr-2" />
-                  Close Threat
-                </Button>
-              )}
-              {canEdit && threat.status === 'closed' && (
-                <Button variant="secondary" size="sm" onClick={handleReopenThreat}>
-                  <ArrowPathIcon className="w-4 h-4 mr-2" />
-                  Reopen
-                </Button>
-              )}
-              {canEdit && (
-                <Button variant="outline" size="sm" onClick={() => setEditModalOpen(true)}>
-                  <PencilIcon className="w-4 h-4 mr-2" />
-                  Edit
-                </Button>
-              )}
-              {canAdmin && (
-                <Button variant="danger" size="sm" onClick={() => setDeleteModalOpen(true)}>
-                  <TrashIcon className="w-4 h-4" />
-                </Button>
-              )}
-            </div>
-          )
-        }
       />
 
-      <div className="p-6 max-w-4xl space-y-6">
-        {/* Risk Overview */}
-        <div className="grid grid-cols-3 gap-4">
+      <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Main Content */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Threat Info */}
           <Card>
-            <CardContent className="pt-4 text-center">
-              <p className="text-sm text-gray-500 mb-2">Unmitigated Risk</p>
-              <RiskBadge risk={threat.unmitigated_risk} />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4 text-center">
-              <p className="text-sm text-gray-500 mb-2">Current Risk</p>
-              {canEdit && threat.status === 'open' ? (
-                <Select
-                  options={riskOptions}
-                  value={threat.current_risk}
-                  onChange={(value) => handleUpdateCurrentRisk(value as RiskLevel)}
-                  className="w-full"
-                />
-              ) : (
+            <CardContent className="pt-6">
+              {/* Title and Actions Row */}
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <h1 className="text-2xl font-bold text-gray-900">{threat.title}</h1>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {!permissionLoading && canEdit && threat.status === 'open' && (
+                    <Button variant="secondary" size="sm" onClick={() => setCloseModalOpen(true)}>
+                      <CheckCircleIcon className="w-4 h-4 mr-2" />
+                      Close
+                    </Button>
+                  )}
+                  {!permissionLoading && canEdit && threat.status === 'closed' && (
+                    <Button variant="secondary" size="sm" onClick={handleReopenThreat}>
+                      <ArrowPathIcon className="w-4 h-4 mr-2" />
+                      Reopen
+                    </Button>
+                  )}
+                  {!permissionLoading && canEdit && (
+                    <Button variant="outline" size="sm" onClick={() => setEditModalOpen(true)}>
+                      <PencilIcon className="w-4 h-4 mr-2" />
+                      Edit
+                    </Button>
+                  )}
+                  {!permissionLoading && canAdmin && (
+                    <Button variant="danger" size="sm" onClick={() => setDeleteModalOpen(true)}>
+                      <TrashIcon className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Status Badges Row */}
+              <div className="flex items-center flex-wrap gap-2 mb-6">
+                {threat.status === 'closed' ? (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    Closed
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                    Open
+                  </span>
+                )}
                 <RiskBadge risk={threat.current_risk} />
+                {threat.workstream && (
+                  <span
+                    className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                    style={{
+                      backgroundColor: `${threat.workstream.color}20`,
+                      color: threat.workstream.color,
+                    }}
+                  >
+                    {threat.workstream.name}
+                  </span>
+                )}
+              </div>
+
+              {/* Description */}
+              {threat.description && (
+                <div className="mb-6">
+                  <h3 className="text-sm font-medium text-gray-500 mb-2">Description</h3>
+                  <p className="text-sm text-gray-700">{threat.description}</p>
+                </div>
+              )}
+
+              {/* Solution */}
+              {threat.solution && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+                  <h4 className="text-sm font-medium text-green-800 mb-1">Solution</h4>
+                  <p className="text-sm text-green-700">{threat.solution}</p>
+                </div>
+              )}
+
+              {/* Risk Overview */}
+              <div className="grid grid-cols-3 gap-4 mb-6">
+                <div className="text-center p-3 bg-gray-50 rounded-lg">
+                  <p className="text-xs text-gray-500 mb-1">Unmitigated</p>
+                  <RiskBadge risk={threat.unmitigated_risk} />
+                </div>
+                <div className="text-center p-3 bg-gray-50 rounded-lg">
+                  <p className="text-xs text-gray-500 mb-1">Current</p>
+                  {canEdit && threat.status === 'open' ? (
+                    <Select
+                      options={riskOptions}
+                      value={threat.current_risk}
+                      onChange={(value) => handleUpdateCurrentRisk(value as RiskLevel)}
+                      className="w-full text-sm"
+                    />
+                  ) : (
+                    <RiskBadge risk={threat.current_risk} />
+                  )}
+                </div>
+                <div className="text-center p-3 bg-gray-50 rounded-lg">
+                  <p className="text-xs text-gray-500 mb-1">Mitigated</p>
+                  {threat.mitigated_risk ? (
+                    <RiskBadge risk={threat.mitigated_risk} />
+                  ) : (
+                    <span className="text-gray-400 text-xs">TBD</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Details Grid */}
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                {threat.expected_delay && (
+                  <div>
+                    <span className="text-gray-500">Potential Delay</span>
+                    <p className="mt-1 font-medium text-gray-900">{threat.expected_delay}</p>
+                  </div>
+                )}
+                {threat.status === 'closed' && threat.actual_delay && (
+                  <div>
+                    <span className="text-gray-500">Actual Delay</span>
+                    <p className="mt-1 font-medium text-gray-900">{threat.actual_delay}</p>
+                  </div>
+                )}
+                <div>
+                  <span className="text-gray-500">Created</span>
+                  <p className="mt-1 font-medium text-gray-900">
+                    {formatDate(threat.created_at)} by {threat.creator?.full_name}
+                  </p>
+                </div>
+              </div>
+
+              {/* Proposed Mitigation */}
+              {threat.proposed_mitigation && (
+                <div className="mt-6 pt-4 border-t border-gray-100">
+                  <h3 className="text-sm font-medium text-gray-500 mb-2">Proposed Mitigation</h3>
+                  <p className="text-sm text-gray-700">{threat.proposed_mitigation}</p>
+                </div>
               )}
             </CardContent>
           </Card>
+
+          {/* Updates/Comments */}
           <Card>
-            <CardContent className="pt-4 text-center">
-              <p className="text-sm text-gray-500 mb-2">Mitigated Risk</p>
-              {threat.mitigated_risk ? (
-                <RiskBadge risk={threat.mitigated_risk} />
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ChatBubbleLeftIcon className="w-5 h-5 text-gray-400" />
+                Updates ({updates.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {/* Add update form */}
+              {canEdit && (
+                <div className="mb-4">
+                  <Textarea
+                    placeholder="Add an update..."
+                    value={newUpdateContent}
+                    onChange={(e) => setNewUpdateContent(e.target.value)}
+                    rows={3}
+                  />
+                  <div className="flex justify-end mt-2">
+                    <Button
+                      size="sm"
+                      onClick={handleAddUpdate}
+                      disabled={!newUpdateContent.trim() || addingUpdate}
+                      loading={addingUpdate}
+                    >
+                      Post Update
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Updates list */}
+              {updates.length === 0 ? (
+                <p className="text-center text-gray-500 py-8">No updates yet</p>
               ) : (
-                <span className="text-gray-400 text-sm">TBD</span>
+                <div className="space-y-4">
+                  {updates.map((update) => (
+                    <div key={update.id} className="flex gap-3 p-3 bg-gray-50 rounded-lg">
+                      <Avatar
+                        src={update.user?.avatar_url}
+                        name={update.user?.full_name || 'Unknown'}
+                        size="sm"
+                      />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-900">
+                            {update.user?.full_name || 'Unknown'}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            {getRelativeTime(update.created_at)}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-700 mt-1">{update.content}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </CardContent>
           </Card>
         </div>
 
-        {/* Details */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Threat Details</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div>
-              <h4 className="text-sm font-medium text-gray-500 mb-1">Description</h4>
-              <p className="text-gray-900">{threat.description}</p>
-            </div>
-
-            {threat.expected_delay && (
-              <div>
-                <h4 className="text-sm font-medium text-gray-500 mb-1">Potential Delay</h4>
-                <p className="text-gray-900">{threat.expected_delay}</p>
-              </div>
-            )}
-
-            {threat.status === 'closed' && threat.actual_delay && (
-              <div>
-                <h4 className="text-sm font-medium text-gray-500 mb-1">Actual Delay</h4>
-                <p className="text-gray-900">{threat.actual_delay}</p>
-              </div>
-            )}
-
-            {threat.proposed_mitigation && (
-              <div>
-                <h4 className="text-sm font-medium text-gray-500 mb-1">Proposed Mitigation</h4>
-                <p className="text-gray-900">{threat.proposed_mitigation}</p>
-              </div>
-            )}
-
-            {threat.solution && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                <h4 className="text-sm font-medium text-green-800 mb-1">Solution</h4>
-                <p className="text-green-700">{threat.solution}</p>
-              </div>
-            )}
-
-            <div className="pt-4 border-t border-gray-200 grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-gray-500">Workstream</span>
-                {threat.workstream && (
-                  <p className="mt-1">
-                    <span
-                      className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                      style={{
-                        backgroundColor: `${threat.workstream.color}20`,
-                        color: threat.workstream.color,
-                      }}
-                    >
-                      {threat.workstream.name}
-                    </span>
-                  </p>
-                )}
-              </div>
-              <div>
-                <span className="text-gray-500">Created</span>
-                <p className="mt-1 font-medium text-gray-900">
-                  {formatDate(threat.created_at)} by {threat.creator?.full_name}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Updates/Comments */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ChatBubbleLeftIcon className="w-5 h-5 text-gray-400" />
-              Updates
-              {updates.length > 0 && (
-                <span className="text-sm font-normal text-gray-500">({updates.length})</span>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Add update form */}
-            {canEdit && (
-              <div className="flex gap-3">
-                <Textarea
-                  placeholder="Add an update or comment..."
-                  value={newUpdateContent}
-                  onChange={(e) => setNewUpdateContent(e.target.value)}
-                  rows={2}
-                  className="flex-1"
-                />
-                <Button
-                  onClick={handleAddUpdate}
-                  disabled={!newUpdateContent.trim() || addingUpdate}
-                  size="sm"
-                  className="self-end"
-                >
-                  {addingUpdate ? 'Adding...' : 'Add'}
-                </Button>
-              </div>
-            )}
-
-            {/* Updates list */}
-            {updates.length === 0 ? (
-              <p className="text-sm text-gray-500 text-center py-4">No updates yet</p>
-            ) : (
-              <div className="space-y-4">
-                {updates.map((update) => (
-                  <div key={update.id} className="flex gap-3">
-                    <Avatar
-                      src={update.user?.avatar_url}
-                      name={update.user?.full_name || 'Unknown'}
-                      size="sm"
-                    />
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-gray-900 text-sm">
-                          {update.user?.full_name || 'Unknown'}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          {getRelativeTime(update.created_at)}
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap">
-                        {update.content}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Audit Log */}
-        {auditLog.length > 0 && (
+        {/* Sidebar - Audit Trail */}
+        <div className="space-y-6">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <ClockIcon className="w-5 h-5 text-gray-400" />
-                Activity Log
+                Audit Trail
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {auditLog.map((entry) => (
-                  <div key={entry.id} className="flex items-start gap-3 text-sm">
-                    <div className="w-2 h-2 mt-1.5 rounded-full bg-gray-400 flex-shrink-0" />
-                    <div className="flex-1">
-                      <p className="text-gray-900">
+              {auditLog.length === 0 ? (
+                <p className="text-center text-gray-500 py-4">No history</p>
+              ) : (
+                <div className="space-y-4">
+                  {auditLog.map((entry) => (
+                    <div key={entry.id} className="relative pl-4 border-l-2 border-gray-200">
+                      <div className="absolute -left-1.5 top-0 w-3 h-3 rounded-full bg-gray-300" />
+                      <p className="text-sm text-gray-900">
+                        <span className="font-medium">{entry.user?.full_name || 'System'}</span>
+                        {' '}
                         {formatAuditEntry(entry)}
                       </p>
                       <p className="text-xs text-gray-500 mt-0.5">
-                        {entry.user?.full_name || 'System'} &middot; {formatDate(entry.created_at)}
+                        {getRelativeTime(entry.change_type === 'created' ? threat.created_at : entry.created_at)}
                       </p>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
-        )}
+        </div>
       </div>
 
       {/* Edit Modal */}
