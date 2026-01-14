@@ -75,7 +75,7 @@ export default function VendorDetailPage() {
     start_date: '',
     end_date: '',
     dates_confirmed: false,
-    status: 'planned' as VendorActivityStatus,
+    status: 'in_progress' as VendorActivityStatus,
     notes: '',
   });
 
@@ -407,7 +407,7 @@ export default function VendorDetailPage() {
       start_date: '',
       end_date: '',
       dates_confirmed: false,
-      status: 'planned',
+      status: 'in_progress',
       notes: '',
     });
   };
@@ -428,8 +428,6 @@ export default function VendorDetailPage() {
   };
 
   const statusOptions = [
-    { value: 'planned', label: 'Planned' },
-    { value: 'confirmed', label: 'Confirmed' },
     { value: 'in_progress', label: 'In Progress' },
     { value: 'complete', label: 'Complete' },
     { value: 'cancelled', label: 'Cancelled' },
