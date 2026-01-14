@@ -427,7 +427,6 @@ export default function ActionDetailPage() {
     return (
       <div className="min-h-screen">
         <Header
-          title="Loading..."
           breadcrumbs={[
             { label: 'Actions', href: '/actions' },
             { label: 'Loading...' },
@@ -467,69 +466,10 @@ export default function ActionDetailPage() {
   return (
     <div className="min-h-screen">
       <Header
-        title={action.title}
         breadcrumbs={[
           { label: 'Actions', href: '/actions' },
           { label: action.title },
         ]}
-        actions={
-          <div className="flex items-center gap-2">
-            {/* Navigation */}
-            {allActionIds.length > 1 && (
-              <div className="flex items-center gap-1 mr-2">
-                <button
-                  onClick={goToPrevious}
-                  disabled={currentIndex <= 0}
-                  className={cn(
-                    'p-1.5 rounded-lg transition-colors',
-                    currentIndex > 0
-                      ? 'text-gray-600 hover:bg-gray-100'
-                      : 'text-gray-300 cursor-not-allowed'
-                  )}
-                  title="Previous action"
-                >
-                  <ChevronLeftIcon className="w-5 h-5" />
-                </button>
-                <span className="text-xs text-gray-500 min-w-[4rem] text-center">
-                  {currentIndex + 1} / {allActionIds.length}
-                </span>
-                <button
-                  onClick={goToNext}
-                  disabled={currentIndex >= allActionIds.length - 1}
-                  className={cn(
-                    'p-1.5 rounded-lg transition-colors',
-                    currentIndex < allActionIds.length - 1
-                      ? 'text-gray-600 hover:bg-gray-100'
-                      : 'text-gray-300 cursor-not-allowed'
-                  )}
-                  title="Next action"
-                >
-                  <ChevronRightIcon className="w-5 h-5" />
-                </button>
-              </div>
-            )}
-
-            {canEdit && (
-              <>
-                <Button variant="outline" size="sm" onClick={() => setEditModalOpen(true)}>
-                  <PencilIcon className="w-4 h-4 mr-2" />
-                  Edit
-                </Button>
-                {action.status !== 'complete' && action.status !== 'cancelled' && (
-                  <Button size="sm" onClick={() => setCompleteModalOpen(true)}>
-                    <CheckCircleIcon className="w-4 h-4 mr-2" />
-                    Complete
-                  </Button>
-                )}
-              </>
-            )}
-            {canAdmin && (
-              <Button variant="danger" size="sm" onClick={() => setDeleteModalOpen(true)}>
-                <TrashIcon className="w-4 h-4" />
-              </Button>
-            )}
-          </div>
-        }
       />
 
       <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -538,6 +478,67 @@ export default function ActionDetailPage() {
           {/* Action Details */}
           <Card>
             <CardContent className="pt-6">
+              {/* Title and Actions Row */}
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <h1 className="text-2xl font-bold text-gray-900">{action.title}</h1>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {/* Navigation */}
+                  {allActionIds.length > 1 && (
+                    <div className="flex items-center gap-1 mr-2">
+                      <button
+                        onClick={goToPrevious}
+                        disabled={currentIndex <= 0}
+                        className={cn(
+                          'p-1.5 rounded-lg transition-colors',
+                          currentIndex > 0
+                            ? 'text-gray-600 hover:bg-gray-100'
+                            : 'text-gray-300 cursor-not-allowed'
+                        )}
+                        title="Previous action"
+                      >
+                        <ChevronLeftIcon className="w-5 h-5" />
+                      </button>
+                      <span className="text-xs text-gray-500 min-w-[4rem] text-center">
+                        {currentIndex + 1} / {allActionIds.length}
+                      </span>
+                      <button
+                        onClick={goToNext}
+                        disabled={currentIndex >= allActionIds.length - 1}
+                        className={cn(
+                          'p-1.5 rounded-lg transition-colors',
+                          currentIndex < allActionIds.length - 1
+                            ? 'text-gray-600 hover:bg-gray-100'
+                            : 'text-gray-300 cursor-not-allowed'
+                        )}
+                        title="Next action"
+                      >
+                        <ChevronRightIcon className="w-5 h-5" />
+                      </button>
+                    </div>
+                  )}
+
+                  {canEdit && (
+                    <>
+                      <Button variant="outline" size="sm" onClick={() => setEditModalOpen(true)}>
+                        <PencilIcon className="w-4 h-4 mr-2" />
+                        Edit
+                      </Button>
+                      {action.status !== 'complete' && action.status !== 'cancelled' && (
+                        <Button size="sm" onClick={() => setCompleteModalOpen(true)}>
+                          <CheckCircleIcon className="w-4 h-4 mr-2" />
+                          Complete
+                        </Button>
+                      )}
+                    </>
+                  )}
+                  {canAdmin && (
+                    <Button variant="danger" size="sm" onClick={() => setDeleteModalOpen(true)}>
+                      <TrashIcon className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+
               {/* Status Badges Row */}
               <div className="flex items-center flex-wrap gap-3 mb-6">
                 <StatusBadge status={action.status} />
