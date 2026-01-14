@@ -27,8 +27,9 @@ export default function NewActionPage() {
     owner_id: '',
     priority: 'medium' as Priority,
     due_date: '',
-    completed_at: '', // For importing already-closed actions
+    completed_at: '', // Date closed for importing already-closed actions
     initial_comment: '', // For importing legacy comments
+    created_by_override: '', // For bulk import - defaults to System if blank
   });
 
   // Fetch workstreams and users on mount
@@ -83,6 +84,16 @@ export default function NewActionPage() {
       const isCompleted = !!formData.completed_at;
       const status = isCompleted ? 'complete' : 'pending';
 
+      // System user ID for bulk imports
+      const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000';
+
+      // Determine who created this action
+      // If using import fields (date closed, initial comment, or created_by_override), use override or System
+      const isImport = formData.completed_at || formData.initial_comment.trim() || formData.created_by_override;
+      const createdBy = isImport
+        ? (formData.created_by_override || SYSTEM_USER_ID)
+        : user?.id;
+
       const { data, error } = await supabase
         .from('actions')
         .insert({
@@ -94,7 +105,7 @@ export default function NewActionPage() {
           due_date: formData.due_date || null,
           status,
           completed_at: formData.completed_at || null,
-          created_by: user?.id,
+          created_by: createdBy,
         })
         .select()
         .single();
@@ -107,7 +118,7 @@ export default function NewActionPage() {
           .from('action_updates')
           .insert({
             action_id: data.id,
-            user_id: user?.id,
+            user_id: createdBy, // Use same user as action creator for legacy comments
             content: formData.initial_comment.trim(),
           });
       }
@@ -130,6 +141,12 @@ export default function NewActionPage() {
   const userOptions = [
     { value: '', label: 'Unassigned' },
     ...users.map(u => ({ value: u.id, label: u.full_name })),
+  ];
+
+  // Options for created_by in import section - defaults to System if blank
+  const createdByOptions = [
+    { value: '', label: 'System (default)' },
+    ...users.filter(u => u.id !== '00000000-0000-0000-0000-000000000000').map(u => ({ value: u.id, label: u.full_name })),
   ];
 
   const priorityOptions = [
@@ -202,10 +219,18 @@ export default function NewActionPage() {
 
                 <div className="space-y-4">
                   <Input
-                    label="Completion Date (if already completed)"
+                    label="Date Closed (if already completed)"
                     type="date"
                     value={formData.completed_at}
                     onChange={(e) => setFormData({ ...formData, completed_at: e.target.value })}
+                  />
+
+                  <Select
+                    label="Created By (defaults to System if blank)"
+                    options={createdByOptions}
+                    value={formData.created_by_override}
+                    onChange={(value) => setFormData({ ...formData, created_by_override: value })}
+                    disabled={loadingUsers}
                   />
 
                   <Textarea
