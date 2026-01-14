@@ -70,6 +70,7 @@ export interface ActionUpdate {
   user_id: string;
   content: string;
   created_at: string;
+  is_legacy_import?: boolean;
   // Joined fields
   user?: User;
 }

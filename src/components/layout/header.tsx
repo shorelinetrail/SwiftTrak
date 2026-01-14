@@ -49,41 +49,41 @@ export function Header({ title, subtitle, actions, breadcrumbs }: HeaderProps) {
 
   return (
     <header className="sticky top-0 z-30 bg-white border-b border-gray-200">
-      <div className="flex h-16 items-center justify-between px-6">
+      <div className={`flex items-center justify-between px-6 ${breadcrumbs && breadcrumbs.length > 0 ? 'py-3' : 'h-16'}`}>
         {/* Title & Breadcrumbs */}
-        <div>
+        <div className="min-w-0 flex-1">
           {breadcrumbs && breadcrumbs.length > 0 && (
-            <nav className="flex items-center gap-1 text-sm mb-1">
+            <nav className="flex items-center gap-1 text-xs mb-0.5">
               <Link href="/dashboard" className="text-gray-400 hover:text-gray-600">
-                <HomeIcon className="w-4 h-4" />
+                <HomeIcon className="w-3.5 h-3.5" />
               </Link>
               {breadcrumbs.map((crumb, index) => (
                 <span key={index} className="flex items-center gap-1">
                   <ChevronRightIcon className="w-3 h-3 text-gray-400" />
                   {crumb.href ? (
-                    <Link href={crumb.href} className="text-gray-500 hover:text-gray-700">
+                    <Link href={crumb.href} className="text-gray-500 hover:text-gray-700 truncate max-w-[150px]">
                       {crumb.label}
                     </Link>
                   ) : (
-                    <span className="text-gray-700 font-medium">{crumb.label}</span>
+                    <span className="text-gray-700 font-medium truncate max-w-[200px]">{crumb.label}</span>
                   )}
                 </span>
               ))}
             </nav>
           )}
           {title && (
-            <div className="flex items-center gap-3">
-              <h1 className="text-xl font-semibold text-gray-900">{title}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg font-semibold text-gray-900 truncate">{title}</h1>
               {/* Connection status indicator */}
               <div
-                className={`w-2 h-2 rounded-full ${
+                className={`w-2 h-2 rounded-full flex-shrink-0 ${
                   isConnected ? 'bg-green-500' : 'bg-gray-300'
                 }`}
                 title={isConnected ? 'Connected' : 'Disconnected'}
               />
             </div>
           )}
-          {subtitle && <p className="text-sm text-gray-500">{subtitle}</p>}
+          {subtitle && <p className="text-xs text-gray-500 truncate">{subtitle}</p>}
         </div>
 
         {/* Search & Actions */}

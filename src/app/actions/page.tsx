@@ -404,6 +404,7 @@ function ActionsPageContent() {
                 action_id: newAction.id,
                 user_id: created_by_id,
                 content: initialComment.trim(),
+                is_legacy_import: true,
               });
           }
         }
