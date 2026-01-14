@@ -13,7 +13,7 @@ import { StatusBadge, PriorityBadge, RiskBadge } from '@/components/ui/badge';
 import { Avatar } from '@/components/ui/avatar';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDate, isOverdue, getDaysUntil, buildWorkstreamOptions } from '@/lib/utils';
+import { formatDate, isOverdue, getDaysUntil, getRelativeTime, buildWorkstreamOptions } from '@/lib/utils';
 import {
   ClipboardDocumentListIcon,
   ExclamationTriangleIcon,
@@ -24,6 +24,9 @@ import {
   ExclamationCircleIcon,
   PlusIcon,
   FunnelIcon,
+  UserIcon,
+  ArrowPathIcon,
+  BoltIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import type { Action, Threat, TechnicalQuery, Milestone, Workstream, User } from '@/types/database';
@@ -48,7 +51,10 @@ export default function DashboardPage() {
   const [allThreats, setAllThreats] = useState<{ id: string; current_risk: string; workstream_id: string }[]>([]);
   const [allQueries, setAllQueries] = useState<{ id: string; responded_at: string | null }[]>([]);
   const [allMilestones, setAllMilestones] = useState<{ id: string; target_date: string; status: string; workstream_id: string | null }[]>([]);
-  const [recentActions, setRecentActions] = useState<(Action & { owner?: User; workstream?: Workstream })[]>([]);
+  const [myActions, setMyActions] = useState<(Action & { owner?: User; workstream?: Workstream })[]>([]);
+  const [overdueActions, setOverdueActions] = useState<(Action & { owner?: User; workstream?: Workstream })[]>([]);
+  const [highPriorityActions, setHighPriorityActions] = useState<(Action & { owner?: User; workstream?: Workstream })[]>([]);
+  const [recentlyUpdated, setRecentlyUpdated] = useState<(Action & { owner?: User; workstream?: Workstream })[]>([]);
   const [recentThreats, setRecentThreats] = useState<(Threat & { workstream?: Workstream })[]>([]);
   const [pendingQueries, setPendingQueries] = useState<(TechnicalQuery & { assignee?: User })[]>([]);
   const [upcomingMilestones, setUpcomingMilestones] = useState<(Milestone & { workstream?: Workstream })[]>([]);
@@ -92,11 +98,32 @@ export default function DashboardPage() {
   }, [allActions, allThreats, allQueries, allMilestones, selectedWorkstream]);
 
   // Filter displayed items by workstream
-  const filteredRecentActions = useMemo(() =>
+  const filteredMyActions = useMemo(() =>
     selectedWorkstream === 'all'
-      ? recentActions
-      : recentActions.filter(a => a.workstream_id === selectedWorkstream),
-    [recentActions, selectedWorkstream]
+      ? myActions
+      : myActions.filter(a => a.workstream_id === selectedWorkstream),
+    [myActions, selectedWorkstream]
+  );
+
+  const filteredOverdueActions = useMemo(() =>
+    selectedWorkstream === 'all'
+      ? overdueActions
+      : overdueActions.filter(a => a.workstream_id === selectedWorkstream),
+    [overdueActions, selectedWorkstream]
+  );
+
+  const filteredHighPriorityActions = useMemo(() =>
+    selectedWorkstream === 'all'
+      ? highPriorityActions
+      : highPriorityActions.filter(a => a.workstream_id === selectedWorkstream),
+    [highPriorityActions, selectedWorkstream]
+  );
+
+  const filteredRecentlyUpdated = useMemo(() =>
+    selectedWorkstream === 'all'
+      ? recentlyUpdated
+      : recentlyUpdated.filter(a => a.workstream_id === selectedWorkstream),
+    [recentlyUpdated, selectedWorkstream]
   );
 
   const filteredRecentThreats = useMemo(() =>
@@ -184,24 +211,58 @@ export default function DashboardPage() {
         setAllMilestones(milestonesData as { id: string; target_date: string; status: string; workstream_id: string | null }[]);
 
         const now = new Date();
+        const actionSelect = `*, owner:users!actions_owner_id_fkey(id, full_name, avatar_url), workstream:workstreams(id, name, color)`;
 
         // Fetch detailed data in parallel with timeout
         const detailResult = await Promise.race([
           Promise.all([
+            // My Actions - assigned to current user
+            userId
+              ? supabase
+                  .from('actions')
+                  .select(actionSelect)
+                  .eq('owner_id', userId)
+                  .in('status', ['pending', 'in_progress'])
+                  .order('updated_at', { ascending: false })
+                  .limit(5)
+                  .then(r => r.data)
+              : Promise.resolve([]),
+            // Overdue Actions
             supabase
               .from('actions')
-              .select(`*, owner:users!actions_owner_id_fkey(id, full_name, avatar_url), workstream:workstreams(id, name, color)`)
+              .select(actionSelect)
+              .lt('due_date', now.toISOString().split('T')[0])
+              .in('status', ['pending', 'in_progress'])
+              .order('due_date', { ascending: true })
+              .limit(5)
+              .then(r => r.data),
+            // High Priority Actions
+            supabase
+              .from('actions')
+              .select(actionSelect)
+              .in('priority', ['critical', 'high'])
+              .in('status', ['pending', 'in_progress'])
+              .order('priority', { ascending: true })
+              .order('updated_at', { ascending: false })
+              .limit(5)
+              .then(r => r.data),
+            // Recently Updated Actions
+            supabase
+              .from('actions')
+              .select(actionSelect)
               .in('status', ['pending', 'in_progress'])
               .order('updated_at', { ascending: false })
               .limit(5)
               .then(r => r.data),
+            // Active Threats
             supabase
               .from('threats')
               .select(`*, workstream:workstreams(id, name, color)`)
-              .in('current_risk', ['high', 'medium'])
+              .is('closed_at', null)
               .order('updated_at', { ascending: false })
               .limit(5)
               .then(r => r.data),
+            // Upcoming Milestones
             supabase
               .from('milestones')
               .select(`*, workstream:workstreams(id, name, color)`)
@@ -217,9 +278,18 @@ export default function DashboardPage() {
         if (!mounted) return;
 
         if (detailResult) {
-          const [recentActionsData, recentThreatsData, upcomingMilestonesData] = detailResult;
-          if (recentActionsData) {
-            setRecentActions(recentActionsData as unknown as (Action & { owner?: User; workstream?: Workstream })[]);
+          const [myActionsData, overdueActionsData, highPriorityActionsData, recentlyUpdatedData, recentThreatsData, upcomingMilestonesData] = detailResult;
+          if (myActionsData) {
+            setMyActions(myActionsData as unknown as (Action & { owner?: User; workstream?: Workstream })[]);
+          }
+          if (overdueActionsData) {
+            setOverdueActions(overdueActionsData as unknown as (Action & { owner?: User; workstream?: Workstream })[]);
+          }
+          if (highPriorityActionsData) {
+            setHighPriorityActions(highPriorityActionsData as unknown as (Action & { owner?: User; workstream?: Workstream })[]);
+          }
+          if (recentlyUpdatedData) {
+            setRecentlyUpdated(recentlyUpdatedData as unknown as (Action & { owner?: User; workstream?: Workstream })[]);
           }
           if (recentThreatsData) {
             setRecentThreats(recentThreatsData as unknown as (Threat & { workstream?: Workstream })[]);
@@ -381,7 +451,7 @@ export default function DashboardPage() {
 
         {/* Main Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Recent Actions */}
+          {/* Recently Updated */}
           <Card>
             <CardHeader
               actions={
@@ -391,24 +461,220 @@ export default function DashboardPage() {
               }
             >
               <CardTitle className="flex items-center gap-2">
-                <ClipboardDocumentListIcon className="w-5 h-5 text-gray-400" />
-                Active Actions
+                <ArrowPathIcon className="w-5 h-5 text-gray-400" />
+                Recently Updated
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {filteredRecentActions.length === 0 ? (
+              {filteredRecentlyUpdated.length === 0 ? (
                 <EmptyState
-                  icon={<ClipboardDocumentListIcon className="w-6 h-6" />}
-                  title="No active actions"
-                  description="All actions are complete or no actions created yet."
-                  action={{
-                    label: 'Create Action',
-                    onClick: () => window.location.href = '/actions/new',
-                  }}
+                  icon={<ArrowPathIcon className="w-6 h-6" />}
+                  title="No recent activity"
+                  description="No actions have been updated recently."
                 />
               ) : (
                 <div className="space-y-3">
-                  {filteredRecentActions.map((action) => (
+                  {filteredRecentlyUpdated.map((action) => (
+                    <Link
+                      key={action.id}
+                      href={`/actions/${action.id}`}
+                      className="block p-3 rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-sm font-medium text-gray-900 truncate">{action.title}</h4>
+                            <PriorityBadge priority={action.priority} />
+                          </div>
+                          <div className="flex items-center gap-2 mt-1">
+                            {action.workstream && (
+                              <span
+                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                                style={{
+                                  backgroundColor: `${action.workstream.color}20`,
+                                  color: action.workstream.color,
+                                }}
+                              >
+                                {action.workstream.name}
+                              </span>
+                            )}
+                            <StatusBadge status={action.status} />
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          {action.owner && (
+                            <Avatar src={action.owner.avatar_url} name={action.owner.full_name} size="xs" />
+                          )}
+                          <span className="text-xs text-gray-500">
+                            {getRelativeTime(action.updated_at)}
+                          </span>
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* My Actions */}
+          <Card>
+            <CardHeader
+              actions={
+                <Link href={`/actions?owner=${currentUser?.id || ''}`}>
+                  <Button variant="ghost" size="sm">View All</Button>
+                </Link>
+              }
+            >
+              <CardTitle className="flex items-center gap-2">
+                <UserIcon className="w-5 h-5 text-gray-400" />
+                Assigned to Me
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {!currentUser ? (
+                <EmptyState
+                  icon={<UserIcon className="w-6 h-6" />}
+                  title="Sign in to see your actions"
+                  description="Your assigned actions will appear here."
+                />
+              ) : filteredMyActions.length === 0 ? (
+                <EmptyState
+                  icon={<UserIcon className="w-6 h-6" />}
+                  title="No actions assigned"
+                  description="You have no active actions assigned to you."
+                />
+              ) : (
+                <div className="space-y-3">
+                  {filteredMyActions.map((action) => (
+                    <Link
+                      key={action.id}
+                      href={`/actions/${action.id}`}
+                      className="block p-3 rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-sm font-medium text-gray-900 truncate">{action.title}</h4>
+                            <PriorityBadge priority={action.priority} />
+                          </div>
+                          <div className="flex items-center gap-2 mt-1">
+                            {action.workstream && (
+                              <span
+                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                                style={{
+                                  backgroundColor: `${action.workstream.color}20`,
+                                  color: action.workstream.color,
+                                }}
+                              >
+                                {action.workstream.name}
+                              </span>
+                            )}
+                            <StatusBadge status={action.status} />
+                          </div>
+                        </div>
+                        {action.due_date && (
+                          <span className={`text-xs ${isOverdue(action.due_date) ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
+                            {isOverdue(action.due_date) ? 'Overdue' : `Due ${getDaysUntil(action.due_date)}d`}
+                          </span>
+                        )}
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Overdue Actions */}
+          <Card>
+            <CardHeader
+              actions={
+                <Link href="/actions?status=overdue">
+                  <Button variant="ghost" size="sm">View All</Button>
+                </Link>
+              }
+            >
+              <CardTitle className="flex items-center gap-2">
+                <ClockIcon className="w-5 h-5 text-orange-500" />
+                Overdue
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {filteredOverdueActions.length === 0 ? (
+                <EmptyState
+                  icon={<ClockIcon className="w-6 h-6" />}
+                  title="No overdue actions"
+                  description="All actions are on track."
+                />
+              ) : (
+                <div className="space-y-3">
+                  {filteredOverdueActions.map((action) => (
+                    <Link
+                      key={action.id}
+                      href={`/actions/${action.id}`}
+                      className="block p-3 rounded-lg border border-orange-200 bg-orange-50/50 hover:border-orange-300 hover:shadow-sm transition-all"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-sm font-medium text-gray-900 truncate">{action.title}</h4>
+                            <PriorityBadge priority={action.priority} />
+                          </div>
+                          <div className="flex items-center gap-2 mt-1">
+                            {action.workstream && (
+                              <span
+                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                                style={{
+                                  backgroundColor: `${action.workstream.color}20`,
+                                  color: action.workstream.color,
+                                }}
+                              >
+                                {action.workstream.name}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          {action.owner && (
+                            <Avatar src={action.owner.avatar_url} name={action.owner.full_name} size="xs" />
+                          )}
+                          <span className="text-xs text-red-600 font-medium">
+                            {Math.abs(getDaysUntil(action.due_date!))}d overdue
+                          </span>
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* High Priority Actions */}
+          <Card>
+            <CardHeader
+              actions={
+                <Link href="/actions?priority=critical,high">
+                  <Button variant="ghost" size="sm">View All</Button>
+                </Link>
+              }
+            >
+              <CardTitle className="flex items-center gap-2">
+                <BoltIcon className="w-5 h-5 text-red-500" />
+                High Priority
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {filteredHighPriorityActions.length === 0 ? (
+                <EmptyState
+                  icon={<BoltIcon className="w-6 h-6" />}
+                  title="No high priority actions"
+                  description="No critical or high priority actions."
+                />
+              ) : (
+                <div className="space-y-3">
+                  {filteredHighPriorityActions.map((action) => (
                     <Link
                       key={action.id}
                       href={`/actions/${action.id}`}
@@ -453,7 +719,7 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Threats */}
+          {/* Active Threats */}
           <Card>
             <CardHeader
               actions={
@@ -472,7 +738,7 @@ export default function DashboardPage() {
                 <EmptyState
                   icon={<ExclamationTriangleIcon className="w-6 h-6" />}
                   title="No active threats"
-                  description="No high or medium risk threats identified."
+                  description="No open threats identified."
                   action={{
                     label: 'Log Threat',
                     onClick: () => window.location.href = '/threats/new',
@@ -501,11 +767,9 @@ export default function DashboardPage() {
                                 {threat.workstream.name}
                               </span>
                             )}
-                            {threat.expected_delay && (
-                              <span className="text-xs text-gray-500">
-                                Potential delay: {threat.expected_delay}
-                              </span>
-                            )}
+                            <span className="text-xs text-gray-500">
+                              {getRelativeTime(threat.updated_at)}
+                            </span>
                           </div>
                         </div>
                         <RiskBadge risk={threat.current_risk} />

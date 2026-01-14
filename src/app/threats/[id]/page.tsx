@@ -1125,7 +1125,6 @@ function CreateActionFromThreatModal({
           options={workstreamOptions}
           value={workstreamId}
           onChange={(value) => setWorkstreamId(value)}
-          required
         />
         <div className="grid grid-cols-2 gap-4">
           <Select
