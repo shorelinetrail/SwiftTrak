@@ -9,7 +9,7 @@ import { useAppStore } from '@/stores/app-store';
 import { Header } from '@/components/layout/header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Select } from '@/components/ui/select';
+import { Select, MultiSelect } from '@/components/ui/select';
 import { StatusBadge, PriorityBadge } from '@/components/ui/badge';
 import { Avatar } from '@/components/ui/avatar';
 import { Tabs } from '@/components/ui/tabs';
@@ -53,8 +53,8 @@ function ActionsPageContent() {
   const [actions, setActions] = useState<ActionWithRelations[]>([]);
   const [filteredActions, setFilteredActions] = useState<ActionWithRelations[]>([]);
 
-  // View mode (cards or table)
-  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+  // View mode (cards or table) - default to table
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('table');
 
   // Upload modal
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -62,10 +62,10 @@ function ActionsPageContent() {
   const [uploadResults, setUploadResults] = useState<{ success: number; errors: string[]; warnings: string[] } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Filters
-  const [statusFilter, setStatusFilter] = useState<string>(searchParams.get('status') || 'all');
-  const [workstreamFilter, setWorkstreamFilter] = useState<string>(searchParams.get('workstream') || 'all');
-  const [priorityFilter, setPriorityFilter] = useState<string>(searchParams.get('priority') || 'all');
+  // Filters (arrays for multi-select)
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [workstreamFilter, setWorkstreamFilter] = useState<string[]>([]);
+  const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState('all');
 
   const fetchActions = useCallback(async () => {
@@ -97,16 +97,16 @@ function ActionsPageContent() {
   useEffect(() => {
     let filtered = [...actions];
 
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(a => a.status === statusFilter);
+    if (statusFilter.length > 0) {
+      filtered = filtered.filter(a => statusFilter.includes(a.status));
     }
 
-    if (workstreamFilter !== 'all') {
-      filtered = filtered.filter(a => a.workstream_id === workstreamFilter);
+    if (workstreamFilter.length > 0) {
+      filtered = filtered.filter(a => a.workstream_id && workstreamFilter.includes(a.workstream_id));
     }
 
-    if (priorityFilter !== 'all') {
-      filtered = filtered.filter(a => a.priority === priorityFilter);
+    if (priorityFilter.length > 0) {
+      filtered = filtered.filter(a => a.priority && priorityFilter.includes(a.priority));
     }
 
     // Tab filters
@@ -140,7 +140,6 @@ function ActionsPageContent() {
   ];
 
   const statusOptions = [
-    { value: 'all', label: 'All Statuses' },
     { value: 'pending', label: 'Pending' },
     { value: 'in_progress', label: 'In Progress' },
     { value: 'complete', label: 'Complete' },
@@ -148,18 +147,23 @@ function ActionsPageContent() {
   ];
 
   const priorityOptions = [
-    { value: 'all', label: 'All Priorities' },
     { value: 'critical', label: 'Critical' },
     { value: 'high', label: 'High' },
     { value: 'medium', label: 'Medium' },
     { value: 'low', label: 'Low' },
   ];
 
-  const workstreamOptions = buildWorkstreamOptions(workstreams);
+  const workstreamOptions = buildWorkstreamOptions(workstreams, { includeAll: false });
 
   const handleExport = () => {
-    window.location.href = `/api/export/actions?status=${statusFilter}&workstream=${workstreamFilter}&priority=${priorityFilter}`;
+    const params = new URLSearchParams();
+    if (statusFilter.length > 0) params.set('status', statusFilter.join(','));
+    if (workstreamFilter.length > 0) params.set('workstream', workstreamFilter.join(','));
+    if (priorityFilter.length > 0) params.set('priority', priorityFilter.join(','));
+    window.location.href = `/api/export/actions?${params.toString()}`;
   };
+
+  const hasActiveFilters = statusFilter.length > 0 || priorityFilter.length > 0 || workstreamFilter.length > 0;
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -522,32 +526,35 @@ function ActionsPageContent() {
                 <FunnelIcon className="w-4 h-4" />
                 <span className="text-sm font-medium">Filters:</span>
               </div>
-              <Select
+              <MultiSelect
                 options={statusOptions}
                 value={statusFilter}
                 onChange={setStatusFilter}
+                placeholder="All Statuses"
                 className="w-40"
               />
-              <Select
+              <MultiSelect
                 options={priorityOptions}
                 value={priorityFilter}
                 onChange={setPriorityFilter}
+                placeholder="All Priorities"
                 className="w-40"
               />
-              <Select
+              <MultiSelect
                 options={workstreamOptions}
                 value={workstreamFilter}
                 onChange={setWorkstreamFilter}
+                placeholder="All Workstreams"
                 className="w-48"
               />
-              {(statusFilter !== 'all' || priorityFilter !== 'all' || workstreamFilter !== 'all') && (
+              {hasActiveFilters && (
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => {
-                    setStatusFilter('all');
-                    setPriorityFilter('all');
-                    setWorkstreamFilter('all');
+                    setStatusFilter([]);
+                    setPriorityFilter([]);
+                    setWorkstreamFilter([]);
                   }}
                 >
                   Clear Filters
@@ -563,12 +570,12 @@ function ActionsPageContent() {
             icon={<ClipboardDocumentListIcon className="w-6 h-6" />}
             title="No actions found"
             description={
-              statusFilter !== 'all' || priorityFilter !== 'all' || workstreamFilter !== 'all'
+              hasActiveFilters
                 ? 'Try adjusting your filters.'
                 : 'Create your first action to get started.'
             }
             action={
-              statusFilter === 'all' && priorityFilter === 'all' && workstreamFilter === 'all'
+              !hasActiveFilters
                 ? {
                     label: 'Create Action',
                     onClick: () => window.location.href = '/actions/new',
@@ -846,10 +853,10 @@ function ActionsTable({ actions }: { actions: ActionWithRelations[] }) {
                   onClick={() => window.location.href = `/actions/${action.id}`}
                 >
                   <td className="px-4 py-3">
-                    <div className="max-w-xs">
-                      <p className="text-sm font-medium text-gray-900 truncate">{action.title}</p>
+                    <div className="max-w-md">
+                      <p className="text-sm font-medium text-gray-900">{action.title}</p>
                       {action.description && (
-                        <p className="text-xs text-gray-500 truncate mt-0.5">{action.description}</p>
+                        <p className="text-xs text-gray-500 line-clamp-2 mt-0.5">{action.description}</p>
                       )}
                     </div>
                   </td>
