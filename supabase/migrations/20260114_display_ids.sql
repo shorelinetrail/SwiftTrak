@@ -124,8 +124,17 @@ SET display_id = 'A-' || LPAD(numbered.rn::TEXT, 4, '0')
 FROM numbered
 WHERE actions.id = numbered.id;
 
--- Update sequence to continue after existing records
-SELECT setval('action_display_id_seq', GREATEST(1, COALESCE((SELECT MAX(SUBSTRING(display_id FROM 3)::INTEGER) FROM actions WHERE display_id IS NOT NULL), 1)));
+-- Update sequences to continue after existing records (only if records exist)
+DO $$
+DECLARE
+  max_val INTEGER;
+BEGIN
+  -- Actions
+  SELECT MAX(SUBSTRING(display_id FROM 3)::INTEGER) INTO max_val FROM actions WHERE display_id IS NOT NULL;
+  IF max_val IS NOT NULL AND max_val >= 1 THEN
+    PERFORM setval('action_display_id_seq', max_val);
+  END IF;
+END $$;
 
 -- Threats
 WITH numbered AS (
@@ -138,7 +147,15 @@ SET display_id = 'T-' || LPAD(numbered.rn::TEXT, 4, '0')
 FROM numbered
 WHERE threats.id = numbered.id;
 
-SELECT setval('threat_display_id_seq', GREATEST(1, COALESCE((SELECT MAX(SUBSTRING(display_id FROM 3)::INTEGER) FROM threats WHERE display_id IS NOT NULL), 1)));
+DO $$
+DECLARE
+  max_val INTEGER;
+BEGIN
+  SELECT MAX(SUBSTRING(display_id FROM 3)::INTEGER) INTO max_val FROM threats WHERE display_id IS NOT NULL;
+  IF max_val IS NOT NULL AND max_val >= 1 THEN
+    PERFORM setval('threat_display_id_seq', max_val);
+  END IF;
+END $$;
 
 -- Technical Queries
 WITH numbered AS (
@@ -151,7 +168,15 @@ SET display_id = 'Q-' || LPAD(numbered.rn::TEXT, 4, '0')
 FROM numbered
 WHERE technical_queries.id = numbered.id;
 
-SELECT setval('query_display_id_seq', GREATEST(1, COALESCE((SELECT MAX(SUBSTRING(display_id FROM 3)::INTEGER) FROM technical_queries WHERE display_id IS NOT NULL), 1)));
+DO $$
+DECLARE
+  max_val INTEGER;
+BEGIN
+  SELECT MAX(SUBSTRING(display_id FROM 3)::INTEGER) INTO max_val FROM technical_queries WHERE display_id IS NOT NULL;
+  IF max_val IS NOT NULL AND max_val >= 1 THEN
+    PERFORM setval('query_display_id_seq', max_val);
+  END IF;
+END $$;
 
 -- Decisions
 WITH numbered AS (
@@ -164,7 +189,15 @@ SET display_id = 'D-' || LPAD(numbered.rn::TEXT, 4, '0')
 FROM numbered
 WHERE decisions.id = numbered.id;
 
-SELECT setval('decision_display_id_seq', GREATEST(1, COALESCE((SELECT MAX(SUBSTRING(display_id FROM 3)::INTEGER) FROM decisions WHERE display_id IS NOT NULL), 1)));
+DO $$
+DECLARE
+  max_val INTEGER;
+BEGIN
+  SELECT MAX(SUBSTRING(display_id FROM 3)::INTEGER) INTO max_val FROM decisions WHERE display_id IS NOT NULL;
+  IF max_val IS NOT NULL AND max_val >= 1 THEN
+    PERFORM setval('decision_display_id_seq', max_val);
+  END IF;
+END $$;
 
 -- Milestones
 WITH numbered AS (
@@ -177,7 +210,15 @@ SET display_id = 'M-' || LPAD(numbered.rn::TEXT, 4, '0')
 FROM numbered
 WHERE milestones.id = numbered.id;
 
-SELECT setval('milestone_display_id_seq', GREATEST(1, COALESCE((SELECT MAX(SUBSTRING(display_id FROM 3)::INTEGER) FROM milestones WHERE display_id IS NOT NULL), 1)));
+DO $$
+DECLARE
+  max_val INTEGER;
+BEGIN
+  SELECT MAX(SUBSTRING(display_id FROM 3)::INTEGER) INTO max_val FROM milestones WHERE display_id IS NOT NULL;
+  IF max_val IS NOT NULL AND max_val >= 1 THEN
+    PERFORM setval('milestone_display_id_seq', max_val);
+  END IF;
+END $$;
 
 -- Create indexes for display_id lookups
 CREATE INDEX IF NOT EXISTS idx_actions_display_id ON actions(display_id);
