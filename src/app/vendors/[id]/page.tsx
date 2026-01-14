@@ -473,7 +473,7 @@ export default function VendorDetailPage() {
           <Card>
             <CardContent className="pt-6">
               {/* Title and Actions Row */}
-              <div className="flex items-start justify-between gap-4 mb-4">
+              <div className="flex items-start justify-between gap-4 mb-6">
                 <h1 className="text-2xl font-bold text-gray-900">{vendor.name}</h1>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   {canEdit && (
@@ -490,35 +490,37 @@ export default function VendorDetailPage() {
                 </div>
               </div>
 
-              {/* Contact & Value Row */}
-              <div className="flex items-center flex-wrap gap-3 mb-6">
-                {vendor.contact_name && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                    Contact: {vendor.contact_name}
-                  </span>
-                )}
-                {totalValue > 0 && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                    Total PO: {formatCurrency(totalValue)}
-                  </span>
-                )}
-              </div>
+              {/* Contact & Value Badges */}
+              {(vendor.contact_name || totalValue > 0) && (
+                <div className="flex items-center flex-wrap gap-2 mb-6">
+                  {vendor.contact_name && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                      Contact: {vendor.contact_name}
+                    </span>
+                  )}
+                  {totalValue > 0 && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      Total PO: {formatCurrency(totalValue)}
+                    </span>
+                  )}
+                </div>
+              )}
 
               {/* Contact Details */}
               {(vendor.contact_email || vendor.contact_phone) && (
                 <div className="mb-6">
-                  <h3 className="text-sm font-medium text-gray-500 mb-2">Contact Details</h3>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
+                  <h3 className="text-sm font-medium text-gray-500 mb-3">Contact Details</h3>
+                  <div className="grid grid-cols-2 gap-6 text-sm">
                     {vendor.contact_email && (
                       <div>
-                        <span className="text-gray-500">Email</span>
-                        <p className="mt-1 font-medium">{vendor.contact_email}</p>
+                        <span className="text-gray-500 block mb-1">Email</span>
+                        <p className="font-medium text-gray-900">{vendor.contact_email}</p>
                       </div>
                     )}
                     {vendor.contact_phone && (
                       <div>
-                        <span className="text-gray-500">Phone</span>
-                        <p className="mt-1 font-medium">{vendor.contact_phone}</p>
+                        <span className="text-gray-500 block mb-1">Phone</span>
+                        <p className="font-medium text-gray-900">{vendor.contact_phone}</p>
                       </div>
                     )}
                   </div>
@@ -537,28 +539,31 @@ export default function VendorDetailPage() {
 
           {/* Activities */}
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+            <CardHeader
+              actions={
+                canEdit && (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setEditingActivity(null);
+                      resetActivityForm();
+                      setActivityModalOpen(true);
+                    }}
+                  >
+                    <PlusIcon className="w-4 h-4 mr-2" />
+                    Add Activity
+                  </Button>
+                )
+              }
+            >
               <CardTitle className="flex items-center gap-2">
                 <DocumentTextIcon className="w-5 h-5 text-gray-400" />
                 Activities ({activities.length})
               </CardTitle>
-              {canEdit && (
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setEditingActivity(null);
-                    resetActivityForm();
-                    setActivityModalOpen(true);
-                  }}
-                >
-                  <PlusIcon className="w-4 h-4 mr-2" />
-                  Add Activity
-                </Button>
-              )}
             </CardHeader>
             <CardContent>
               {activities.length === 0 ? (
-                <p className="text-center text-gray-500 py-8">No activities yet</p>
+                <p className="text-center text-gray-500 py-4">No activities yet</p>
               ) : (
                 <div className="space-y-4">
                   {activities.map((activity) => (
@@ -643,21 +648,24 @@ export default function VendorDetailPage() {
 
           {/* Linked Actions */}
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+            <CardHeader
+              actions={
+                canEdit && (
+                  <Button size="sm" variant="outline" onClick={() => setLinkActionModalOpen(true)}>
+                    <PlusIcon className="w-4 h-4 mr-2" />
+                    Link Action
+                  </Button>
+                )
+              }
+            >
               <CardTitle className="flex items-center gap-2">
                 <LinkIcon className="w-5 h-5 text-gray-400" />
                 Linked Actions ({linkedActions.length})
               </CardTitle>
-              {canEdit && (
-                <Button size="sm" variant="outline" onClick={() => setLinkActionModalOpen(true)}>
-                  <PlusIcon className="w-4 h-4 mr-2" />
-                  Link Action
-                </Button>
-              )}
             </CardHeader>
             <CardContent>
               {linkedActions.length === 0 ? (
-                <p className="text-center text-gray-500 py-8">No linked actions</p>
+                <p className="text-center text-gray-500 py-4">No linked actions</p>
               ) : (
                 <div className="space-y-2">
                   {linkedActions.map((action) => (
