@@ -703,8 +703,37 @@ export default function ActionDetailPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
+              {updates.length === 0 ? (
+                <p className="text-center text-gray-500 py-8">No updates yet</p>
+              ) : (
+                <div className="space-y-4 mb-4">
+                  {updates.map((update) => (
+                    <div key={update.id} className="flex gap-3 p-3 bg-gray-50 rounded-lg">
+                      <Avatar
+                        src={update.user?.avatar_url}
+                        name={update.user?.full_name || 'Unknown'}
+                        size="sm"
+                      />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-900">
+                            {update.user?.full_name || 'Unknown'}
+                          </span>
+                          {!update.is_legacy_import && (
+                            <span className="text-xs text-gray-500">
+                              {getRelativeTime(update.created_at)}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-700 mt-1">{update.content}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {canEdit && (
-                <div className="mb-4">
+                <div className="pt-4 border-t border-gray-200">
                   <Textarea
                     placeholder="Add an update..."
                     value={newUpdate}
@@ -726,7 +755,7 @@ export default function ActionDetailPage() {
 
               {/* Admin-only: Import comments with custom user/date */}
               {canAdmin && showAdminFeatures && (
-                <div className="mb-6 p-4 border border-dashed border-gray-300 rounded-lg bg-gray-50">
+                <div className="mt-6 p-4 border border-dashed border-gray-300 rounded-lg bg-gray-50">
                   <p className="text-sm font-medium text-gray-700 mb-3">
                     Admin: Import Legacy Comment
                   </p>
@@ -767,35 +796,6 @@ export default function ActionDetailPage() {
                       </Button>
                     </div>
                   </div>
-                </div>
-              )}
-
-              {updates.length === 0 ? (
-                <p className="text-center text-gray-500 py-8">No updates yet</p>
-              ) : (
-                <div className="space-y-4">
-                  {updates.map((update) => (
-                    <div key={update.id} className="flex gap-3 p-3 bg-gray-50 rounded-lg">
-                      <Avatar
-                        src={update.user?.avatar_url}
-                        name={update.user?.full_name || 'Unknown'}
-                        size="sm"
-                      />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-900">
-                            {update.user?.full_name || 'Unknown'}
-                          </span>
-                          {!update.is_legacy_import && (
-                            <span className="text-xs text-gray-500">
-                              {getRelativeTime(update.created_at)}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm text-gray-700 mt-1">{update.content}</p>
-                      </div>
-                    </div>
-                  ))}
                 </div>
               )}
             </CardContent>

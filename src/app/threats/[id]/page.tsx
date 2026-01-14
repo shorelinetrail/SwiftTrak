@@ -667,33 +667,11 @@ export default function ThreatDetailPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {/* Add update form */}
-              {canEdit && (
-                <div className="mb-4">
-                  <Textarea
-                    placeholder="Add an update..."
-                    value={newUpdateContent}
-                    onChange={(e) => setNewUpdateContent(e.target.value)}
-                    rows={3}
-                  />
-                  <div className="flex justify-end mt-2">
-                    <Button
-                      size="sm"
-                      onClick={handleAddUpdate}
-                      disabled={!newUpdateContent.trim() || addingUpdate}
-                      loading={addingUpdate}
-                    >
-                      Post Update
-                    </Button>
-                  </div>
-                </div>
-              )}
-
               {/* Updates list */}
               {updates.length === 0 ? (
                 <p className="text-center text-gray-500 py-8">No updates yet</p>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-4 mb-4">
                   {updates.map((update) => (
                     <div key={update.id} className="flex gap-3 p-3 bg-gray-50 rounded-lg">
                       <Avatar
@@ -714,6 +692,28 @@ export default function ThreatDetailPage() {
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* Add update form */}
+              {canEdit && (
+                <div className="pt-4 border-t border-gray-200">
+                  <Textarea
+                    placeholder="Add an update..."
+                    value={newUpdateContent}
+                    onChange={(e) => setNewUpdateContent(e.target.value)}
+                    rows={3}
+                  />
+                  <div className="flex justify-end mt-2">
+                    <Button
+                      size="sm"
+                      onClick={handleAddUpdate}
+                      disabled={!newUpdateContent.trim() || addingUpdate}
+                      loading={addingUpdate}
+                    >
+                      Post Update
+                    </Button>
+                  </div>
                 </div>
               )}
             </CardContent>
