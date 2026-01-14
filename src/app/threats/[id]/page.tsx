@@ -23,7 +23,10 @@ import {
   ArrowPathIcon,
   ClockIcon,
 } from '@heroicons/react/24/outline';
-import type { Threat, Workstream, User, RiskLevel, ThreatAudit } from '@/types/database';
+import { ChatBubbleLeftIcon } from '@heroicons/react/24/outline';
+import { Avatar } from '@/components/ui/avatar';
+import { getRelativeTime } from '@/lib/utils';
+import type { Threat, Workstream, User, RiskLevel, ThreatAudit, ThreatUpdate } from '@/types/database';
 
 type ThreatWithRelations = Threat & {
   workstream?: Workstream;
@@ -64,13 +67,16 @@ export default function ThreatDetailPage() {
   const [closeModalOpen, setCloseModalOpen] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Threat>>({});
   const [auditLog, setAuditLog] = useState<(ThreatAudit & { user?: User })[]>([]);
+  const [updates, setUpdates] = useState<(ThreatUpdate & { user?: User })[]>([]);
+  const [newUpdateContent, setNewUpdateContent] = useState('');
+  const [addingUpdate, setAddingUpdate] = useState(false);
 
   const fetchThreat = useCallback(async () => {
     const supabase = createClient();
 
     try {
       // Add timeout to prevent hanging
-      const [threatResult, auditResult] = await Promise.all([
+      const [threatResult, auditResult, updatesResult] = await Promise.all([
         Promise.race([
           supabase
             .from('threats')
@@ -94,6 +100,17 @@ export default function ThreatDetailPage() {
             .order('created_at', { ascending: false }),
           new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
         ]),
+        Promise.race([
+          supabase
+            .from('threat_updates')
+            .select(`
+              *,
+              user:users(id, full_name, avatar_url)
+            `)
+            .eq('threat_id', threatId)
+            .order('created_at', { ascending: false }),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+        ]),
       ]);
 
       if (!threatResult || threatResult.error || !threatResult.data) {
@@ -107,6 +124,10 @@ export default function ThreatDetailPage() {
 
       if (auditResult?.data) {
         setAuditLog(auditResult.data as unknown as (ThreatAudit & { user?: User })[]);
+      }
+
+      if (updatesResult?.data) {
+        setUpdates(updatesResult.data as unknown as (ThreatUpdate & { user?: User })[]);
       }
     } catch (error) {
       console.error('[ThreatDetail] Error:', error);
@@ -236,6 +257,38 @@ export default function ThreatDetailPage() {
     } catch (error) {
       console.error('Error deleting threat:', error);
       toast.error('Failed to delete threat');
+    }
+  };
+
+  const handleAddUpdate = async () => {
+    if (!newUpdateContent.trim()) return;
+
+    setAddingUpdate(true);
+    try {
+      const supabase = createClient();
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+
+      if (!authUser) {
+        toast.error('You must be logged in to add updates');
+        return;
+      }
+
+      const { error } = await supabase.from('threat_updates').insert({
+        threat_id: threatId,
+        user_id: authUser.id,
+        content: newUpdateContent.trim(),
+      });
+
+      if (error) throw error;
+
+      toast.success('Update added');
+      setNewUpdateContent('');
+      fetchThreat();
+    } catch (error) {
+      console.error('Error adding update:', error);
+      toast.error('Failed to add update');
+    } finally {
+      setAddingUpdate(false);
     }
   };
 
@@ -408,6 +461,71 @@ export default function ThreatDetailPage() {
                 </p>
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Updates/Comments */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ChatBubbleLeftIcon className="w-5 h-5 text-gray-400" />
+              Updates
+              {updates.length > 0 && (
+                <span className="text-sm font-normal text-gray-500">({updates.length})</span>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Add update form */}
+            {canEdit && (
+              <div className="flex gap-3">
+                <Textarea
+                  placeholder="Add an update or comment..."
+                  value={newUpdateContent}
+                  onChange={(e) => setNewUpdateContent(e.target.value)}
+                  rows={2}
+                  className="flex-1"
+                />
+                <Button
+                  onClick={handleAddUpdate}
+                  disabled={!newUpdateContent.trim() || addingUpdate}
+                  size="sm"
+                  className="self-end"
+                >
+                  {addingUpdate ? 'Adding...' : 'Add'}
+                </Button>
+              </div>
+            )}
+
+            {/* Updates list */}
+            {updates.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-4">No updates yet</p>
+            ) : (
+              <div className="space-y-4">
+                {updates.map((update) => (
+                  <div key={update.id} className="flex gap-3">
+                    <Avatar
+                      src={update.user?.avatar_url}
+                      name={update.user?.full_name || 'Unknown'}
+                      size="sm"
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-gray-900 text-sm">
+                          {update.user?.full_name || 'Unknown'}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          {getRelativeTime(update.created_at)}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap">
+                        {update.content}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 

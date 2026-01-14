@@ -183,7 +183,7 @@ export default function AdminPage() {
       return;
     }
 
-    // Create pending user with a temporary UUID
+    // Create pending user with a temporary UUID (not linked to auth.users yet)
     const { error } = await supabase.from('users').insert({
       id: crypto.randomUUID(),
       email: data.email.toLowerCase(),
@@ -191,6 +191,7 @@ export default function AdminPage() {
       role: data.role,
       status: 'pending',
       invited_by: currentUser?.id,
+      auth_linked: false,
     });
 
     if (error) {

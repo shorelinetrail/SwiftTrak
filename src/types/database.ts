@@ -14,6 +14,7 @@ export interface User {
   role: UserRole;
   status: UserStatus;
   invited_by?: string;
+  auth_linked?: boolean;
   created_at: string;
   updated_at: string;
   // Joined fields
@@ -114,6 +115,17 @@ export interface ThreatAudit {
   old_value?: string;
   new_value?: string;
   created_at: string;
+  // Joined fields
+  user?: User;
+}
+
+export interface ThreatUpdate {
+  id: string;
+  threat_id: string;
+  user_id: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
   // Joined fields
   user?: User;
 }
