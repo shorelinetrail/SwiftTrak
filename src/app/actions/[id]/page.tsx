@@ -481,7 +481,10 @@ export default function ActionDetailPage() {
 
   const workstreamOptions = buildWorkstreamOptions(workstreams, {
     includeAll: false,
-    excludeParentsWithChildren: true
+    excludeParentsWithChildren: true,
+    mapOption: (ws) => ({
+      icon: <div className="w-3 h-3 rounded-full" style={{ backgroundColor: ws.color }} />,
+    }),
   });
   const userOptions = [
     { value: '', label: 'Unassigned' },

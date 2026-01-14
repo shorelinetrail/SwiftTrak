@@ -147,6 +147,9 @@ export default function NewActionPage() {
     allLabel: 'Select a workstream...',
     allValue: '',
     excludeParentsWithChildren: true,
+    mapOption: (ws) => ({
+      icon: <div className="w-3 h-3 rounded-full" style={{ backgroundColor: ws.color }} />,
+    }),
   });
 
   const userOptions = [

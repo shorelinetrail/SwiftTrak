@@ -432,7 +432,10 @@ export default function ThreatDetailPage() {
   const workstreamOptions = workstreams.length > 0
     ? buildWorkstreamOptions(workstreams, {
         includeAll: false,
-        excludeParentsWithChildren: true
+        excludeParentsWithChildren: true,
+        mapOption: (ws) => ({
+          icon: <div className="w-3 h-3 rounded-full" style={{ backgroundColor: ws.color }} />,
+        }),
       })
     : threat?.workstream
       ? [{ value: threat.workstream.id, label: threat.workstream.name }]
@@ -1096,7 +1099,10 @@ function CreateActionFromThreatModal({
 
   const workstreamOptions = buildWorkstreamOptions(workstreams, {
     includeAll: false,
-    excludeParentsWithChildren: true
+    excludeParentsWithChildren: true,
+    mapOption: (ws) => ({
+      icon: <div className="w-3 h-3 rounded-full" style={{ backgroundColor: ws.color }} />,
+    }),
   });
 
   return (
