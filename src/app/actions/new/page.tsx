@@ -223,22 +223,25 @@ export default function NewActionPage() {
                 onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
               />
 
-              {/* Import fields for migrating existing/closed actions */}
+              {/* Legacy Import Section */}
               <div className="border-t pt-6 mt-6">
-                <p className="text-sm text-gray-500 mb-4">
-                  Optional: For importing existing or historical actions
-                </p>
+                <div className="mb-4">
+                  <p className="text-sm font-medium text-gray-700">Legacy Import Options</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    For importing historical actions from another system. Leave blank for new actions.
+                  </p>
+                </div>
 
-                <div className="space-y-4">
+                <div className="space-y-4 bg-gray-50 p-4 rounded-lg">
                   <div className="grid grid-cols-2 gap-4">
                     <Input
-                      label="Date Created (for historical import)"
+                      label="Date Created"
                       type="date"
                       value={formData.created_at}
                       onChange={(e) => setFormData({ ...formData, created_at: e.target.value })}
                     />
                     <Input
-                      label="Date Closed (if already completed)"
+                      label="Date Closed"
                       type="date"
                       value={formData.completed_at}
                       onChange={(e) => setFormData({ ...formData, completed_at: e.target.value })}
@@ -246,7 +249,7 @@ export default function NewActionPage() {
                   </div>
 
                   <Select
-                    label="Created By (defaults to System if blank)"
+                    label="Created By"
                     options={createdByOptions}
                     value={formData.created_by_override}
                     onChange={(value) => setFormData({ ...formData, created_by_override: value })}
@@ -254,7 +257,7 @@ export default function NewActionPage() {
                   />
 
                   <Textarea
-                    label="Initial Comment (for legacy import)"
+                    label="Initial Comment"
                     value={formData.initial_comment}
                     onChange={(e) => setFormData({ ...formData, initial_comment: e.target.value })}
                     placeholder="Paste legacy comments or notes from another system"
