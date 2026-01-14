@@ -142,11 +142,11 @@ export default function NewActionPage() {
     }
   };
 
-  // Use path format (Parent/Child) for clearer identification in bulk uploads
+  // Use hierarchy format for cleaner dropdowns, exclude parent workstreams that have children
   const workstreamOptions = buildWorkstreamOptions(workstreams, {
     allLabel: 'Select a workstream...',
     allValue: '',
-    labelFormat: 'path',
+    excludeParentsWithChildren: true,
   });
 
   const userOptions = [

@@ -14,7 +14,7 @@ import { Select } from '@/components/ui/select';
 import { RiskBadge } from '@/components/ui/badge';
 import { Modal } from '@/components/ui/modal';
 import { LoadingSpinner } from '@/components/ui/loading';
-import { formatDate, buildWorkstreamOptions } from '@/lib/utils';
+import { formatDate, buildWorkstreamOptions, getWorkstreamDisplayName } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import {
   PencilIcon,
@@ -22,15 +22,24 @@ import {
   CheckCircleIcon,
   ArrowPathIcon,
   ClockIcon,
+  LinkIcon,
+  PlusIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { ChatBubbleLeftIcon } from '@heroicons/react/24/outline';
 import { Avatar } from '@/components/ui/avatar';
+import { StatusBadge } from '@/components/ui/badge';
 import { getRelativeTime } from '@/lib/utils';
-import type { Threat, Workstream, User, RiskLevel, ThreatAudit, ThreatUpdate } from '@/types/database';
+import type { Threat, Workstream, User, RiskLevel, ThreatAudit, ThreatUpdate, Action, ThreatActionLink } from '@/types/database';
 
 type ThreatWithRelations = Threat & {
   workstream?: Workstream;
   creator?: User;
+};
+
+type LinkedAction = Action & {
+  workstream?: Workstream;
+  owner?: User;
 };
 
 function formatAuditEntry(entry: ThreatAudit): string {
@@ -70,13 +79,19 @@ export default function ThreatDetailPage() {
   const [updates, setUpdates] = useState<(ThreatUpdate & { user?: User })[]>([]);
   const [newUpdateContent, setNewUpdateContent] = useState('');
   const [addingUpdate, setAddingUpdate] = useState(false);
+  const [linkedActions, setLinkedActions] = useState<LinkedAction[]>([]);
+  const [linkActionModalOpen, setLinkActionModalOpen] = useState(false);
+  const [createActionModalOpen, setCreateActionModalOpen] = useState(false);
+  const [availableActions, setAvailableActions] = useState<LinkedAction[]>([]);
+  const [selectedActionId, setSelectedActionId] = useState('');
+  const [actionSearchQuery, setActionSearchQuery] = useState('');
 
   const fetchThreat = useCallback(async () => {
     const supabase = createClient();
 
     try {
       // Add timeout to prevent hanging
-      const [threatResult, auditResult, updatesResult] = await Promise.all([
+      const [threatResult, auditResult, updatesResult, linksResult] = await Promise.all([
         Promise.race([
           supabase
             .from('threats')
@@ -111,6 +126,19 @@ export default function ThreatDetailPage() {
             .order('created_at', { ascending: false }),
           new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
         ]),
+        Promise.race([
+          supabase
+            .from('threat_action_links')
+            .select(`
+              action:actions(
+                id, title, status, priority, due_date,
+                workstream:workstreams(id, name, color),
+                owner:users!actions_owner_id_fkey(id, full_name)
+              )
+            `)
+            .eq('threat_id', threatId),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+        ]),
       ]);
 
       if (!threatResult || threatResult.error || !threatResult.data) {
@@ -128,6 +156,13 @@ export default function ThreatDetailPage() {
 
       if (updatesResult?.data) {
         setUpdates(updatesResult.data as unknown as (ThreatUpdate & { user?: User })[]);
+      }
+
+      if (linksResult?.data) {
+        const actions = linksResult.data
+          .map((link: { action: LinkedAction }) => link.action)
+          .filter((action: LinkedAction | null): action is LinkedAction => action !== null);
+        setLinkedActions(actions);
       }
     } catch (error) {
       console.error('[ThreatDetail] Error:', error);
@@ -292,6 +327,81 @@ export default function ThreatDetailPage() {
     }
   };
 
+  const fetchAvailableActions = async () => {
+    const supabase = createClient();
+
+    // Fetch all actions not already linked to this threat
+    const { data, error } = await supabase
+      .from('actions')
+      .select(`
+        id, title, status, priority, due_date,
+        workstream:workstreams(id, name, color),
+        owner:users!actions_owner_id_fkey(id, full_name)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching actions:', error);
+      return;
+    }
+
+    // Filter out already linked actions
+    const linkedIds = linkedActions.map(a => a.id);
+    const available = (data || []).filter(a => !linkedIds.includes(a.id));
+    setAvailableActions(available as unknown as LinkedAction[]);
+  };
+
+  const handleLinkAction = async () => {
+    if (!selectedActionId) return;
+
+    try {
+      const supabase = createClient();
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+
+      const { error } = await supabase.from('threat_action_links').insert({
+        threat_id: threatId,
+        action_id: selectedActionId,
+        created_by: authUser?.id,
+      });
+
+      if (error) throw error;
+
+      toast.success('Action linked');
+      setLinkActionModalOpen(false);
+      setSelectedActionId('');
+      setActionSearchQuery('');
+      fetchThreat();
+    } catch (error) {
+      console.error('Error linking action:', error);
+      toast.error('Failed to link action');
+    }
+  };
+
+  const handleUnlinkAction = async (actionId: string) => {
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase
+        .from('threat_action_links')
+        .delete()
+        .eq('threat_id', threatId)
+        .eq('action_id', actionId);
+
+      if (error) throw error;
+
+      toast.success('Action unlinked');
+      fetchThreat();
+    } catch (error) {
+      console.error('Error unlinking action:', error);
+      toast.error('Failed to unlink action');
+    }
+  };
+
+  const openLinkActionModal = () => {
+    fetchAvailableActions();
+    setLinkActionModalOpen(true);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen">
@@ -320,7 +430,10 @@ export default function ThreatDetailPage() {
 
   // Build workstream options - ensure current threat's workstream is always included
   const workstreamOptions = workstreams.length > 0
-    ? buildWorkstreamOptions(workstreams, { includeAll: false })
+    ? buildWorkstreamOptions(workstreams, {
+        includeAll: false,
+        excludeParentsWithChildren: true
+      })
     : threat?.workstream
       ? [{ value: threat.workstream.id, label: threat.workstream.name }]
       : [];
@@ -390,7 +503,7 @@ export default function ThreatDetailPage() {
                       color: threat.workstream.color,
                     }}
                   >
-                    {threat.workstream.name}
+                    {getWorkstreamDisplayName(threat.workstream, workstreams)}
                   </span>
                 )}
               </div>
@@ -534,8 +647,81 @@ export default function ThreatDetailPage() {
           </Card>
         </div>
 
-        {/* Sidebar - Audit Trail */}
+        {/* Sidebar */}
         <div className="space-y-6">
+          {/* Linked Actions */}
+          <Card>
+            <CardHeader
+              actions={
+                canEdit && (
+                  <div className="flex gap-1">
+                    <Button variant="ghost" size="sm" onClick={openLinkActionModal} title="Link existing action">
+                      <LinkIcon className="w-4 h-4" />
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setCreateActionModalOpen(true)} title="Create new action">
+                      <PlusIcon className="w-4 h-4" />
+                    </Button>
+                  </div>
+                )
+              }
+            >
+              <CardTitle className="flex items-center gap-2">
+                <LinkIcon className="w-5 h-5 text-gray-400" />
+                Linked Actions ({linkedActions.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {linkedActions.length === 0 ? (
+                <p className="text-center text-gray-500 py-4 text-sm">No linked actions</p>
+              ) : (
+                <div className="space-y-2">
+                  {linkedActions.map((action) => (
+                    <div
+                      key={action.id}
+                      className="flex items-start justify-between gap-2 p-2 bg-gray-50 rounded-lg group"
+                    >
+                      <a
+                        href={`/actions/${action.id}`}
+                        className="flex-1 min-w-0 hover:text-red-600"
+                      >
+                        <p className="text-sm font-medium text-gray-900 truncate group-hover:text-red-600">
+                          {action.title}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <StatusBadge status={action.status} size="xs" />
+                          {action.workstream && (
+                            <span
+                              className="text-xs px-1.5 py-0.5 rounded"
+                              style={{
+                                backgroundColor: `${action.workstream.color}20`,
+                                color: action.workstream.color,
+                              }}
+                            >
+                              {action.workstream.name}
+                            </span>
+                          )}
+                        </div>
+                      </a>
+                      {canEdit && (
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            handleUnlinkAction(action.id);
+                          }}
+                          className="p-1 text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Unlink action"
+                        >
+                          <XMarkIcon className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Audit Trail */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -665,6 +851,86 @@ export default function ThreatDetailPage() {
         onConfirm={handleCloseThreat}
         expectedDelay={threat?.expected_delay}
       />
+
+      {/* Link Action Modal */}
+      <Modal
+        open={linkActionModalOpen}
+        onClose={() => {
+          setLinkActionModalOpen(false);
+          setSelectedActionId('');
+          setActionSearchQuery('');
+        }}
+        title="Link Existing Action"
+      >
+        <div className="space-y-4">
+          <Input
+            placeholder="Search actions..."
+            value={actionSearchQuery}
+            onChange={(e) => setActionSearchQuery(e.target.value)}
+          />
+          <div className="max-h-64 overflow-y-auto space-y-2">
+            {availableActions
+              .filter(a =>
+                a.title.toLowerCase().includes(actionSearchQuery.toLowerCase())
+              )
+              .map((action) => (
+                <div
+                  key={action.id}
+                  onClick={() => setSelectedActionId(action.id)}
+                  className={`p-3 rounded-lg cursor-pointer border-2 transition-colors ${
+                    selectedActionId === action.id
+                      ? 'border-red-500 bg-red-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <p className="font-medium text-gray-900">{action.title}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <StatusBadge status={action.status} size="xs" />
+                    {action.workstream && (
+                      <span
+                        className="text-xs px-1.5 py-0.5 rounded"
+                        style={{
+                          backgroundColor: `${action.workstream.color}20`,
+                          color: action.workstream.color,
+                        }}
+                      >
+                        {action.workstream.name}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            {availableActions.filter(a =>
+              a.title.toLowerCase().includes(actionSearchQuery.toLowerCase())
+            ).length === 0 && (
+              <p className="text-center text-gray-500 py-4">No actions found</p>
+            )}
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 mt-6">
+          <Button variant="outline" onClick={() => setLinkActionModalOpen(false)}>
+            Cancel
+          </Button>
+          <Button onClick={handleLinkAction} disabled={!selectedActionId}>
+            <LinkIcon className="w-4 h-4 mr-2" />
+            Link Action
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Create Action Modal */}
+      <CreateActionFromThreatModal
+        open={createActionModalOpen}
+        onClose={() => setCreateActionModalOpen(false)}
+        threat={threat}
+        workstreams={workstreams}
+        onCreated={(actionId) => {
+          setCreateActionModalOpen(false);
+          fetchThreat();
+          // Optionally navigate to the new action
+          // router.push(`/actions/${actionId}`);
+        }}
+      />
     </div>
   );
 }
@@ -716,6 +982,167 @@ function CloseTheatModal({
         <Button onClick={() => onConfirm(mitigatedRisk, actualDelay || undefined)}>
           <CheckCircleIcon className="w-4 h-4 mr-2" />
           Close Threat
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+function CreateActionFromThreatModal({
+  open,
+  onClose,
+  threat,
+  workstreams,
+  onCreated,
+}: {
+  open: boolean;
+  onClose: () => void;
+  threat: ThreatWithRelations | null;
+  workstreams: Workstream[];
+  onCreated: (actionId: string) => void;
+}) {
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [workstreamId, setWorkstreamId] = useState('');
+  const [priority, setPriority] = useState<'critical' | 'high' | 'medium' | 'low'>('medium');
+  const [dueDate, setDueDate] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  // Pre-fill from threat when modal opens
+  useEffect(() => {
+    if (open && threat) {
+      setTitle(`Mitigate: ${threat.title}`);
+      setDescription(threat.proposed_mitigation || `Action to mitigate threat: ${threat.title}`);
+      setWorkstreamId(threat.workstream_id || '');
+      // Map risk to priority
+      if (threat.current_risk === 'high') setPriority('high');
+      else if (threat.current_risk === 'medium') setPriority('medium');
+      else setPriority('low');
+    }
+  }, [open, threat]);
+
+  const handleCreate = async () => {
+    if (!title.trim() || !workstreamId) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    setCreating(true);
+    try {
+      const supabase = createClient();
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+
+      if (!authUser) {
+        toast.error('You must be logged in');
+        return;
+      }
+
+      // Create the action
+      const { data: newAction, error: actionError } = await supabase
+        .from('actions')
+        .insert({
+          title: title.trim(),
+          description: description.trim() || null,
+          workstream_id: workstreamId,
+          owner_id: authUser.id,
+          created_by: authUser.id,
+          status: 'pending',
+          priority,
+          due_date: dueDate || null,
+        })
+        .select('id')
+        .single();
+
+      if (actionError) throw actionError;
+
+      // Link the action to the threat
+      const { error: linkError } = await supabase
+        .from('threat_action_links')
+        .insert({
+          threat_id: threat?.id,
+          action_id: newAction.id,
+          created_by: authUser.id,
+        });
+
+      if (linkError) {
+        console.error('Error linking action to threat:', linkError);
+        // Don't fail the whole operation, just log it
+      }
+
+      toast.success('Action created and linked');
+
+      // Reset form
+      setTitle('');
+      setDescription('');
+      setWorkstreamId('');
+      setPriority('medium');
+      setDueDate('');
+
+      onCreated(newAction.id);
+    } catch (error) {
+      console.error('Error creating action:', error);
+      toast.error('Failed to create action');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const priorityOptions = [
+    { value: 'critical', label: 'Critical' },
+    { value: 'high', label: 'High' },
+    { value: 'medium', label: 'Medium' },
+    { value: 'low', label: 'Low' },
+  ];
+
+  const workstreamOptions = buildWorkstreamOptions(workstreams, {
+    includeAll: false,
+    excludeParentsWithChildren: true
+  });
+
+  return (
+    <Modal open={open} onClose={onClose} title="Create Action from Threat" size="lg">
+      <div className="space-y-4">
+        <Input
+          label="Title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          required
+        />
+        <Textarea
+          label="Description"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={3}
+        />
+        <Select
+          label="Workstream"
+          options={workstreamOptions}
+          value={workstreamId}
+          onChange={(value) => setWorkstreamId(value)}
+          required
+        />
+        <div className="grid grid-cols-2 gap-4">
+          <Select
+            label="Priority"
+            options={priorityOptions}
+            value={priority}
+            onChange={(value) => setPriority(value as 'critical' | 'high' | 'medium' | 'low')}
+          />
+          <Input
+            label="Due Date"
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+          />
+        </div>
+      </div>
+      <div className="flex justify-end gap-3 mt-6">
+        <Button variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button onClick={handleCreate} loading={creating} disabled={!title.trim() || !workstreamId}>
+          <PlusIcon className="w-4 h-4 mr-2" />
+          Create Action
         </Button>
       </div>
     </Modal>

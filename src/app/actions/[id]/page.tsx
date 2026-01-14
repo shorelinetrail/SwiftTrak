@@ -15,7 +15,7 @@ import { StatusBadge, PriorityBadge } from '@/components/ui/badge';
 import { Avatar } from '@/components/ui/avatar';
 import { Modal } from '@/components/ui/modal';
 import { LoadingSpinner, LoadingPage } from '@/components/ui/loading';
-import { formatDate, getRelativeTime, cn, buildWorkstreamOptions } from '@/lib/utils';
+import { formatDate, getRelativeTime, cn, buildWorkstreamOptions, getWorkstreamDisplayName } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import {
   PencilIcon,
@@ -28,8 +28,10 @@ import {
   DocumentArrowDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
-import type { Action, ActionUpdate, ActionAudit, Workstream, User, Attachment, ActionStatus, Priority } from '@/types/database';
+import { RiskBadge } from '@/components/ui/badge';
+import type { Action, ActionUpdate, ActionAudit, Workstream, User, Attachment, ActionStatus, Priority, Threat } from '@/types/database';
 
 type ActionWithRelations = Action & {
   owner?: User;
@@ -40,6 +42,7 @@ type ActionWithRelations = Action & {
 type ActionUpdateWithUser = ActionUpdate & { user?: User };
 type ActionAuditWithUser = ActionAudit & { user?: User };
 type AttachmentWithUser = Attachment & { uploader?: User };
+type LinkedThreat = Threat & { workstream?: Workstream };
 
 export default function ActionDetailPage() {
   const params = useParams();
@@ -54,6 +57,7 @@ export default function ActionDetailPage() {
   const [auditLog, setAuditLog] = useState<ActionAuditWithUser[]>([]);
   const [attachments, setAttachments] = useState<AttachmentWithUser[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [relatedThreats, setRelatedThreats] = useState<LinkedThreat[]>([]);
 
   // Navigation through actions
   const [allActionIds, setAllActionIds] = useState<string[]>([]);
@@ -154,6 +158,24 @@ export default function ActionDetailPage() {
 
     if (usersData) {
       setUsers(usersData as User[]);
+    }
+
+    // Fetch related threats via threat_action_links
+    const { data: threatLinksData } = await supabase
+      .from('threat_action_links')
+      .select(`
+        threat:threats(
+          id, title, status, current_risk, description,
+          workstream:workstreams(id, name, color)
+        )
+      `)
+      .eq('action_id', actionId);
+
+    if (threatLinksData) {
+      const threats = threatLinksData
+        .map((link: { threat: LinkedThreat }) => link.threat)
+        .filter((threat: LinkedThreat | null): threat is LinkedThreat => threat !== null);
+      setRelatedThreats(threats);
     }
 
     setLoading(false);
@@ -457,7 +479,10 @@ export default function ActionDetailPage() {
     { value: 'low', label: 'Low' },
   ];
 
-  const workstreamOptions = buildWorkstreamOptions(workstreams, { includeAll: false });
+  const workstreamOptions = buildWorkstreamOptions(workstreams, {
+    includeAll: false,
+    excludeParentsWithChildren: true
+  });
   const userOptions = [
     { value: '', label: 'Unassigned' },
     ...users.map(u => ({ value: u.id, label: u.full_name })),
@@ -551,7 +576,7 @@ export default function ActionDetailPage() {
                       color: action.workstream.color,
                     }}
                   >
-                    {action.workstream.name}
+                    {getWorkstreamDisplayName(action.workstream, workstreams)}
                   </span>
                 )}
               </div>
@@ -807,8 +832,48 @@ export default function ActionDetailPage() {
           </Card>
         </div>
 
-        {/* Sidebar - Audit Trail */}
+        {/* Sidebar */}
         <div className="space-y-6">
+          {/* Related Threats */}
+          {relatedThreats.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ExclamationTriangleIcon className="w-5 h-5 text-gray-400" />
+                  Related Threats ({relatedThreats.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {relatedThreats.map((threat) => (
+                    <a
+                      key={threat.id}
+                      href={`/threats/${threat.id}`}
+                      className="block p-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                    >
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {threat.title}
+                      </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <RiskBadge risk={threat.current_risk} />
+                        {threat.status === 'closed' ? (
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-800">
+                            Closed
+                          </span>
+                        ) : (
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-800">
+                            Open
+                          </span>
+                        )}
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Audit Trail */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">

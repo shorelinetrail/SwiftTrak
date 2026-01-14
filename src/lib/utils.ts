@@ -260,6 +260,8 @@ export function calculatePERT(
  * @param options.includeAll - Whether to include an "all" or placeholder option (default: true)
  * @param options.allLabel - Custom label for the all/placeholder option (default: "All Workstreams")
  * @param options.allValue - Custom value for the all/placeholder option (default: "all")
+ * @param options.labelFormat - How to format child labels: 'hierarchy' = "— Child", 'path' = "Parent/Child"
+ * @param options.excludeParentsWithChildren - If true, parent workstreams with children are not selectable
  * @param options.mapOption - Optional function to add extra properties to each option
  */
 export function buildWorkstreamOptions<T extends { id: string; name: string; parent_id?: string | null }>(
@@ -269,10 +271,11 @@ export function buildWorkstreamOptions<T extends { id: string; name: string; par
     allLabel?: string;
     allValue?: string;
     labelFormat?: 'hierarchy' | 'path'; // 'hierarchy' = "— Child", 'path' = "Parent/Child"
+    excludeParentsWithChildren?: boolean;
     mapOption?: (ws: T, isChild: boolean) => Record<string, unknown>;
   } = {}
 ): Array<{ value: string; label: string } & Record<string, unknown>> {
-  const { includeAll = true, allLabel = 'All Workstreams', allValue = 'all', labelFormat = 'hierarchy', mapOption } = config;
+  const { includeAll = true, allLabel = 'All Workstreams', allValue = 'all', labelFormat = 'hierarchy', excludeParentsWithChildren = false, mapOption } = config;
   const options: Array<{ value: string; label: string } & Record<string, unknown>> = [];
 
   if (includeAll) {
@@ -300,15 +303,20 @@ export function buildWorkstreamOptions<T extends { id: string; name: string; par
 
   // Add root workstreams and their children
   rootWorkstreams.forEach(root => {
-    const rootOption: { value: string; label: string } & Record<string, unknown> = {
-      value: root.id,
-      label: root.name,
-      ...(mapOption ? mapOption(root, false) : {}),
-    };
-    options.push(rootOption);
+    const children = childrenMap.get(root.id) || [];
+    const hasChildren = children.length > 0;
+
+    // Only add root if it has no children OR we're not excluding parents with children
+    if (!excludeParentsWithChildren || !hasChildren) {
+      const rootOption: { value: string; label: string } & Record<string, unknown> = {
+        value: root.id,
+        label: root.name,
+        ...(mapOption ? mapOption(root, false) : {}),
+      };
+      options.push(rootOption);
+    }
 
     // Add children with appropriate format
-    const children = childrenMap.get(root.id) || [];
     children
       .sort((a, b) => a.name.localeCompare(b.name))
       .forEach(child => {
@@ -325,4 +333,24 @@ export function buildWorkstreamOptions<T extends { id: string; name: string; par
   });
 
   return options;
+}
+
+/**
+ * Get the display name for a workstream, including parent if applicable.
+ * Returns "Parent/Child" format for child workstreams.
+ */
+export function getWorkstreamDisplayName<T extends { id: string; name: string; parent_id?: string | null }>(
+  workstream: T,
+  allWorkstreams: T[]
+): string {
+  if (!workstream.parent_id) {
+    return workstream.name;
+  }
+
+  const parent = allWorkstreams.find(ws => ws.id === workstream.parent_id);
+  if (parent) {
+    return `${parent.name}/${workstream.name}`;
+  }
+
+  return workstream.name;
 }

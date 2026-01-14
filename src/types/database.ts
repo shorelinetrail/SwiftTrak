@@ -382,3 +382,15 @@ export interface VendorContact {
   // Joined fields
   creator?: User;
 }
+
+export interface ThreatActionLink {
+  id: string;
+  threat_id: string;
+  action_id: string;
+  created_by?: string;
+  created_at: string;
+  // Joined fields
+  threat?: Threat;
+  action?: Action;
+  creator?: User;
+}

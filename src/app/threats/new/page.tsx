@@ -109,6 +109,7 @@ export default function NewThreatPage() {
   const workstreamOptions = buildWorkstreamOptions(workstreams, {
     allLabel: 'Select a workstream...',
     allValue: '',
+    excludeParentsWithChildren: true,
   });
 
   const riskOptions = [
