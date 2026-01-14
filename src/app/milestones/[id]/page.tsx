@@ -6,14 +6,30 @@ import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
 import { usePermission } from '@/hooks/use-user';
 import { Header } from '@/components/layout/header';
-import { Card, CardContent, CardFooter } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { LoadingSpinner } from '@/components/ui/loading';
+import { ClockIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
-import { buildWorkstreamOptions } from '@/lib/utils';
-import type { Workstream, Milestone } from '@/types/database';
+import { buildWorkstreamOptions, formatDate } from '@/lib/utils';
+import type { Workstream, Milestone, MilestoneAudit, User } from '@/types/database';
+
+function formatAuditEntry(entry: MilestoneAudit): string {
+  switch (entry.change_type) {
+    case 'created':
+      return `Milestone created: "${entry.new_value}"`;
+    case 'status_changed':
+      return `Status changed from ${entry.old_value} to ${entry.new_value}`;
+    case 'title_changed':
+      return `Title changed from "${entry.old_value}" to "${entry.new_value}"`;
+    case 'target_date_changed':
+      return `Target date changed from ${entry.old_value} to ${entry.new_value}`;
+    default:
+      return `${entry.change_type}: ${entry.old_value || ''} → ${entry.new_value || ''}`;
+  }
+}
 
 type MilestoneWithRelations = Milestone & {
   workstream?: Workstream;
@@ -27,6 +43,7 @@ export default function EditMilestonePage({ params }: { params: Promise<{ id: st
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [milestone, setMilestone] = useState<MilestoneWithRelations | null>(null);
+  const [auditLog, setAuditLog] = useState<(MilestoneAudit & { user?: User })[]>([]);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -39,23 +56,33 @@ export default function EditMilestonePage({ params }: { params: Promise<{ id: st
   const fetchMilestone = useCallback(async () => {
     const supabase = createClient();
 
-    const { data, error } = await supabase
-      .from('milestones')
-      .select(`
-        *,
-        workstream:workstreams(id, name, color)
-      `)
-      .eq('id', id)
-      .single();
+    const [milestoneResult, auditResult] = await Promise.all([
+      supabase
+        .from('milestones')
+        .select(`
+          *,
+          workstream:workstreams(id, name, color)
+        `)
+        .eq('id', id)
+        .single(),
+      supabase
+        .from('milestone_audit')
+        .select(`
+          *,
+          user:users(id, full_name)
+        `)
+        .eq('milestone_id', id)
+        .order('created_at', { ascending: false }),
+    ]);
 
-    if (error) {
-      console.error('Error fetching milestone:', error);
+    if (milestoneResult.error) {
+      console.error('Error fetching milestone:', milestoneResult.error);
       toast.error('Milestone not found');
       router.push('/milestones');
       return;
     }
 
-    const milestoneData = data as unknown as MilestoneWithRelations;
+    const milestoneData = milestoneResult.data as unknown as MilestoneWithRelations;
     setMilestone(milestoneData);
     setFormData({
       title: milestoneData.title,
@@ -64,6 +91,11 @@ export default function EditMilestonePage({ params }: { params: Promise<{ id: st
       target_date: new Date(milestoneData.target_date).toISOString().slice(0, 10),
       status: milestoneData.status,
     });
+
+    if (auditResult.data) {
+      setAuditLog(auditResult.data as unknown as (MilestoneAudit & { user?: User })[]);
+    }
+
     setLoading(false);
   }, [id, router]);
 
@@ -282,6 +314,35 @@ export default function EditMilestonePage({ params }: { params: Promise<{ id: st
             </CardFooter>
           </Card>
         </form>
+
+        {/* Audit Log */}
+        {auditLog.length > 0 && (
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ClockIcon className="w-5 h-5 text-gray-400" />
+                Activity Log
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {auditLog.map((entry) => (
+                  <div key={entry.id} className="flex items-start gap-3 text-sm">
+                    <div className="w-2 h-2 mt-1.5 rounded-full bg-gray-400 flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-gray-900">
+                        {formatAuditEntry(entry)}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {entry.user?.full_name || 'System'} &middot; {formatDate(entry.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );
