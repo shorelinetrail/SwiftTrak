@@ -22,9 +22,6 @@ import {
   PlusIcon,
   ClockIcon,
   LinkIcon,
-  BuildingOfficeIcon,
-  CurrencyPoundIcon,
-  CalendarIcon,
   DocumentTextIcon,
 } from '@heroicons/react/24/outline';
 import type { Vendor, VendorActivity, VendorAudit, VendorActivityStatus, Action, User } from '@/types/database';
@@ -444,7 +441,6 @@ export default function VendorDetailPage() {
     return (
       <div className="min-h-screen">
         <Header
-          title="Loading..."
           breadcrumbs={[
             { label: 'Vendors', href: '/vendors' },
             { label: 'Loading...' },
@@ -464,27 +460,10 @@ export default function VendorDetailPage() {
   return (
     <div className="min-h-screen">
       <Header
-        title={vendor.name}
-        subtitle="Vendor"
         breadcrumbs={[
           { label: 'Vendors', href: '/vendors' },
           { label: vendor.name },
         ]}
-        actions={
-          <div className="flex gap-2">
-            {canEdit && (
-              <Button variant="outline" size="sm" onClick={() => setEditVendorModalOpen(true)}>
-                <PencilIcon className="w-4 h-4 mr-2" />
-                Edit
-              </Button>
-            )}
-            {canAdmin && (
-              <Button variant="danger" size="sm" onClick={() => setDeleteVendorModalOpen(true)}>
-                <TrashIcon className="w-4 h-4" />
-              </Button>
-            )}
-          </div>
-        }
       />
 
       <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -493,43 +472,64 @@ export default function VendorDetailPage() {
           {/* Vendor Info */}
           <Card>
             <CardContent className="pt-6">
-              <div className="flex items-start gap-4 mb-4">
-                <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center">
-                  <BuildingOfficeIcon className="w-6 h-6 text-blue-600" />
-                </div>
-                <div className="flex-1">
-                  <h2 className="text-lg font-semibold text-gray-900">{vendor.name}</h2>
-                  {vendor.contact_name && (
-                    <p className="text-sm text-gray-500">Contact: {vendor.contact_name}</p>
+              {/* Title and Actions Row */}
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <h1 className="text-2xl font-bold text-gray-900">{vendor.name}</h1>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {canEdit && (
+                    <Button variant="outline" size="sm" onClick={() => setEditVendorModalOpen(true)}>
+                      <PencilIcon className="w-4 h-4 mr-2" />
+                      Edit
+                    </Button>
+                  )}
+                  {canAdmin && (
+                    <Button variant="danger" size="sm" onClick={() => setDeleteVendorModalOpen(true)}>
+                      <TrashIcon className="w-4 h-4" />
+                    </Button>
                   )}
                 </div>
+              </div>
+
+              {/* Contact & Value Row */}
+              <div className="flex items-center flex-wrap gap-3 mb-6">
+                {vendor.contact_name && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                    Contact: {vendor.contact_name}
+                  </span>
+                )}
                 {totalValue > 0 && (
-                  <div className="text-right">
-                    <p className="text-xs text-gray-500">Total PO Value</p>
-                    <p className="text-lg font-semibold text-gray-900">{formatCurrency(totalValue)}</p>
-                  </div>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    Total PO: {formatCurrency(totalValue)}
+                  </span>
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                {vendor.contact_email && (
-                  <div>
-                    <span className="text-gray-500">Email</span>
-                    <p className="mt-1 font-medium">{vendor.contact_email}</p>
+              {/* Contact Details */}
+              {(vendor.contact_email || vendor.contact_phone) && (
+                <div className="mb-6">
+                  <h3 className="text-sm font-medium text-gray-500 mb-2">Contact Details</h3>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    {vendor.contact_email && (
+                      <div>
+                        <span className="text-gray-500">Email</span>
+                        <p className="mt-1 font-medium">{vendor.contact_email}</p>
+                      </div>
+                    )}
+                    {vendor.contact_phone && (
+                      <div>
+                        <span className="text-gray-500">Phone</span>
+                        <p className="mt-1 font-medium">{vendor.contact_phone}</p>
+                      </div>
+                    )}
                   </div>
-                )}
-                {vendor.contact_phone && (
-                  <div>
-                    <span className="text-gray-500">Phone</span>
-                    <p className="mt-1 font-medium">{vendor.contact_phone}</p>
-                  </div>
-                )}
-              </div>
+                </div>
+              )}
 
+              {/* Notes */}
               {vendor.notes && (
-                <div className="mt-4 pt-4 border-t border-gray-100">
-                  <span className="text-sm text-gray-500">Notes</span>
-                  <p className="mt-1 text-sm text-gray-700">{vendor.notes}</p>
+                <div>
+                  <h3 className="text-sm font-medium text-gray-500 mb-2">Notes</h3>
+                  <p className="text-sm text-gray-700">{vendor.notes}</p>
                 </div>
               )}
             </CardContent>
