@@ -416,19 +416,40 @@ export default function VendorDetailPage() {
     return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(value);
   };
 
-  const getStatusBadgeColor = (status: VendorActivityStatus) => {
-    switch (status) {
-      case 'planned': return 'bg-gray-100 text-gray-800';
-      case 'confirmed': return 'bg-blue-100 text-blue-800';
-      case 'in_progress': return 'bg-yellow-100 text-yellow-800';
-      case 'complete': return 'bg-green-100 text-green-800';
-      case 'cancelled': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
+  // Compute activity status from dates
+  const getComputedStatus = (activity: VendorActivityWithRelations): { label: string; color: string } => {
+    // Manual overrides take precedence
+    if (activity.status === 'complete') {
+      return { label: 'Complete', color: 'bg-green-100 text-green-800' };
     }
+    if (activity.status === 'cancelled') {
+      return { label: 'Cancelled', color: 'bg-red-100 text-red-800' };
+    }
+
+    const hasConfirmedDates = !!(activity.confirmed_start_date || activity.confirmed_end_date);
+
+    if (!hasConfirmedDates) {
+      return { label: 'Provisional', color: 'bg-gray-100 text-gray-800' };
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const startDate = activity.confirmed_start_date ? new Date(activity.confirmed_start_date) : null;
+    const endDate = activity.confirmed_end_date ? new Date(activity.confirmed_end_date) : null;
+
+    if (startDate && today < startDate) {
+      return { label: 'Pending', color: 'bg-blue-100 text-blue-800' };
+    }
+
+    if (endDate && today > endDate) {
+      return { label: 'Complete', color: 'bg-green-100 text-green-800' };
+    }
+
+    return { label: 'In Progress', color: 'bg-yellow-100 text-yellow-800' };
   };
 
   const statusOptions = [
-    { value: 'in_progress', label: 'In Progress' },
     { value: 'complete', label: 'Complete' },
     { value: 'cancelled', label: 'Cancelled' },
   ];
@@ -573,12 +594,17 @@ export default function VendorDetailPage() {
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-2">
                             <h4 className="font-medium text-gray-900">{activity.description}</h4>
-                            <span className={cn(
-                              'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium',
-                              getStatusBadgeColor(activity.status)
-                            )}>
-                              {activity.status.replace('_', ' ')}
-                            </span>
+                            {(() => {
+                              const status = getComputedStatus(activity);
+                              return (
+                                <span className={cn(
+                                  'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium',
+                                  status.color
+                                )}>
+                                  {status.label}
+                                </span>
+                              );
+                            })()}
                           </div>
 
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
@@ -871,10 +897,13 @@ export default function VendorDetailPage() {
           </label>
 
           <Select
-            label="Status"
-            options={statusOptions}
-            value={activityForm.status}
-            onChange={(value) => setActivityForm({ ...activityForm, status: value as VendorActivityStatus })}
+            label="Status Override (optional)"
+            options={[
+              { value: '', label: 'Auto (based on dates)' },
+              ...statusOptions,
+            ]}
+            value={activityForm.status === 'in_progress' ? '' : activityForm.status}
+            onChange={(value) => setActivityForm({ ...activityForm, status: (value || 'in_progress') as VendorActivityStatus })}
           />
 
           <Textarea
