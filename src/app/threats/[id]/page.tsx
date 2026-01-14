@@ -494,7 +494,12 @@ export default function ThreatDetailPage() {
             <CardContent className="pt-6">
               {/* Title and Actions Row */}
               <div className="flex items-start justify-between gap-4 mb-4">
-                <h1 className="text-2xl font-bold text-gray-900">{threat.title}</h1>
+                <div>
+                  {threat.display_id && (
+                    <span className="text-sm font-mono text-gray-500 mb-1 block">{threat.display_id}</span>
+                  )}
+                  <h1 className="text-2xl font-bold text-gray-900">{threat.title}</h1>
+                </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   {/* Navigation */}
                   {allThreatIds.length > 1 && (

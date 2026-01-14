@@ -362,6 +362,9 @@ function ThreatCard({ threat }: { threat: ThreatWithRelations }) {
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
+                    {threat.display_id && (
+                      <span className="text-xs font-mono text-gray-500">{threat.display_id}</span>
+                    )}
                     <h3 className="text-base font-medium text-gray-900">{threat.title}</h3>
                     {isClosed && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
@@ -454,7 +457,12 @@ function ThreatsTable({ threats }: { threats: ThreatWithRelations[] }) {
                 >
                   <td className="px-4 py-3">
                     <div className="max-w-md">
-                      <p className="text-sm font-medium text-gray-900">{threat.title}</p>
+                      <div className="flex items-center gap-2">
+                        {threat.display_id && (
+                          <span className="text-xs font-mono text-gray-500">{threat.display_id}</span>
+                        )}
+                        <p className="text-sm font-medium text-gray-900">{threat.title}</p>
+                      </div>
                       {threat.description && (
                         <p className="text-xs text-gray-500 line-clamp-2 mt-0.5">{threat.description}</p>
                       )}

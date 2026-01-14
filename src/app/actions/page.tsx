@@ -850,6 +850,9 @@ function ActionCard({ action }: { action: ActionWithRelations }) {
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
+                    {action.display_id && (
+                      <span className="text-xs font-mono text-gray-500">{action.display_id}</span>
+                    )}
                     <h3 className="text-base font-medium text-gray-900">{action.title}</h3>
                     <PriorityBadge priority={action.priority} />
                     <StatusBadge status={action.status} />
@@ -962,7 +965,12 @@ function ActionsTable({ actions, sortColumn, sortDirection, onSort }: ActionsTab
                 >
                   <td className="px-4 py-3">
                     <div className="max-w-md">
-                      <p className="text-sm font-medium text-gray-900">{action.title}</p>
+                      <div className="flex items-center gap-2">
+                        {action.display_id && (
+                          <span className="text-xs font-mono text-gray-500">{action.display_id}</span>
+                        )}
+                        <p className="text-sm font-medium text-gray-900">{action.title}</p>
+                      </div>
                       {action.description && (
                         <p className="text-xs text-gray-500 mt-0.5">{action.description}</p>
                       )}
