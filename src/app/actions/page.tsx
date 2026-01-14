@@ -197,6 +197,19 @@ function ActionsPageContent() {
         'due date': 'due_date',
         'due': 'due_date',
         'deadline': 'due_date',
+        'date created': 'created_at',
+        'created': 'created_at',
+        'created date': 'created_at',
+        'date closed': 'completed_at',
+        'closed': 'completed_at',
+        'completed': 'completed_at',
+        'completion date': 'completed_at',
+        'created by': 'created_by',
+        'creator': 'created_by',
+        'initial comment': 'initial_comment',
+        'comment': 'initial_comment',
+        'comments': 'initial_comment',
+        'notes': 'initial_comment',
       };
 
       const fieldIndexes: Record<string, number> = {};
@@ -223,10 +236,21 @@ function ActionsPageContent() {
         userByName.set(u.full_name.toLowerCase(), { id: u.id, email: u.email });
       });
 
-      // Get workstreams for mapping
+      // Get workstreams for mapping - support both name and Parent/Child format
       const workstreamMap = new Map<string, string>();
+      const workstreamById = new Map<string, Workstream>();
       workstreams.forEach(w => {
         workstreamMap.set(w.name.toLowerCase(), w.id);
+        workstreamById.set(w.id, w);
+      });
+      // Add Parent/Child format mappings
+      workstreams.forEach(w => {
+        if (w.parent_id) {
+          const parent = workstreamById.get(w.parent_id);
+          if (parent) {
+            workstreamMap.set(`${parent.name.toLowerCase()}/${w.name.toLowerCase()}`, w.id);
+          }
+        }
       });
 
       // Track unmatched owners for summary
@@ -248,8 +272,8 @@ function ActionsPageContent() {
           continue;
         }
 
-        // Map priority
-        let priority: Priority = 'medium';
+        // Map priority (optional - can be null)
+        let priority: Priority | null = null;
         const priorityValue = getValue('priority')?.toLowerCase();
         if (priorityValue && ['critical', 'high', 'medium', 'low'].includes(priorityValue)) {
           priority = priorityValue as Priority;
@@ -299,7 +323,52 @@ function ActionsPageContent() {
           }
         }
 
-        const { error } = await supabase.from('actions').insert({
+        // Parse created date (for historical imports)
+        let created_at: string | null = null;
+        const createdAtValue = getValue('created_at');
+        if (createdAtValue) {
+          const parsed = new Date(createdAtValue);
+          if (!isNaN(parsed.getTime())) {
+            created_at = parsed.toISOString();
+          }
+        }
+
+        // Parse completed date (for closed actions)
+        let completed_at: string | null = null;
+        const completedAtValue = getValue('completed_at');
+        if (completedAtValue) {
+          const parsed = new Date(completedAtValue);
+          if (!isNaN(parsed.getTime())) {
+            completed_at = parsed.toISOString();
+            // Auto-set status to complete if date closed is provided
+            if (status === 'pending') {
+              status = 'complete';
+            }
+          }
+        }
+
+        // Map created_by - try user lookup, default to System
+        const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000';
+        let created_by_id: string = user?.id || SYSTEM_USER_ID;
+        const createdByValue = getValue('created_by');
+        if (createdByValue) {
+          const createdByLower = createdByValue.toLowerCase();
+          if (createdByLower === 'system') {
+            created_by_id = SYSTEM_USER_ID;
+          } else if (userByEmail.has(createdByLower)) {
+            created_by_id = userByEmail.get(createdByLower)!.id;
+          } else if (userByName.has(createdByLower)) {
+            created_by_id = userByName.get(createdByLower)!.id;
+          } else {
+            results.warnings.push(`Row ${i + 1}: Creator "${createdByValue}" not found - using current user`);
+          }
+        }
+
+        // Get initial comment for legacy import
+        const initialComment = getValue('initial_comment');
+
+        // Build insert data
+        const insertData: Record<string, unknown> = {
           title,
           description: getValue('description') || null,
           priority,
@@ -307,13 +376,32 @@ function ActionsPageContent() {
           workstream_id,
           owner_id,
           due_date,
-          created_by: user?.id,
-        });
+          completed_at,
+          created_by: created_by_id,
+        };
+
+        // Add custom created_at for historical imports
+        if (created_at) {
+          insertData.created_at = created_at;
+        }
+
+        const { data: newAction, error } = await supabase.from('actions').insert(insertData).select().single();
 
         if (error) {
           results.errors.push(`Row ${i + 1}: ${error.message}`);
         } else {
           results.success++;
+
+          // If there's an initial comment (legacy import), create an action_update
+          if (initialComment && newAction) {
+            await supabase
+              .from('action_updates')
+              .insert({
+                action_id: newAction.id,
+                user_id: created_by_id,
+                content: initialComment.trim(),
+              });
+          }
         }
       }
 
@@ -524,11 +612,18 @@ function ActionsPageContent() {
                 <ul className="text-sm text-gray-600 space-y-1">
                   <li><strong>Title</strong> (required): Title, Name, or Action</li>
                   <li><strong>Description</strong>: Description or Details</li>
-                  <li><strong>Priority</strong>: Critical, High, Medium, Low</li>
+                  <li><strong>Priority</strong>: Critical, High, Medium, Low (or blank)</li>
                   <li><strong>Status</strong>: Pending, In Progress, Complete, Cancelled</li>
-                  <li><strong>Workstream</strong>: Must match existing workstream name</li>
+                  <li><strong>Workstream</strong>: Parent/Child format (e.g., &quot;IT Systems/Development&quot;)</li>
                   <li><strong>Owner</strong>: User&apos;s full name or email</li>
-                  <li><strong>Due Date</strong>: Due Date, Due, or Deadline (any date format)</li>
+                  <li><strong>Due Date</strong>: Due Date, Due, or Deadline</li>
+                </ul>
+                <h3 className="text-sm font-medium text-gray-900 mt-4 mb-2">Legacy Import Columns</h3>
+                <ul className="text-sm text-gray-600 space-y-1">
+                  <li><strong>Date Created</strong>: Original creation date for historical actions</li>
+                  <li><strong>Date Closed</strong>: Completion date (auto-sets status to Complete)</li>
+                  <li><strong>Created By</strong>: Creator name/email (defaults to System)</li>
+                  <li><strong>Initial Comment</strong>: Legacy notes to import as first comment</li>
                 </ul>
                 <a
                   href="/templates/actions-import-template.csv"
