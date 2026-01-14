@@ -17,6 +17,7 @@ import {
   ChevronRightIcon,
   BellIcon,
   SwatchIcon,
+  BuildingOfficeIcon,
 } from '@heroicons/react/24/outline';
 import { Avatar } from '../ui/avatar';
 
@@ -27,6 +28,7 @@ const navigation = [
   { name: 'Technical Queries', href: '/queries', icon: QuestionMarkCircleIcon },
   { name: 'Decisions', href: '/decisions', icon: DocumentTextIcon },
   { name: 'Milestones', href: '/milestones', icon: FlagIcon },
+  { name: 'Vendors', href: '/vendors', icon: BuildingOfficeIcon },
   { name: 'Gantt Chart', href: '/gantt', icon: ChartBarIcon },
 ];
 

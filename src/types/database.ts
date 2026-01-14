@@ -291,3 +291,79 @@ export interface Notification {
   read: boolean;
   created_at: string;
 }
+
+export type VendorActivityStatus = 'planned' | 'confirmed' | 'in_progress' | 'complete' | 'cancelled';
+
+export interface Vendor {
+  id: string;
+  name: string;
+  contact_name?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  notes?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+  // Joined fields
+  creator?: User;
+  activities?: VendorActivity[];
+  linked_actions?: Action[];
+}
+
+export interface VendorActivity {
+  id: string;
+  vendor_id: string;
+  description: string;
+  purchase_order?: string;
+  purchase_order_value?: number;
+  provisional_start_date?: string;
+  provisional_end_date?: string;
+  confirmed_start_date?: string;
+  confirmed_end_date?: string;
+  status: VendorActivityStatus;
+  notes?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+  // Joined fields
+  vendor?: Vendor;
+  creator?: User;
+}
+
+export interface VendorActionLink {
+  id: string;
+  vendor_id: string;
+  action_id: string;
+  created_by?: string;
+  created_at: string;
+  // Joined fields
+  vendor?: Vendor;
+  action?: Action;
+}
+
+export interface VendorAudit {
+  id: string;
+  vendor_id: string;
+  user_id?: string;
+  change_type: string;
+  field_name?: string;
+  old_value?: string;
+  new_value?: string;
+  created_at: string;
+  // Joined fields
+  user?: User;
+}
+
+export interface VendorActivityAudit {
+  id: string;
+  activity_id: string;
+  vendor_id: string;
+  user_id?: string;
+  change_type: string;
+  field_name?: string;
+  old_value?: string;
+  new_value?: string;
+  created_at: string;
+  // Joined fields
+  user?: User;
+}
