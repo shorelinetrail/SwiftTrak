@@ -214,6 +214,10 @@ export default function DecisionDetailPage() {
       <Header
         title={decision.title}
         subtitle={decision.workstream?.name || 'Decision Log Entry'}
+        breadcrumbs={[
+          { label: 'Decisions', href: '/decisions' },
+          { label: decision.title },
+        ]}
         actions={
           <div className="flex items-center gap-2">
             {canEdit && (

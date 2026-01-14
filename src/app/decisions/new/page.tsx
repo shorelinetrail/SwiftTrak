@@ -93,7 +93,14 @@ export default function NewDecisionPage() {
 
   return (
     <div className="min-h-screen">
-      <Header title="Record Decision" subtitle="Document a key decision for the record" />
+      <Header
+        title="Record Decision"
+        subtitle="Document a key decision for the record"
+        breadcrumbs={[
+          { label: 'Decisions', href: '/decisions' },
+          { label: 'New Decision' },
+        ]}
+      />
 
       <div className="p-6 max-w-2xl">
         <form onSubmit={handleSubmit}>

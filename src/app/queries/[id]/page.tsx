@@ -128,6 +128,10 @@ export default function QueryDetailPage() {
       <Header
         title={query.title}
         subtitle={query.workstream?.name || 'Technical Query'}
+        breadcrumbs={[
+          { label: 'Queries', href: '/queries' },
+          { label: query.title },
+        ]}
       />
 
       <div className="p-6 max-w-4xl space-y-6">

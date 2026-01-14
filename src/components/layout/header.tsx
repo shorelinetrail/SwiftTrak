@@ -10,17 +10,26 @@ import {
   BellIcon,
   MagnifyingGlassIcon,
   ArrowRightOnRectangleIcon,
+  ChevronRightIcon,
+  HomeIcon,
 } from '@heroicons/react/24/outline';
+import Link from 'next/link';
 import { Menu, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
+
+interface BreadcrumbItem {
+  label: string;
+  href?: string;
+}
 
 interface HeaderProps {
   title?: React.ReactNode;
   subtitle?: string;
   actions?: React.ReactNode;
+  breadcrumbs?: BreadcrumbItem[];
 }
 
-export function Header({ title, subtitle, actions }: HeaderProps) {
+export function Header({ title, subtitle, actions, breadcrumbs }: HeaderProps) {
   const router = useRouter();
   const { user, unreadCount, isConnected } = useAppStore();
   const [searchQuery, setSearchQuery] = useState('');
@@ -41,8 +50,27 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
   return (
     <header className="sticky top-0 z-30 bg-white border-b border-gray-200">
       <div className="flex h-16 items-center justify-between px-6">
-        {/* Title */}
+        {/* Title & Breadcrumbs */}
         <div>
+          {breadcrumbs && breadcrumbs.length > 0 && (
+            <nav className="flex items-center gap-1 text-sm mb-1">
+              <Link href="/dashboard" className="text-gray-400 hover:text-gray-600">
+                <HomeIcon className="w-4 h-4" />
+              </Link>
+              {breadcrumbs.map((crumb, index) => (
+                <span key={index} className="flex items-center gap-1">
+                  <ChevronRightIcon className="w-3 h-3 text-gray-400" />
+                  {crumb.href ? (
+                    <Link href={crumb.href} className="text-gray-500 hover:text-gray-700">
+                      {crumb.label}
+                    </Link>
+                  ) : (
+                    <span className="text-gray-700 font-medium">{crumb.label}</span>
+                  )}
+                </span>
+              ))}
+            </nav>
+          )}
           {title && (
             <div className="flex items-center gap-3">
               <h1 className="text-xl font-semibold text-gray-900">{title}</h1>

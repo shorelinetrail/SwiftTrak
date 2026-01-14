@@ -170,7 +170,14 @@ export default function NewActionPage() {
 
   return (
     <div className="min-h-screen">
-      <Header title="New Action" subtitle="Create a new action item" />
+      <Header
+        title="New Action"
+        subtitle="Create a new action item"
+        breadcrumbs={[
+          { label: 'Actions', href: '/actions' },
+          { label: 'New Action' },
+        ]}
+      />
 
       <div className="p-6 max-w-2xl">
         <form onSubmit={handleSubmit}>

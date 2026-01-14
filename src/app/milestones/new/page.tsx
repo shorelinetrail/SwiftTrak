@@ -108,7 +108,14 @@ export default function NewMilestonePage() {
 
   return (
     <div className="min-h-screen">
-      <Header title="Add Milestone" subtitle="Define a key project target" />
+      <Header
+        title="Add Milestone"
+        subtitle="Define a key project target"
+        breadcrumbs={[
+          { label: 'Milestones', href: '/milestones' },
+          { label: 'New Milestone' },
+        ]}
+      />
 
       <div className="p-6 max-w-2xl">
         <form onSubmit={handleSubmit}>

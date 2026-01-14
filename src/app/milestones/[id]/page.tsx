@@ -238,7 +238,14 @@ export default function EditMilestonePage({ params }: { params: Promise<{ id: st
 
   return (
     <div className="min-h-screen">
-      <Header title="Edit Milestone" subtitle={milestone.title} />
+      <Header
+        title="Edit Milestone"
+        subtitle={milestone.title}
+        breadcrumbs={[
+          { label: 'Milestones', href: '/milestones' },
+          { label: milestone.title },
+        ]}
+      />
 
       <div className="p-6 max-w-2xl">
         <form onSubmit={handleSubmit}>

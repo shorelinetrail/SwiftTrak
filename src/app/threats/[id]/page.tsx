@@ -331,6 +331,10 @@ export default function ThreatDetailPage() {
           </div>
         }
         subtitle={threat.workstream?.name}
+        breadcrumbs={[
+          { label: 'Threats', href: '/threats' },
+          { label: threat.title },
+        ]}
         actions={
           !permissionLoading && (
             <div className="flex gap-2">

@@ -419,6 +419,10 @@ export default function ActionDetailPage() {
       <Header
         title={action.title}
         subtitle={action.workstream?.name}
+        breadcrumbs={[
+          { label: 'Actions', href: '/actions' },
+          { label: action.title },
+        ]}
         actions={
           <div className="flex gap-2">
             {canEdit && (

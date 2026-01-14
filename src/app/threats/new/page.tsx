@@ -124,7 +124,14 @@ export default function NewThreatPage() {
 
   return (
     <div className="min-h-screen">
-      <Header title="Log Threat" subtitle="Document a new risk or threat" />
+      <Header
+        title="Log Threat"
+        subtitle="Document a new risk or threat"
+        breadcrumbs={[
+          { label: 'Threats', href: '/threats' },
+          { label: 'New Threat' },
+        ]}
+      />
 
       <div className="p-6 max-w-2xl">
         <form onSubmit={handleSubmit}>

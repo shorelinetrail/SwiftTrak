@@ -129,7 +129,14 @@ export default function NewQueryPage() {
 
   return (
     <div className="min-h-screen">
-      <Header title="Submit Technical Query" subtitle="Get answers from your team" />
+      <Header
+        title="Submit Technical Query"
+        subtitle="Get answers from your team"
+        breadcrumbs={[
+          { label: 'Queries', href: '/queries' },
+          { label: 'New Query' },
+        ]}
+      />
 
       <div className="p-6 max-w-2xl">
         <form onSubmit={handleSubmit}>
