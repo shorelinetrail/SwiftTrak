@@ -27,6 +27,8 @@ export default function NewActionPage() {
     owner_id: '',
     priority: 'medium' as Priority,
     due_date: '',
+    completed_at: '', // For importing already-closed actions
+    initial_comment: '', // For importing legacy comments
   });
 
   // Fetch workstreams and users on mount
@@ -77,6 +79,10 @@ export default function NewActionPage() {
     try {
       const supabase = createClient();
 
+      // Determine status based on completion date
+      const isCompleted = !!formData.completed_at;
+      const status = isCompleted ? 'complete' : 'pending';
+
       const { data, error } = await supabase
         .from('actions')
         .insert({
@@ -86,13 +92,25 @@ export default function NewActionPage() {
           owner_id: formData.owner_id || null,
           priority: formData.priority,
           due_date: formData.due_date || null,
-          status: 'pending',
+          status,
+          completed_at: formData.completed_at || null,
           created_by: user?.id,
         })
         .select()
         .single();
 
       if (error) throw error;
+
+      // If there's an initial comment (legacy import), create an action_update
+      if (formData.initial_comment.trim() && data) {
+        await supabase
+          .from('action_updates')
+          .insert({
+            action_id: data.id,
+            user_id: user?.id,
+            content: formData.initial_comment.trim(),
+          });
+      }
 
       toast.success('Action created successfully');
       router.push(`/actions/${data.id}`);
@@ -175,6 +193,30 @@ export default function NewActionPage() {
                 value={formData.due_date}
                 onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
               />
+
+              {/* Import fields for migrating existing/closed actions */}
+              <div className="border-t pt-6 mt-6">
+                <p className="text-sm text-gray-500 mb-4">
+                  Optional: For importing existing or closed actions
+                </p>
+
+                <div className="space-y-4">
+                  <Input
+                    label="Completion Date (if already completed)"
+                    type="date"
+                    value={formData.completed_at}
+                    onChange={(e) => setFormData({ ...formData, completed_at: e.target.value })}
+                  />
+
+                  <Textarea
+                    label="Initial Comment (for legacy import)"
+                    value={formData.initial_comment}
+                    onChange={(e) => setFormData({ ...formData, initial_comment: e.target.value })}
+                    placeholder="Paste legacy comments or notes from another system"
+                    rows={4}
+                  />
+                </div>
+              </div>
             </CardContent>
 
             <CardFooter>
