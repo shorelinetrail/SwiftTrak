@@ -101,7 +101,7 @@ function SearchPageContent() {
         supabase
           .from('technical_queries')
           .select('*, workstream:workstreams(id, name, color)')
-          .or(`title.ilike.${searchTerm},question.ilike.${searchTerm}`)
+          .or(`title.ilike.${searchTerm},description.ilike.${searchTerm}`)
           .order('created_at', { ascending: false })
           .limit(50),
         supabase
@@ -275,7 +275,7 @@ function SearchPageContent() {
                                 <p className="text-sm text-gray-500 line-clamp-2 mt-1">{threat.description}</p>
                               )}
                               <div className="flex items-center gap-2 mt-2">
-                                <RiskBadge level={threat.current_risk} />
+                                <RiskBadge risk={threat.current_risk} />
                                 {threat.workstream && (
                                   <span
                                     className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
@@ -316,8 +316,8 @@ function SearchPageContent() {
                           <div className="flex items-start justify-between gap-4">
                             <div className="flex-1 min-w-0">
                               <h3 className="text-sm font-medium text-gray-900">{query.title}</h3>
-                              {query.question && (
-                                <p className="text-sm text-gray-500 line-clamp-2 mt-1">{query.question}</p>
+                              {query.description && (
+                                <p className="text-sm text-gray-500 line-clamp-2 mt-1">{query.description}</p>
                               )}
                               <div className="flex items-center gap-2 mt-2">
                                 <PriorityBadge priority={query.priority} />

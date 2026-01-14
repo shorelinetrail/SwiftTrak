@@ -978,7 +978,7 @@ export default function ActionDetailPage() {
 }
 
 function formatAuditChange(entry: ActionAuditWithUser): string {
-  const formatValue = (value: string | null, type: string) => {
+  const formatValue = (value: string | null | undefined, type: string) => {
     if (!value || value === 'null') return 'none';
     if (type === 'status') return value.replace('_', ' ');
     if (type === 'date') {
