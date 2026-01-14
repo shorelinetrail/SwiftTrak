@@ -540,12 +540,12 @@ export default function ActionDetailPage() {
               </div>
 
               {/* Status Badges Row */}
-              <div className="flex items-center flex-wrap gap-3 mb-6">
+              <div className="flex items-center flex-wrap gap-2 mb-6">
                 <StatusBadge status={action.status} />
                 <PriorityBadge priority={action.priority} />
                 {action.workstream && (
                   <span
-                    className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium"
+                    className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
                     style={{
                       backgroundColor: `${action.workstream.color}20`,
                       color: action.workstream.color,
