@@ -75,10 +75,9 @@ export default function VendorDetailPage() {
     description: '',
     purchase_order: '',
     purchase_order_value: '',
-    provisional_start_date: '',
-    provisional_end_date: '',
-    confirmed_start_date: '',
-    confirmed_end_date: '',
+    start_date: '',
+    end_date: '',
+    dates_confirmed: false,
     status: 'planned' as VendorActivityStatus,
     notes: '',
   });
@@ -245,10 +244,10 @@ export default function VendorDetailPage() {
         description: activityForm.description.trim(),
         purchase_order: activityForm.purchase_order.trim() || null,
         purchase_order_value: activityForm.purchase_order_value ? parseFloat(activityForm.purchase_order_value) : null,
-        provisional_start_date: activityForm.provisional_start_date || null,
-        provisional_end_date: activityForm.provisional_end_date || null,
-        confirmed_start_date: activityForm.confirmed_start_date || null,
-        confirmed_end_date: activityForm.confirmed_end_date || null,
+        provisional_start_date: activityForm.dates_confirmed ? null : (activityForm.start_date || null),
+        provisional_end_date: activityForm.dates_confirmed ? null : (activityForm.end_date || null),
+        confirmed_start_date: activityForm.dates_confirmed ? (activityForm.start_date || null) : null,
+        confirmed_end_date: activityForm.dates_confirmed ? (activityForm.end_date || null) : null,
         status: activityForm.status,
         notes: activityForm.notes.trim() || null,
         created_by: user?.id,
@@ -385,14 +384,18 @@ export default function VendorDetailPage() {
 
   const openEditActivity = (activity: VendorActivityWithRelations) => {
     setEditingActivity(activity);
+    const hasConfirmedDates = !!(activity.confirmed_start_date || activity.confirmed_end_date);
     setActivityForm({
       description: activity.description,
       purchase_order: activity.purchase_order || '',
       purchase_order_value: activity.purchase_order_value?.toString() || '',
-      provisional_start_date: activity.provisional_start_date || '',
-      provisional_end_date: activity.provisional_end_date || '',
-      confirmed_start_date: activity.confirmed_start_date || '',
-      confirmed_end_date: activity.confirmed_end_date || '',
+      start_date: hasConfirmedDates
+        ? (activity.confirmed_start_date || '')
+        : (activity.provisional_start_date || ''),
+      end_date: hasConfirmedDates
+        ? (activity.confirmed_end_date || '')
+        : (activity.provisional_end_date || ''),
+      dates_confirmed: hasConfirmedDates,
       status: activity.status,
       notes: activity.notes || '',
     });
@@ -404,10 +407,9 @@ export default function VendorDetailPage() {
       description: '',
       purchase_order: '',
       purchase_order_value: '',
-      provisional_start_date: '',
-      provisional_end_date: '',
-      confirmed_start_date: '',
-      confirmed_end_date: '',
+      start_date: '',
+      end_date: '',
+      dates_confirmed: false,
       status: 'planned',
       notes: '',
     });
@@ -589,26 +591,25 @@ export default function VendorDetailPage() {
                                 <p className="font-medium">{formatCurrency(activity.purchase_order_value)}</p>
                               </div>
                             )}
-                            {(activity.provisional_start_date || activity.provisional_end_date) && (
+                            {(activity.confirmed_start_date || activity.confirmed_end_date) ? (
                               <div>
-                                <span className="text-gray-500">Provisional Dates</span>
-                                <p className="font-medium text-amber-600">
-                                  {activity.provisional_start_date && formatDate(activity.provisional_start_date, { month: 'short', day: 'numeric' })}
-                                  {activity.provisional_start_date && activity.provisional_end_date && ' - '}
-                                  {activity.provisional_end_date && formatDate(activity.provisional_end_date, { month: 'short', day: 'numeric' })}
-                                </p>
-                              </div>
-                            )}
-                            {(activity.confirmed_start_date || activity.confirmed_end_date) && (
-                              <div>
-                                <span className="text-gray-500">Confirmed Dates</span>
+                                <span className="text-gray-500">Dates (Confirmed)</span>
                                 <p className="font-medium text-green-600">
                                   {activity.confirmed_start_date && formatDate(activity.confirmed_start_date, { month: 'short', day: 'numeric' })}
                                   {activity.confirmed_start_date && activity.confirmed_end_date && ' - '}
                                   {activity.confirmed_end_date && formatDate(activity.confirmed_end_date, { month: 'short', day: 'numeric' })}
                                 </p>
                               </div>
-                            )}
+                            ) : (activity.provisional_start_date || activity.provisional_end_date) ? (
+                              <div>
+                                <span className="text-gray-500">Dates (Provisional)</span>
+                                <p className="font-medium text-amber-600">
+                                  {activity.provisional_start_date && formatDate(activity.provisional_start_date, { month: 'short', day: 'numeric' })}
+                                  {activity.provisional_start_date && activity.provisional_end_date && ' - '}
+                                  {activity.provisional_end_date && formatDate(activity.provisional_end_date, { month: 'short', day: 'numeric' })}
+                                </p>
+                              </div>
+                            ) : null}
                           </div>
 
                           {activity.notes && (
@@ -840,33 +841,28 @@ export default function VendorDetailPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <Input
-              label="Provisional Start Date"
+              label="Start Date"
               type="date"
-              value={activityForm.provisional_start_date}
-              onChange={(e) => setActivityForm({ ...activityForm, provisional_start_date: e.target.value })}
+              value={activityForm.start_date}
+              onChange={(e) => setActivityForm({ ...activityForm, start_date: e.target.value })}
             />
             <Input
-              label="Provisional End Date"
+              label="End Date"
               type="date"
-              value={activityForm.provisional_end_date}
-              onChange={(e) => setActivityForm({ ...activityForm, provisional_end_date: e.target.value })}
+              value={activityForm.end_date}
+              onChange={(e) => setActivityForm({ ...activityForm, end_date: e.target.value })}
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="Confirmed Start Date"
-              type="date"
-              value={activityForm.confirmed_start_date}
-              onChange={(e) => setActivityForm({ ...activityForm, confirmed_start_date: e.target.value })}
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={activityForm.dates_confirmed}
+              onChange={(e) => setActivityForm({ ...activityForm, dates_confirmed: e.target.checked })}
+              className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
             />
-            <Input
-              label="Confirmed End Date"
-              type="date"
-              value={activityForm.confirmed_end_date}
-              onChange={(e) => setActivityForm({ ...activityForm, confirmed_end_date: e.target.value })}
-            />
-          </div>
+            <span className="text-sm text-gray-700">Dates confirmed</span>
+          </label>
 
           <Select
             label="Status"
