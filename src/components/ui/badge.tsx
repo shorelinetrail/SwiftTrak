@@ -63,11 +63,14 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
 }
 
 interface PriorityBadgeProps {
-  priority: 'critical' | 'urgent' | 'high' | 'medium' | 'low';
+  priority: 'critical' | 'urgent' | 'high' | 'medium' | 'low' | null | undefined;
   className?: string;
 }
 
 export function PriorityBadge({ priority, className }: PriorityBadgeProps) {
+  // Return nothing if no priority is set
+  if (!priority) return null;
+
   const priorityConfig = {
     critical: { label: 'Critical', className: 'bg-red-600 text-white' },
     urgent: { label: 'Urgent', className: 'bg-red-600 text-white' },
