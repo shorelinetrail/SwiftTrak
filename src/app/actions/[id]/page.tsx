@@ -639,26 +639,32 @@ export default function ActionDetailPage() {
                 <p className="text-center text-gray-500 py-8">No updates yet</p>
               ) : (
                 <div className="space-y-4">
-                  {updates.map((update) => (
-                    <div key={update.id} className="flex gap-3 p-3 bg-gray-50 rounded-lg">
-                      <Avatar
-                        src={update.user?.avatar_url}
-                        name={update.user?.full_name || 'Unknown'}
-                        size="sm"
-                      />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-900">
-                            {update.user?.full_name || 'Unknown'}
-                          </span>
-                          <span className="text-xs text-gray-500">
-                            {getRelativeTime(update.created_at)}
-                          </span>
+                  {updates.map((update) => {
+                    // Hide date for System user (legacy imports)
+                    const isSystemUser = update.user_id === '00000000-0000-0000-0000-000000000000';
+                    return (
+                      <div key={update.id} className="flex gap-3 p-3 bg-gray-50 rounded-lg">
+                        <Avatar
+                          src={update.user?.avatar_url}
+                          name={update.user?.full_name || 'Unknown'}
+                          size="sm"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-gray-900">
+                              {update.user?.full_name || 'Unknown'}
+                            </span>
+                            {!isSystemUser && (
+                              <span className="text-xs text-gray-500">
+                                {getRelativeTime(update.created_at)}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-700 mt-1">{update.content}</p>
                         </div>
-                        <p className="text-sm text-gray-700 mt-1">{update.content}</p>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
