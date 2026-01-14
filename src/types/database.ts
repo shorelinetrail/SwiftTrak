@@ -46,6 +46,7 @@ export interface Workstream {
 
 export interface Action {
   id: string;
+  display_id?: string;
   title: string;
   description?: string;
   workstream_id: string;
@@ -89,6 +90,7 @@ export interface ActionAudit {
 
 export interface Threat {
   id: string;
+  display_id?: string;
   title: string;
   description: string;
   workstream_id: string;
@@ -133,6 +135,7 @@ export interface ThreatUpdate {
 
 export interface TechnicalQuery {
   id: string;
+  display_id?: string;
   title: string;
   description: string;
   workstream_id?: string;
@@ -151,6 +154,7 @@ export interface TechnicalQuery {
 
 export interface Decision {
   id: string;
+  display_id?: string;
   title: string;
   description: string;
   workstream_id?: string;
@@ -177,6 +181,7 @@ export interface DecisionAudit {
 
 export interface Milestone {
   id: string;
+  display_id?: string;
   title: string;
   description?: string;
   workstream_id?: string;

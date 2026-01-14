@@ -14,7 +14,7 @@ import { Select } from '@/components/ui/select';
 import { RiskBadge } from '@/components/ui/badge';
 import { Modal } from '@/components/ui/modal';
 import { LoadingSpinner } from '@/components/ui/loading';
-import { formatDate, buildWorkstreamOptions, getWorkstreamDisplayName } from '@/lib/utils';
+import { formatDate, buildWorkstreamOptions, getWorkstreamDisplayName, cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import {
   PencilIcon,
@@ -25,6 +25,8 @@ import {
   LinkIcon,
   PlusIcon,
   XMarkIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
 } from '@heroicons/react/24/outline';
 import { ChatBubbleLeftIcon } from '@heroicons/react/24/outline';
 import { Avatar } from '@/components/ui/avatar';
@@ -86,6 +88,10 @@ export default function ThreatDetailPage() {
   const [selectedActionId, setSelectedActionId] = useState('');
   const [actionSearchQuery, setActionSearchQuery] = useState('');
 
+  // Navigation through threats
+  const [allThreatIds, setAllThreatIds] = useState<string[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(-1);
+
   const fetchThreat = useCallback(async () => {
     const supabase = createClient();
 
@@ -123,7 +129,7 @@ export default function ThreatDetailPage() {
               user:users(id, full_name, avatar_url)
             `)
             .eq('threat_id', threatId)
-            .order('created_at', { ascending: false }),
+            .order('created_at', { ascending: true }),
           new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
         ]),
         Promise.race([
@@ -175,6 +181,36 @@ export default function ThreatDetailPage() {
   useEffect(() => {
     fetchThreat();
   }, [fetchThreat]);
+
+  // Fetch all threat IDs for navigation
+  useEffect(() => {
+    const fetchThreatIds = async () => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from('threats')
+        .select('id')
+        .order('created_at', { ascending: false });
+
+      if (data) {
+        const ids = data.map(t => t.id);
+        setAllThreatIds(ids);
+        setCurrentIndex(ids.indexOf(threatId));
+      }
+    };
+    fetchThreatIds();
+  }, [threatId]);
+
+  const goToPrevious = () => {
+    if (currentIndex > 0) {
+      router.push(`/threats/${allThreatIds[currentIndex - 1]}`);
+    }
+  };
+
+  const goToNext = () => {
+    if (currentIndex < allThreatIds.length - 1) {
+      router.push(`/threats/${allThreatIds[currentIndex + 1]}`);
+    }
+  };
 
   // useRealtime({
   //   table: 'threats',
@@ -460,6 +496,40 @@ export default function ThreatDetailPage() {
               <div className="flex items-start justify-between gap-4 mb-4">
                 <h1 className="text-2xl font-bold text-gray-900">{threat.title}</h1>
                 <div className="flex items-center gap-2 flex-shrink-0">
+                  {/* Navigation */}
+                  {allThreatIds.length > 1 && (
+                    <div className="flex items-center gap-1 mr-2">
+                      <button
+                        onClick={goToPrevious}
+                        disabled={currentIndex <= 0}
+                        className={cn(
+                          'p-1.5 rounded-lg transition-colors',
+                          currentIndex > 0
+                            ? 'text-gray-600 hover:bg-gray-100'
+                            : 'text-gray-300 cursor-not-allowed'
+                        )}
+                        title="Previous threat"
+                      >
+                        <ChevronLeftIcon className="w-5 h-5" />
+                      </button>
+                      <span className="text-xs text-gray-500 min-w-[4rem] text-center">
+                        {currentIndex + 1} / {allThreatIds.length}
+                      </span>
+                      <button
+                        onClick={goToNext}
+                        disabled={currentIndex >= allThreatIds.length - 1}
+                        className={cn(
+                          'p-1.5 rounded-lg transition-colors',
+                          currentIndex < allThreatIds.length - 1
+                            ? 'text-gray-600 hover:bg-gray-100'
+                            : 'text-gray-300 cursor-not-allowed'
+                        )}
+                        title="Next threat"
+                      >
+                        <ChevronRightIcon className="w-5 h-5" />
+                      </button>
+                    </div>
+                  )}
                   {!permissionLoading && canEdit && threat.status === 'open' && (
                     <Button variant="secondary" size="sm" onClick={() => setCloseModalOpen(true)}>
                       <CheckCircleIcon className="w-4 h-4 mr-2" />

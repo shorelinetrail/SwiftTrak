@@ -84,6 +84,9 @@ export default function ActionDetailPage() {
   const [editingCreatedDate, setEditingCreatedDate] = useState(false);
   const [newCreatedDate, setNewCreatedDate] = useState('');
 
+  // Toggle for admin-only features
+  const [showAdminFeatures, setShowAdminFeatures] = useState(false);
+
   const fetchAction = useCallback(async () => {
     const supabase = createClient();
 
@@ -115,7 +118,7 @@ export default function ActionDetailPage() {
         user:users(id, full_name, avatar_url)
       `)
       .eq('action_id', actionId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: true });
 
     if (updatesData) {
       setUpdates(updatesData as unknown as ActionUpdateWithUser[]);
@@ -559,7 +562,7 @@ export default function ActionDetailPage() {
                       )}
                     </>
                   )}
-                  {canAdmin && (
+                  {canAdmin && showAdminFeatures && (
                     <Button variant="danger" size="sm" onClick={() => setDeleteModalOpen(true)}>
                       <TrashIcon className="w-4 h-4" />
                     </Button>
@@ -630,7 +633,7 @@ export default function ActionDetailPage() {
                 </div>
                 <div>
                   <span className="text-gray-500">Created</span>
-                  {canAdmin && editingCreatedDate ? (
+                  {canAdmin && showAdminFeatures && editingCreatedDate ? (
                     <div className="mt-1 flex items-center gap-2">
                       <Input
                         type="datetime-local"
@@ -651,7 +654,7 @@ export default function ActionDetailPage() {
                   ) : (
                     <p className="mt-1 font-medium text-gray-900">
                       {formatDate(action.created_at)} by {action.creator?.full_name}
-                      {canAdmin && (
+                      {canAdmin && showAdminFeatures && (
                         <button
                           onClick={() => {
                             setEditingCreatedDate(true);
@@ -679,7 +682,21 @@ export default function ActionDetailPage() {
 
           {/* Updates */}
           <Card>
-            <CardHeader>
+            <CardHeader
+              actions={
+                canAdmin && (
+                  <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showAdminFeatures}
+                      onChange={(e) => setShowAdminFeatures(e.target.checked)}
+                      className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                    />
+                    Admin tools
+                  </label>
+                )
+              }
+            >
               <CardTitle className="flex items-center gap-2">
                 <ChatBubbleLeftIcon className="w-5 h-5 text-gray-400" />
                 Updates ({updates.length})
@@ -708,7 +725,7 @@ export default function ActionDetailPage() {
               )}
 
               {/* Admin-only: Import comments with custom user/date */}
-              {canAdmin && (
+              {canAdmin && showAdminFeatures && (
                 <div className="mb-6 p-4 border border-dashed border-gray-300 rounded-lg bg-gray-50">
                   <p className="text-sm font-medium text-gray-700 mb-3">
                     Admin: Import Legacy Comment
