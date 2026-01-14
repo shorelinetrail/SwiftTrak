@@ -12,6 +12,7 @@ import { Input, Textarea } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { LoadingSpinner } from '@/components/ui/loading';
 import toast from 'react-hot-toast';
+import { buildWorkstreamOptions } from '@/lib/utils';
 import type { Workstream, Milestone } from '@/types/database';
 
 type MilestoneWithRelations = Milestone & {
@@ -177,10 +178,10 @@ export default function EditMilestonePage({ params }: { params: Promise<{ id: st
     }
   };
 
-  const workstreamOptions = [
-    { value: '', label: 'No specific workstream' },
-    ...workstreams.map(w => ({ value: w.id, label: w.name })),
-  ];
+  const workstreamOptions = buildWorkstreamOptions(workstreams, {
+    allLabel: 'No specific workstream',
+    allValue: '',
+  });
 
   const statusOptions = [
     { value: 'pending', label: 'Pending' },

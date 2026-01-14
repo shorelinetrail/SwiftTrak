@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import toast from 'react-hot-toast';
+import { buildWorkstreamOptions } from '@/lib/utils';
 import type { RiskLevel, Workstream } from '@/types/database';
 
 export default function NewThreatPage() {
@@ -105,10 +106,10 @@ export default function NewThreatPage() {
     }
   };
 
-  const workstreamOptions = [
-    { value: '', label: 'Select a workstream...' },
-    ...workstreams.map(w => ({ value: w.id, label: w.name })),
-  ];
+  const workstreamOptions = buildWorkstreamOptions(workstreams, {
+    allLabel: 'Select a workstream...',
+    allValue: '',
+  });
 
   const riskOptions = [
     { value: 'low', label: 'Low' },

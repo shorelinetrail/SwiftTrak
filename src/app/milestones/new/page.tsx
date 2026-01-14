@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import toast from 'react-hot-toast';
+import { buildWorkstreamOptions } from '@/lib/utils';
 import type { Workstream } from '@/types/database';
 
 export default function NewMilestonePage() {
@@ -100,10 +101,10 @@ export default function NewMilestonePage() {
     }
   };
 
-  const workstreamOptions = [
-    { value: '', label: 'No specific workstream' },
-    ...workstreams.map(w => ({ value: w.id, label: w.name })),
-  ];
+  const workstreamOptions = buildWorkstreamOptions(workstreams, {
+    allLabel: 'No specific workstream',
+    allValue: '',
+  });
 
   return (
     <div className="min-h-screen">

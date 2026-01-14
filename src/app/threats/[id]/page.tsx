@@ -14,7 +14,7 @@ import { Select } from '@/components/ui/select';
 import { RiskBadge } from '@/components/ui/badge';
 import { Modal } from '@/components/ui/modal';
 import { LoadingPage } from '@/components/ui/loading';
-import { formatDate } from '@/lib/utils';
+import { formatDate, buildWorkstreamOptions } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import {
   PencilIcon,
@@ -255,7 +255,7 @@ export default function ThreatDetailPage() {
 
   // Build workstream options - ensure current threat's workstream is always included
   const workstreamOptions = workstreams.length > 0
-    ? workstreams.map(w => ({ value: w.id, label: w.name }))
+    ? buildWorkstreamOptions(workstreams, { includeAll: false })
     : threat?.workstream
       ? [{ value: threat.workstream.id, label: threat.workstream.name }]
       : [];

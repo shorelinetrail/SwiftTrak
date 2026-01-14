@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import toast from 'react-hot-toast';
+import { buildWorkstreamOptions } from '@/lib/utils';
 import type { QueryPriority, User, Workstream } from '@/types/database';
 
 export default function NewQueryPage() {
@@ -109,10 +110,10 @@ export default function NewQueryPage() {
     }
   };
 
-  const workstreamOptions = [
-    { value: '', label: 'No specific workstream' },
-    ...workstreams.map(w => ({ value: w.id, label: w.name })),
-  ];
+  const workstreamOptions = buildWorkstreamOptions(workstreams, {
+    allLabel: 'No specific workstream',
+    allValue: '',
+  });
 
   const userOptions = [
     { value: '', label: 'Select a person...' },

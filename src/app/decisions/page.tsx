@@ -12,7 +12,7 @@ import { Select } from '@/components/ui/select';
 import { Avatar } from '@/components/ui/avatar';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDate, getRelativeTime } from '@/lib/utils';
+import { formatDate, getRelativeTime, buildWorkstreamOptions } from '@/lib/utils';
 import {
   PlusIcon,
   DocumentTextIcon,
@@ -64,10 +64,7 @@ export default function DecisionsPage() {
     ? decisions
     : decisions.filter(d => d.workstream_id === workstreamFilter);
 
-  const workstreamOptions = [
-    { value: 'all', label: 'All Workstreams' },
-    ...workstreams.map(w => ({ value: w.id, label: w.name })),
-  ];
+  const workstreamOptions = buildWorkstreamOptions(workstreams);
 
   if (loading) {
     return (

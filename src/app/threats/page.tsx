@@ -12,7 +12,7 @@ import { Select } from '@/components/ui/select';
 import { RiskBadge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDate, cn } from '@/lib/utils';
+import { formatDate, cn, buildWorkstreamOptions } from '@/lib/utils';
 import {
   PlusIcon,
   FunnelIcon,
@@ -133,10 +133,7 @@ export default function ThreatsPage() {
   //   onDelete: () => fetchThreats(),
   // });
 
-  const workstreamOptions = [
-    { value: 'all', label: 'All Workstreams' },
-    ...workstreams.map(w => ({ value: w.id, label: w.name })),
-  ];
+  const workstreamOptions = buildWorkstreamOptions(workstreams);
 
   const riskOptions = [
     { value: 'all', label: 'All Risk Levels' },

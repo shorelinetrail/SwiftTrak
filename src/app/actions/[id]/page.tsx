@@ -15,7 +15,7 @@ import { StatusBadge, PriorityBadge } from '@/components/ui/badge';
 import { Avatar } from '@/components/ui/avatar';
 import { Modal } from '@/components/ui/modal';
 import { LoadingSpinner, LoadingPage } from '@/components/ui/loading';
-import { formatDate, getRelativeTime, cn } from '@/lib/utils';
+import { formatDate, getRelativeTime, cn, buildWorkstreamOptions } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import {
   PencilIcon,
@@ -324,7 +324,7 @@ export default function ActionDetailPage() {
     { value: 'low', label: 'Low' },
   ];
 
-  const workstreamOptions = workstreams.map(w => ({ value: w.id, label: w.name }));
+  const workstreamOptions = buildWorkstreamOptions(workstreams, { includeAll: false });
   const userOptions = [
     { value: '', label: 'Unassigned' },
     ...users.map(u => ({ value: u.id, label: u.full_name })),

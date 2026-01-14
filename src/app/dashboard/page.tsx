@@ -13,7 +13,7 @@ import { StatusBadge, PriorityBadge, RiskBadge } from '@/components/ui/badge';
 import { Avatar } from '@/components/ui/avatar';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDate, isOverdue, getDaysUntil } from '@/lib/utils';
+import { formatDate, isOverdue, getDaysUntil, buildWorkstreamOptions } from '@/lib/utils';
 import {
   ClipboardDocumentListIcon,
   ExclamationTriangleIcon,
@@ -53,15 +53,14 @@ export default function DashboardPage() {
   const [pendingQueries, setPendingQueries] = useState<(TechnicalQuery & { assignee?: User })[]>([]);
   const [upcomingMilestones, setUpcomingMilestones] = useState<(Milestone & { workstream?: Workstream })[]>([]);
 
-  // Workstream filter options
-  const workstreamOptions = useMemo(() => [
-    { value: 'all', label: 'All Workstreams' },
-    ...workstreams.map(ws => ({
-      value: ws.id,
-      label: ws.name,
-      icon: <div className="w-3 h-3 rounded-full" style={{ backgroundColor: ws.color }} />,
-    })),
-  ], [workstreams]);
+  // Workstream filter options with hierarchy
+  const workstreamOptions = useMemo(() =>
+    buildWorkstreamOptions(workstreams, {
+      mapOption: (ws) => ({
+        icon: <div className="w-3 h-3 rounded-full" style={{ backgroundColor: ws.color }} />,
+      }),
+    }),
+  [workstreams]);
 
   // Calculate stats based on selected workstream
   const stats = useMemo<DashboardStats | null>(() => {

@@ -15,7 +15,7 @@ import { Avatar } from '@/components/ui/avatar';
 import { Tabs } from '@/components/ui/tabs';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDate, isOverdue, getDaysUntil, cn } from '@/lib/utils';
+import { formatDate, isOverdue, getDaysUntil, cn, buildWorkstreamOptions } from '@/lib/utils';
 import {
   PlusIcon,
   FunnelIcon,
@@ -155,10 +155,7 @@ function ActionsPageContent() {
     { value: 'low', label: 'Low' },
   ];
 
-  const workstreamOptions = [
-    { value: 'all', label: 'All Workstreams' },
-    ...workstreams.map(w => ({ value: w.id, label: w.name })),
-  ];
+  const workstreamOptions = buildWorkstreamOptions(workstreams);
 
   const handleExport = () => {
     window.location.href = `/api/export/actions?status=${statusFilter}&workstream=${workstreamFilter}&priority=${priorityFilter}`;

@@ -250,3 +250,71 @@ export function calculatePERT(
   const standardDeviation = (pessimistic - optimistic) / 6;
   return { expected, standardDeviation };
 }
+
+/**
+ * Build hierarchical workstream options for Select components.
+ * Children are indented with "— " prefix to show hierarchy.
+ *
+ * @param workstreams - Array of workstream objects with id, name, and optional parent_id
+ * @param options - Configuration options
+ * @param options.includeAll - Whether to include an "all" or placeholder option (default: true)
+ * @param options.allLabel - Custom label for the all/placeholder option (default: "All Workstreams")
+ * @param options.allValue - Custom value for the all/placeholder option (default: "all")
+ * @param options.mapOption - Optional function to add extra properties to each option
+ */
+export function buildWorkstreamOptions<T extends { id: string; name: string; parent_id?: string | null }>(
+  workstreams: T[],
+  config: {
+    includeAll?: boolean;
+    allLabel?: string;
+    allValue?: string;
+    mapOption?: (ws: T, isChild: boolean) => Record<string, unknown>;
+  } = {}
+): Array<{ value: string; label: string } & Record<string, unknown>> {
+  const { includeAll = true, allLabel = 'All Workstreams', allValue = 'all', mapOption } = config;
+  const options: Array<{ value: string; label: string } & Record<string, unknown>> = [];
+
+  if (includeAll) {
+    options.push({ value: allValue, label: allLabel });
+  }
+
+  // Get root workstreams (no parent)
+  const rootWorkstreams = workstreams
+    .filter(ws => !ws.parent_id)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  // Build a map of children by parent_id
+  const childrenMap = new Map<string, T[]>();
+  workstreams.forEach(ws => {
+    if (ws.parent_id) {
+      const existing = childrenMap.get(ws.parent_id) || [];
+      existing.push(ws);
+      childrenMap.set(ws.parent_id, existing);
+    }
+  });
+
+  // Add root workstreams and their children
+  rootWorkstreams.forEach(root => {
+    const rootOption: { value: string; label: string } & Record<string, unknown> = {
+      value: root.id,
+      label: root.name,
+      ...(mapOption ? mapOption(root, false) : {}),
+    };
+    options.push(rootOption);
+
+    // Add children with indentation
+    const children = childrenMap.get(root.id) || [];
+    children
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .forEach(child => {
+        const childOption: { value: string; label: string } & Record<string, unknown> = {
+          value: child.id,
+          label: `— ${child.name}`,
+          ...(mapOption ? mapOption(child, true) : {}),
+        };
+        options.push(childOption);
+      });
+  });
+
+  return options;
+}
