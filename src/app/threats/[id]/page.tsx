@@ -691,7 +691,7 @@ export default function ThreatDetailPage() {
                           {action.title}
                         </p>
                         <div className="flex items-center gap-2 mt-1">
-                          <StatusBadge status={action.status} size="xs" />
+                          <StatusBadge status={action.status} />
                           {action.workstream && (
                             <span
                               className="text-xs px-1.5 py-0.5 rounded"
@@ -888,7 +888,7 @@ export default function ThreatDetailPage() {
                 >
                   <p className="font-medium text-gray-900">{action.title}</p>
                   <div className="flex items-center gap-2 mt-1">
-                    <StatusBadge status={action.status} size="xs" />
+                    <StatusBadge status={action.status} />
                     {action.workstream && (
                       <span
                         className="text-xs px-1.5 py-0.5 rounded"
