@@ -254,11 +254,11 @@ export default function DashboardPage() {
               .order('updated_at', { ascending: false })
               .limit(5)
               .then(r => r.data),
-            // Active Threats
+            // Active Threats (status is 'open' or null for open threats)
             supabase
               .from('threats')
               .select(`*, workstream:workstreams(id, name, color)`)
-              .is('closed_at', null)
+              .neq('status', 'closed')
               .order('updated_at', { ascending: false })
               .limit(5)
               .then(r => r.data),
@@ -446,6 +446,34 @@ export default function DashboardPage() {
                 </div>
               </CardContent>
             </Card>
+          </Link>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="flex flex-wrap gap-3">
+          <Link href="/actions/new">
+            <Button>
+              <PlusIcon className="w-4 h-4 mr-2" />
+              New Action
+            </Button>
+          </Link>
+          <Link href="/threats/new">
+            <Button variant="secondary">
+              <PlusIcon className="w-4 h-4 mr-2" />
+              Log Threat
+            </Button>
+          </Link>
+          <Link href="/queries/new">
+            <Button variant="secondary">
+              <PlusIcon className="w-4 h-4 mr-2" />
+              Submit Query
+            </Button>
+          </Link>
+          <Link href="/decisions/new">
+            <Button variant="secondary">
+              <PlusIcon className="w-4 h-4 mr-2" />
+              Record Decision
+            </Button>
           </Link>
         </div>
 
@@ -883,34 +911,6 @@ export default function DashboardPage() {
               )}
             </CardContent>
           </Card>
-        </div>
-
-        {/* Quick Actions */}
-        <div className="flex flex-wrap gap-3">
-          <Link href="/actions/new">
-            <Button>
-              <PlusIcon className="w-4 h-4 mr-2" />
-              New Action
-            </Button>
-          </Link>
-          <Link href="/threats/new">
-            <Button variant="secondary">
-              <PlusIcon className="w-4 h-4 mr-2" />
-              Log Threat
-            </Button>
-          </Link>
-          <Link href="/queries/new">
-            <Button variant="secondary">
-              <PlusIcon className="w-4 h-4 mr-2" />
-              Submit Query
-            </Button>
-          </Link>
-          <Link href="/decisions/new">
-            <Button variant="secondary">
-              <PlusIcon className="w-4 h-4 mr-2" />
-              Record Decision
-            </Button>
-          </Link>
         </div>
       </div>
     </div>
