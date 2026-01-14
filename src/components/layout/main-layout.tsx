@@ -6,7 +6,7 @@ import { Sidebar } from './sidebar';
 import { AuthProvider, useAuth } from '@/providers/auth-provider';
 import { useAppStore } from '@/stores/app-store';
 import { createClient } from '@/lib/supabase/client';
-import { LoadingPage } from '@/components/ui/loading';
+import { LoadingSpinner } from '@/components/ui/loading';
 import type { Workstream, Notification } from '@/types/database';
 
 // Module-level state to track workstream fetch across all MainLayout instances
@@ -96,10 +96,36 @@ function MainLayoutContent({ children }: MainLayoutProps) {
     };
   }, [user, setNotifications]);
 
-  // Show loading while auth initializes
+  // Show loading while auth initializes - but keep the layout structure
   if (loading) {
     console.log('[MainLayoutContent] Showing loading page');
-    return <LoadingPage />;
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Toaster
+          position="top-right"
+          toastOptions={{
+            duration: 4000,
+            style: {
+              background: '#1f2937',
+              color: '#fff',
+            },
+          }}
+        />
+        <Sidebar />
+        <main
+          className={`transition-all duration-300 ${
+            sidebarOpen ? 'ml-64' : 'ml-20'
+          }`}
+        >
+          <div className="flex items-center justify-center h-screen">
+            <div className="text-center">
+              <LoadingSpinner size="lg" />
+              <p className="mt-4 text-gray-500">Loading...</p>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
   }
 
   console.log('[MainLayoutContent] Rendering content - user:', user?.email, 'role:', user?.role);
