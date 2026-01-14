@@ -468,7 +468,6 @@ export default function ActionDetailPage() {
     <div className="min-h-screen">
       <Header
         title={action.title}
-        subtitle={action.workstream?.name}
         breadcrumbs={[
           { label: 'Actions', href: '/actions' },
           { label: action.title },
@@ -539,11 +538,10 @@ export default function ActionDetailPage() {
           {/* Action Details */}
           <Card>
             <CardContent className="pt-6">
-              <div className="flex items-start justify-between gap-4 mb-4">
-                <div className="flex items-center gap-3">
-                  <StatusBadge status={action.status} />
-                  <PriorityBadge priority={action.priority} />
-                </div>
+              {/* Status Badges Row */}
+              <div className="flex items-center flex-wrap gap-3 mb-6">
+                <StatusBadge status={action.status} />
+                <PriorityBadge priority={action.priority} />
                 {action.workstream && (
                   <span
                     className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium"
@@ -557,12 +555,17 @@ export default function ActionDetailPage() {
                 )}
               </div>
 
+              {/* Description Section */}
               {action.description && (
-                <div className="prose prose-sm max-w-none text-gray-700 mb-6">
-                  {action.description}
+                <div className="mb-6">
+                  <h3 className="text-sm font-medium text-gray-500 mb-2">Description</h3>
+                  <div className="prose prose-sm max-w-none text-gray-700">
+                    {action.description}
+                  </div>
                 </div>
               )}
 
+              {/* Completion Note */}
               {action.completion_comment && action.status === 'complete' && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
                   <h4 className="text-sm font-medium text-green-800 mb-1">Completion Note</h4>
@@ -570,6 +573,7 @@ export default function ActionDetailPage() {
                 </div>
               )}
 
+              {/* Details Grid */}
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <span className="text-gray-500">Owner</span>
