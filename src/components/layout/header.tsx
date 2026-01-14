@@ -15,7 +15,7 @@ import { Menu, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 
 interface HeaderProps {
-  title?: string;
+  title?: React.ReactNode;
   subtitle?: string;
   actions?: React.ReactNode;
 }
