@@ -26,6 +26,8 @@ import {
   PaperClipIcon,
   ChatBubbleLeftIcon,
   DocumentArrowDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
 } from '@heroicons/react/24/outline';
 import type { Action, ActionUpdate, ActionAudit, Workstream, User, Attachment, ActionStatus, Priority } from '@/types/database';
 
@@ -52,6 +54,10 @@ export default function ActionDetailPage() {
   const [auditLog, setAuditLog] = useState<ActionAuditWithUser[]>([]);
   const [attachments, setAttachments] = useState<AttachmentWithUser[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+
+  // Navigation through actions
+  const [allActionIds, setAllActionIds] = useState<string[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(-1);
 
   // Modal states
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -156,6 +162,36 @@ export default function ActionDetailPage() {
   useEffect(() => {
     fetchAction();
   }, [fetchAction]);
+
+  // Fetch all action IDs for navigation
+  useEffect(() => {
+    const fetchActionIds = async () => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from('actions')
+        .select('id')
+        .order('created_at', { ascending: false });
+
+      if (data) {
+        const ids = data.map(a => a.id);
+        setAllActionIds(ids);
+        setCurrentIndex(ids.indexOf(actionId));
+      }
+    };
+    fetchActionIds();
+  }, [actionId]);
+
+  const goToPrevious = () => {
+    if (currentIndex > 0) {
+      router.push(`/actions/${allActionIds[currentIndex - 1]}`);
+    }
+  };
+
+  const goToNext = () => {
+    if (currentIndex < allActionIds.length - 1) {
+      router.push(`/actions/${allActionIds[currentIndex + 1]}`);
+    }
+  };
 
   // Real-time updates disabled for stability
   // useRealtime({
@@ -388,7 +424,20 @@ export default function ActionDetailPage() {
   };
 
   if (loading) {
-    return <LoadingPage />;
+    return (
+      <div className="min-h-screen">
+        <Header
+          title="Loading..."
+          breadcrumbs={[
+            { label: 'Actions', href: '/actions' },
+            { label: 'Loading...' },
+          ]}
+        />
+        <div className="p-6 flex items-center justify-center h-64">
+          <LoadingSpinner size="lg" />
+        </div>
+      </div>
+    );
   }
 
   if (!action) {
@@ -425,7 +474,42 @@ export default function ActionDetailPage() {
           { label: action.title },
         ]}
         actions={
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            {/* Navigation */}
+            {allActionIds.length > 1 && (
+              <div className="flex items-center gap-1 mr-2">
+                <button
+                  onClick={goToPrevious}
+                  disabled={currentIndex <= 0}
+                  className={cn(
+                    'p-1.5 rounded-lg transition-colors',
+                    currentIndex > 0
+                      ? 'text-gray-600 hover:bg-gray-100'
+                      : 'text-gray-300 cursor-not-allowed'
+                  )}
+                  title="Previous action"
+                >
+                  <ChevronLeftIcon className="w-5 h-5" />
+                </button>
+                <span className="text-xs text-gray-500 min-w-[4rem] text-center">
+                  {currentIndex + 1} / {allActionIds.length}
+                </span>
+                <button
+                  onClick={goToNext}
+                  disabled={currentIndex >= allActionIds.length - 1}
+                  className={cn(
+                    'p-1.5 rounded-lg transition-colors',
+                    currentIndex < allActionIds.length - 1
+                      ? 'text-gray-600 hover:bg-gray-100'
+                      : 'text-gray-300 cursor-not-allowed'
+                  )}
+                  title="Next action"
+                >
+                  <ChevronRightIcon className="w-5 h-5" />
+                </button>
+              </div>
+            )}
+
             {canEdit && (
               <>
                 <Button variant="outline" size="sm" onClick={() => setEditModalOpen(true)}>
@@ -894,18 +978,37 @@ export default function ActionDetailPage() {
 }
 
 function formatAuditChange(entry: ActionAuditWithUser): string {
+  const formatValue = (value: string | null, type: string) => {
+    if (!value || value === 'null') return 'none';
+    if (type === 'status') return value.replace('_', ' ');
+    if (type === 'date') {
+      try {
+        return formatDate(value, { month: 'short', day: 'numeric', year: 'numeric' });
+      } catch {
+        return value;
+      }
+    }
+    return value;
+  };
+
   switch (entry.change_type) {
     case 'created':
-      return `created this action`;
+      return 'created this action';
     case 'status_changed':
-      return `changed status from ${entry.old_value} to ${entry.new_value}`;
+      return `changed status from "${formatValue(entry.old_value, 'status')}" to "${formatValue(entry.new_value, 'status')}"`;
     case 'owner_changed':
-      return `changed the owner`;
+      return `reassigned owner from "${formatValue(entry.old_value, 'text')}" to "${formatValue(entry.new_value, 'text')}"`;
     case 'priority_changed':
-      return `changed priority from ${entry.old_value} to ${entry.new_value}`;
+      return `changed priority from "${formatValue(entry.old_value, 'text')}" to "${formatValue(entry.new_value, 'text')}"`;
     case 'due_date_changed':
-      return `changed the due date`;
+      return `changed due date from "${formatValue(entry.old_value, 'date')}" to "${formatValue(entry.new_value, 'date')}"`;
+    case 'title_changed':
+      return `changed title from "${entry.old_value}" to "${entry.new_value}"`;
+    case 'description_changed':
+      return 'updated the description';
+    case 'workstream_changed':
+      return `moved from "${formatValue(entry.old_value, 'text')}" to "${formatValue(entry.new_value, 'text')}"`;
     default:
-      return `made changes`;
+      return 'made changes';
   }
 }

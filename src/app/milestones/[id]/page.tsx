@@ -224,8 +224,14 @@ export default function EditMilestonePage({ params }: { params: Promise<{ id: st
   if (loading) {
     return (
       <div className="min-h-screen">
-        <Header title="Edit Milestone" />
-        <div className="flex items-center justify-center h-96">
+        <Header
+          title="Loading..."
+          breadcrumbs={[
+            { label: 'Milestones', href: '/milestones' },
+            { label: 'Loading...' },
+          ]}
+        />
+        <div className="p-6 flex items-center justify-center h-64">
           <LoadingSpinner size="lg" />
         </div>
       </div>

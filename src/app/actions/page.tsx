@@ -27,6 +27,8 @@ import {
   XMarkIcon,
   CheckCircleIcon,
   ExclamationCircleIcon,
+  ChevronUpIcon,
+  ChevronDownIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import type { Action, Workstream, User, ActionStatus, Priority } from '@/types/database';
@@ -36,6 +38,9 @@ type ActionWithRelations = Action & {
   workstream?: Workstream;
   creator?: User;
 };
+
+type SortColumn = 'title' | 'status' | 'priority' | 'workstream' | 'owner' | 'due_date' | 'created_at';
+type SortDirection = 'asc' | 'desc';
 
 export default function ActionsPage() {
   return (
@@ -68,6 +73,10 @@ function ActionsPageContent() {
   const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState('all');
 
+  // Sorting
+  const [sortColumn, setSortColumn] = useState<SortColumn>('created_at');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+
   const fetchActions = useCallback(async () => {
     const supabase = createClient();
 
@@ -93,7 +102,7 @@ function ActionsPageContent() {
     fetchActions();
   }, [fetchActions]);
 
-  // Apply filters
+  // Apply filters and sorting
   useEffect(() => {
     let filtered = [...actions];
 
@@ -121,8 +130,46 @@ function ActionsPageContent() {
       filtered = filtered.filter(a => a.priority === 'critical' && a.status !== 'complete');
     }
 
+    // Apply sorting
+    const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+    const statusOrder = { pending: 0, in_progress: 1, complete: 2, cancelled: 3 };
+
+    filtered.sort((a, b) => {
+      let comparison = 0;
+
+      switch (sortColumn) {
+        case 'title':
+          comparison = (a.title || '').localeCompare(b.title || '');
+          break;
+        case 'status':
+          comparison = (statusOrder[a.status] ?? 4) - (statusOrder[b.status] ?? 4);
+          break;
+        case 'priority':
+          const aPriority = a.priority ? priorityOrder[a.priority] : 5;
+          const bPriority = b.priority ? priorityOrder[b.priority] : 5;
+          comparison = aPriority - bPriority;
+          break;
+        case 'workstream':
+          comparison = (a.workstream?.name || '').localeCompare(b.workstream?.name || '');
+          break;
+        case 'owner':
+          comparison = (a.owner?.full_name || '').localeCompare(b.owner?.full_name || '');
+          break;
+        case 'due_date':
+          const aDate = a.due_date ? new Date(a.due_date).getTime() : Infinity;
+          const bDate = b.due_date ? new Date(b.due_date).getTime() : Infinity;
+          comparison = aDate - bDate;
+          break;
+        case 'created_at':
+          comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          break;
+      }
+
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+
     setFilteredActions(filtered);
-  }, [actions, statusFilter, workstreamFilter, priorityFilter, activeTab, user]);
+  }, [actions, statusFilter, workstreamFilter, priorityFilter, activeTab, user, sortColumn, sortDirection]);
 
   // Real-time updates disabled for stability
   // useRealtime({
@@ -164,6 +211,15 @@ function ActionsPageContent() {
   };
 
   const hasActiveFilters = statusFilter.length > 0 || priorityFilter.length > 0 || workstreamFilter.length > 0;
+
+  const handleSort = (column: SortColumn) => {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -591,7 +647,12 @@ function ActionsPageContent() {
             ))}
           </div>
         ) : (
-          <ActionsTable actions={filteredActions} />
+          <ActionsTable
+            actions={filteredActions}
+            sortColumn={sortColumn}
+            sortDirection={sortDirection}
+            onSort={handleSort}
+          />
         )}
       </div>
 
@@ -810,34 +871,52 @@ function ActionCard({ action }: { action: ActionWithRelations }) {
   );
 }
 
-function ActionsTable({ actions }: { actions: ActionWithRelations[] }) {
+interface ActionsTableProps {
+  actions: ActionWithRelations[];
+  sortColumn: SortColumn;
+  sortDirection: SortDirection;
+  onSort: (column: SortColumn) => void;
+}
+
+function ActionsTable({ actions, sortColumn, sortDirection, onSort }: ActionsTableProps) {
+  const SortableHeader = ({ column, label }: { column: SortColumn; label: string }) => (
+    <th
+      className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
+      onClick={() => onSort(column)}
+    >
+      <div className="flex items-center gap-1">
+        {label}
+        <span className="inline-flex flex-col">
+          <ChevronUpIcon
+            className={cn(
+              'w-3 h-3 -mb-1',
+              sortColumn === column && sortDirection === 'asc' ? 'text-gray-900' : 'text-gray-300'
+            )}
+          />
+          <ChevronDownIcon
+            className={cn(
+              'w-3 h-3',
+              sortColumn === column && sortDirection === 'desc' ? 'text-gray-900' : 'text-gray-300'
+            )}
+          />
+        </span>
+      </div>
+    </th>
+  );
+
   return (
     <Card>
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50">
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
-                Title
-              </th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
-                Status
-              </th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
-                Priority
-              </th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
-                Workstream
-              </th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
-                Owner
-              </th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
-                Due Date
-              </th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
-                Created
-              </th>
+              <SortableHeader column="title" label="Title" />
+              <SortableHeader column="status" label="Status" />
+              <SortableHeader column="priority" label="Priority" />
+              <SortableHeader column="workstream" label="Workstream" />
+              <SortableHeader column="owner" label="Owner" />
+              <SortableHeader column="due_date" label="Due Date" />
+              <SortableHeader column="created_at" label="Created" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
@@ -857,7 +936,7 @@ function ActionsTable({ actions }: { actions: ActionWithRelations[] }) {
                     <div className="max-w-md">
                       <p className="text-sm font-medium text-gray-900">{action.title}</p>
                       {action.description && (
-                        <p className="text-xs text-gray-500 line-clamp-2 mt-0.5">{action.description}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{action.description}</p>
                       )}
                     </div>
                   </td>

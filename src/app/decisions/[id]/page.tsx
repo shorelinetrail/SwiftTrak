@@ -12,7 +12,7 @@ import { Input, Textarea } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Avatar } from '@/components/ui/avatar';
 import { Modal } from '@/components/ui/modal';
-import { LoadingPage } from '@/components/ui/loading';
+import { LoadingSpinner } from '@/components/ui/loading';
 import { formatDate, buildWorkstreamOptions } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import {
@@ -202,7 +202,20 @@ export default function DecisionDetailPage() {
   };
 
   if (loading) {
-    return <LoadingPage />;
+    return (
+      <div className="min-h-screen">
+        <Header
+          title="Loading..."
+          breadcrumbs={[
+            { label: 'Decisions', href: '/decisions' },
+            { label: 'Loading...' },
+          ]}
+        />
+        <div className="p-6 flex items-center justify-center h-64">
+          <LoadingSpinner size="lg" />
+        </div>
+      </div>
+    );
   }
 
   if (!decision) {

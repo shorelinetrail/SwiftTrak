@@ -13,7 +13,7 @@ import { Input, Textarea } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { RiskBadge } from '@/components/ui/badge';
 import { Modal } from '@/components/ui/modal';
-import { LoadingPage } from '@/components/ui/loading';
+import { LoadingSpinner } from '@/components/ui/loading';
 import { formatDate, buildWorkstreamOptions } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import {
@@ -293,7 +293,20 @@ export default function ThreatDetailPage() {
   };
 
   if (loading) {
-    return <LoadingPage />;
+    return (
+      <div className="min-h-screen">
+        <Header
+          title="Loading..."
+          breadcrumbs={[
+            { label: 'Threats', href: '/threats' },
+            { label: 'Loading...' },
+          ]}
+        />
+        <div className="p-6 flex items-center justify-center h-64">
+          <LoadingSpinner size="lg" />
+        </div>
+      </div>
+    );
   }
 
   if (!threat) {
