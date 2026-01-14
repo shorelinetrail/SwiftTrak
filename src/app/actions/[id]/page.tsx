@@ -70,6 +70,10 @@ export default function ActionDetailPage() {
   const [adminCommentContent, setAdminCommentContent] = useState('');
   const [submittingAdminComment, setSubmittingAdminComment] = useState(false);
 
+  // Admin edit created date
+  const [editingCreatedDate, setEditingCreatedDate] = useState(false);
+  const [newCreatedDate, setNewCreatedDate] = useState('');
+
   const fetchAction = useCallback(async () => {
     const supabase = createClient();
 
@@ -239,6 +243,30 @@ export default function ActionDetailPage() {
       toast.error('Failed to import comment');
     } finally {
       setSubmittingAdminComment(false);
+    }
+  };
+
+  // Admin-only: Update created date
+  const handleUpdateCreatedDate = async () => {
+    if (!newCreatedDate || !canAdmin) return;
+
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase
+        .from('actions')
+        .update({ created_at: new Date(newCreatedDate).toISOString() })
+        .eq('id', actionId);
+
+      if (error) throw error;
+
+      toast.success('Created date updated');
+      setEditingCreatedDate(false);
+      setNewCreatedDate('');
+      fetchAction();
+    } catch (error) {
+      console.error('Error updating created date:', error);
+      toast.error('Failed to update created date');
     }
   };
 
@@ -480,9 +508,40 @@ export default function ActionDetailPage() {
                 </div>
                 <div>
                   <span className="text-gray-500">Created</span>
-                  <p className="mt-1 font-medium text-gray-900">
-                    {formatDate(action.created_at)} by {action.creator?.full_name}
-                  </p>
+                  {canAdmin && editingCreatedDate ? (
+                    <div className="mt-1 flex items-center gap-2">
+                      <Input
+                        type="datetime-local"
+                        value={newCreatedDate}
+                        onChange={(e) => setNewCreatedDate(e.target.value)}
+                        className="text-sm"
+                      />
+                      <Button size="sm" onClick={handleUpdateCreatedDate}>
+                        Save
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => {
+                        setEditingCreatedDate(false);
+                        setNewCreatedDate('');
+                      }}>
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="mt-1 font-medium text-gray-900">
+                      {formatDate(action.created_at)} by {action.creator?.full_name}
+                      {canAdmin && (
+                        <button
+                          onClick={() => {
+                            setEditingCreatedDate(true);
+                            setNewCreatedDate(new Date(action.created_at).toISOString().slice(0, 16));
+                          }}
+                          className="ml-2 text-xs text-gray-400 hover:text-gray-600"
+                        >
+                          (edit)
+                        </button>
+                      )}
+                    </p>
+                  )}
                 </div>
                 {action.completed_at && (
                   <div>
