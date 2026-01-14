@@ -830,7 +830,7 @@ export default function ActionDetailPage() {
                         {formatAuditChange(entry)}
                       </p>
                       <p className="text-xs text-gray-500 mt-0.5">
-                        {getRelativeTime(entry.created_at)}
+                        {getRelativeTime(entry.change_type === 'created' ? action.created_at : entry.created_at)}
                       </p>
                     </div>
                   ))}
