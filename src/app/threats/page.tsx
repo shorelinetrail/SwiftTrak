@@ -19,6 +19,8 @@ import {
   ExclamationTriangleIcon,
   ArrowsUpDownIcon,
   CheckCircleIcon,
+  TableCellsIcon,
+  Squares2X2Icon,
 } from '@heroicons/react/24/outline';
 import type { Threat, Workstream, User, RiskLevel, ThreatStatus } from '@/types/database';
 
@@ -32,6 +34,9 @@ export default function ThreatsPage() {
   const [loading, setLoading] = useState(true);
   const [threats, setThreats] = useState<ThreatWithRelations[]>([]);
   const [filteredThreats, setFilteredThreats] = useState<ThreatWithRelations[]>([]);
+
+  // View mode - default to table
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('table');
 
   const [workstreamFilter, setWorkstreamFilter] = useState<string>('all');
   const [riskFilter, setRiskFilter] = useState<string>('all');
@@ -175,12 +180,35 @@ export default function ThreatsPage() {
         title="Threats"
         subtitle={`${filteredThreats.length} threat${filteredThreats.length !== 1 ? 's' : ''} identified`}
         actions={
-          <Link href="/threats/new">
-            <Button size="sm">
-              <PlusIcon className="w-4 h-4 mr-2" />
-              Log Threat
-            </Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            {/* View Toggle */}
+            <div className="flex rounded-lg border border-gray-200 p-1">
+              <button
+                onClick={() => setViewMode('cards')}
+                className={`p-1.5 rounded transition-colors ${
+                  viewMode === 'cards' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'
+                }`}
+                title="Card View"
+              >
+                <Squares2X2Icon className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setViewMode('table')}
+                className={`p-1.5 rounded transition-colors ${
+                  viewMode === 'table' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'
+                }`}
+                title="Table View"
+              >
+                <TableCellsIcon className="w-4 h-4" />
+              </button>
+            </div>
+            <Link href="/threats/new">
+              <Button size="sm">
+                <PlusIcon className="w-4 h-4 mr-2" />
+                Log Threat
+              </Button>
+            </Link>
+          </div>
         }
       />
 
@@ -300,12 +328,14 @@ export default function ThreatsPage() {
               onClick: () => window.location.href = '/threats/new',
             }}
           />
-        ) : (
+        ) : viewMode === 'cards' ? (
           <div className="space-y-3">
             {filteredThreats.map((threat) => (
               <ThreatCard key={threat.id} threat={threat} />
             ))}
           </div>
+        ) : (
+          <ThreatsTable threats={filteredThreats} />
         )}
       </div>
     </div>
@@ -376,5 +406,109 @@ function ThreatCard({ threat }: { threat: ThreatWithRelations }) {
         </CardContent>
       </Card>
     </Link>
+  );
+}
+
+function ThreatsTable({ threats }: { threats: ThreatWithRelations[] }) {
+  return (
+    <Card>
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-gray-200 bg-gray-50">
+              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
+                Title
+              </th>
+              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
+                Status
+              </th>
+              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
+                Current Risk
+              </th>
+              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
+                Unmitigated
+              </th>
+              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
+                Workstream
+              </th>
+              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
+                Potential Delay
+              </th>
+              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
+                Created
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {threats.map((threat) => {
+              const isClosed = threat.status === 'closed';
+
+              return (
+                <tr
+                  key={threat.id}
+                  className={cn(
+                    'hover:bg-gray-50 cursor-pointer transition-colors',
+                    isClosed && 'opacity-75'
+                  )}
+                  onClick={() => window.location.href = `/threats/${threat.id}`}
+                >
+                  <td className="px-4 py-3">
+                    <div className="max-w-md">
+                      <p className="text-sm font-medium text-gray-900">{threat.title}</p>
+                      {threat.description && (
+                        <p className="text-xs text-gray-500 line-clamp-2 mt-0.5">{threat.description}</p>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    {isClosed ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                        Closed
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+                        Open
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <RiskBadge risk={isClosed && threat.mitigated_risk ? threat.mitigated_risk : threat.current_risk} />
+                  </td>
+                  <td className="px-4 py-3">
+                    {!isClosed && <RiskBadge risk={threat.unmitigated_risk} />}
+                    {isClosed && <span className="text-xs text-gray-400">-</span>}
+                  </td>
+                  <td className="px-4 py-3">
+                    {threat.workstream ? (
+                      <span
+                        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                        style={{
+                          backgroundColor: `${threat.workstream.color}20`,
+                          color: threat.workstream.color,
+                        }}
+                      >
+                        {threat.workstream.name}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-400">-</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="text-sm text-gray-700">
+                      {threat.expected_delay || '-'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="text-sm text-gray-500">
+                      {formatDate(threat.created_at, { month: 'short', day: 'numeric' })}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }
