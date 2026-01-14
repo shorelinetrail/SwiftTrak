@@ -64,6 +64,12 @@ export default function ActionDetailPage() {
   const [completionComment, setCompletionComment] = useState('');
   const [editForm, setEditForm] = useState<Partial<Action>>({});
 
+  // Admin import comment form
+  const [adminCommentUser, setAdminCommentUser] = useState('');
+  const [adminCommentDate, setAdminCommentDate] = useState('');
+  const [adminCommentContent, setAdminCommentContent] = useState('');
+  const [submittingAdminComment, setSubmittingAdminComment] = useState(false);
+
   const fetchAction = useCallback(async () => {
     const supabase = createClient();
 
@@ -183,6 +189,56 @@ export default function ActionDetailPage() {
       toast.error('Failed to add update');
     } finally {
       setSubmittingUpdate(false);
+    }
+  };
+
+  // Admin-only: Add comment as a different user with custom date
+  const handleAddAdminComment = async () => {
+    if (!adminCommentContent.trim()) {
+      toast.error('Comment content is required');
+      return;
+    }
+
+    if (!canAdmin) {
+      toast.error('Admin permission required');
+      return;
+    }
+
+    setSubmittingAdminComment(true);
+    try {
+      const supabase = createClient();
+
+      // Use System user if no user selected
+      const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000';
+      const selectedUserId = adminCommentUser || SYSTEM_USER_ID;
+
+      // Build insert data - if date is provided, we need to insert with custom created_at
+      const insertData: Record<string, unknown> = {
+        action_id: actionId,
+        user_id: selectedUserId,
+        content: adminCommentContent.trim(),
+      };
+
+      // If a custom date is set, add it
+      if (adminCommentDate) {
+        insertData.created_at = new Date(adminCommentDate).toISOString();
+      }
+
+      const { error } = await supabase.from('action_updates').insert(insertData);
+
+      if (error) throw error;
+
+      // Reset form
+      setAdminCommentUser('');
+      setAdminCommentDate('');
+      setAdminCommentContent('');
+      toast.success('Comment imported successfully');
+      fetchAction();
+    } catch (error) {
+      console.error('Error adding admin comment:', error);
+      toast.error('Failed to import comment');
+    } finally {
+      setSubmittingAdminComment(false);
     }
   };
 
@@ -466,6 +522,52 @@ export default function ActionDetailPage() {
                     >
                       Post Update
                     </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Admin-only: Import comments with custom user/date */}
+              {canAdmin && (
+                <div className="mb-6 p-4 border border-dashed border-gray-300 rounded-lg bg-gray-50">
+                  <p className="text-sm font-medium text-gray-700 mb-3">
+                    Admin: Import Legacy Comment
+                  </p>
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <Select
+                        label="User (defaults to System)"
+                        options={[
+                          { value: '', label: 'System (default)' },
+                          ...users.filter(u => u.id !== '00000000-0000-0000-0000-000000000000').map(u => ({ value: u.id, label: u.full_name })),
+                        ]}
+                        value={adminCommentUser}
+                        onChange={setAdminCommentUser}
+                      />
+                      <Input
+                        label="Date (optional)"
+                        type="datetime-local"
+                        value={adminCommentDate}
+                        onChange={(e) => setAdminCommentDate(e.target.value)}
+                      />
+                    </div>
+                    <Textarea
+                      label="Comment"
+                      placeholder="Paste legacy comment..."
+                      value={adminCommentContent}
+                      onChange={(e) => setAdminCommentContent(e.target.value)}
+                      rows={3}
+                    />
+                    <div className="flex justify-end">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleAddAdminComment}
+                        disabled={!adminCommentContent.trim() || submittingAdminComment}
+                        loading={submittingAdminComment}
+                      >
+                        Import Comment
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )}

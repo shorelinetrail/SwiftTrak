@@ -27,6 +27,7 @@ export default function NewActionPage() {
     owner_id: '',
     priority: '' as Priority | '', // Optional - can be unassigned
     due_date: '',
+    created_at: '', // Created date for importing historical actions
     completed_at: '', // Date closed for importing already-closed actions
     initial_comment: '', // For importing legacy comments
     created_by_override: '', // For bulk import - defaults to System if blank
@@ -88,25 +89,33 @@ export default function NewActionPage() {
       const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000';
 
       // Determine who created this action
-      // If using import fields (date closed, initial comment, or created_by_override), use override or System
-      const isImport = formData.completed_at || formData.initial_comment.trim() || formData.created_by_override;
+      // If using import fields (created_at, date closed, initial comment, or created_by_override), use override or System
+      const isImport = formData.created_at || formData.completed_at || formData.initial_comment.trim() || formData.created_by_override;
       const createdBy = isImport
         ? (formData.created_by_override || SYSTEM_USER_ID)
         : user?.id;
 
+      // Build insert data
+      const insertData: Record<string, unknown> = {
+        title: formData.title.trim(),
+        description: formData.description.trim() || null,
+        workstream_id: formData.workstream_id,
+        owner_id: formData.owner_id || null,
+        priority: formData.priority || null,
+        due_date: formData.due_date || null,
+        status,
+        completed_at: formData.completed_at || null,
+        created_by: createdBy,
+      };
+
+      // Add custom created_at for historical imports
+      if (formData.created_at) {
+        insertData.created_at = new Date(formData.created_at).toISOString();
+      }
+
       const { data, error } = await supabase
         .from('actions')
-        .insert({
-          title: formData.title.trim(),
-          description: formData.description.trim() || null,
-          workstream_id: formData.workstream_id,
-          owner_id: formData.owner_id || null,
-          priority: formData.priority || null,
-          due_date: formData.due_date || null,
-          status,
-          completed_at: formData.completed_at || null,
-          created_by: createdBy,
-        })
+        .insert(insertData)
         .select()
         .single();
 
@@ -217,16 +226,24 @@ export default function NewActionPage() {
               {/* Import fields for migrating existing/closed actions */}
               <div className="border-t pt-6 mt-6">
                 <p className="text-sm text-gray-500 mb-4">
-                  Optional: For importing existing or closed actions
+                  Optional: For importing existing or historical actions
                 </p>
 
                 <div className="space-y-4">
-                  <Input
-                    label="Date Closed (if already completed)"
-                    type="date"
-                    value={formData.completed_at}
-                    onChange={(e) => setFormData({ ...formData, completed_at: e.target.value })}
-                  />
+                  <div className="grid grid-cols-2 gap-4">
+                    <Input
+                      label="Date Created (for historical import)"
+                      type="date"
+                      value={formData.created_at}
+                      onChange={(e) => setFormData({ ...formData, created_at: e.target.value })}
+                    />
+                    <Input
+                      label="Date Closed (if already completed)"
+                      type="date"
+                      value={formData.completed_at}
+                      onChange={(e) => setFormData({ ...formData, completed_at: e.target.value })}
+                    />
+                  </div>
 
                   <Select
                     label="Created By (defaults to System if blank)"
