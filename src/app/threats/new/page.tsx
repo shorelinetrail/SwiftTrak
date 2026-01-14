@@ -169,7 +169,7 @@ export default function NewThreatPage() {
               </div>
 
               <Input
-                label="Expected Delay"
+                label="Potential Delay"
                 value={formData.expected_delay}
                 onChange={(e) => setFormData({ ...formData, expected_delay: e.target.value })}
                 placeholder="e.g., 2-3 days, 1 week"

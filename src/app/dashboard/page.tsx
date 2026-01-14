@@ -504,7 +504,7 @@ export default function DashboardPage() {
                             )}
                             {threat.expected_delay && (
                               <span className="text-xs text-gray-500">
-                                Delay: {threat.expected_delay}
+                                Potential delay: {threat.expected_delay}
                               </span>
                             )}
                           </div>

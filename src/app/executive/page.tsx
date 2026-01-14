@@ -347,7 +347,7 @@ export default function ExecutiveDashboardPage() {
                       </div>
                       {threat.expected_delay && (
                         <p className="text-xs text-gray-500">
-                          Expected delay: {threat.expected_delay}
+                          Potential delay: {threat.expected_delay}
                         </p>
                       )}
                     </div>

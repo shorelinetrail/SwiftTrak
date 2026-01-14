@@ -156,7 +156,7 @@ export default function ThreatDetailPage() {
     }
   };
 
-  const handleCloseThreat = async (mitigatedRisk: RiskLevel) => {
+  const handleCloseThreat = async (mitigatedRisk: RiskLevel, actualDelay?: string) => {
     try {
       const supabase = createClient();
 
@@ -165,6 +165,7 @@ export default function ThreatDetailPage() {
         .update({
           status: 'closed',
           mitigated_risk: mitigatedRisk,
+          actual_delay: actualDelay || null,
         })
         .eq('id', threatId);
 
@@ -262,10 +263,9 @@ export default function ThreatDetailPage() {
   return (
     <div className="min-h-screen">
       <Header
-        title={threat.title}
-        subtitle={
-          <div className="flex items-center gap-2">
-            {threat.workstream?.name}
+        title={
+          <div className="flex items-center gap-3">
+            <span>{threat.title}</span>
             {threat.status === 'closed' ? (
               <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
                 Closed
@@ -277,6 +277,7 @@ export default function ThreatDetailPage() {
             )}
           </div>
         }
+        subtitle={threat.workstream?.name}
         actions={
           !permissionLoading && (
             <div className="flex gap-2">
@@ -357,8 +358,15 @@ export default function ThreatDetailPage() {
 
             {threat.expected_delay && (
               <div>
-                <h4 className="text-sm font-medium text-gray-500 mb-1">Expected Delay</h4>
+                <h4 className="text-sm font-medium text-gray-500 mb-1">Potential Delay</h4>
                 <p className="text-gray-900">{threat.expected_delay}</p>
+              </div>
+            )}
+
+            {threat.status === 'closed' && threat.actual_delay && (
+              <div>
+                <h4 className="text-sm font-medium text-gray-500 mb-1">Actual Delay</h4>
+                <p className="text-gray-900">{threat.actual_delay}</p>
               </div>
             )}
 
@@ -479,7 +487,7 @@ export default function ThreatDetailPage() {
             />
           </div>
           <Input
-            label="Expected Delay"
+            label="Potential Delay"
             value={editForm.expected_delay || ''}
             onChange={(e) => setEditForm({ ...editForm, expected_delay: e.target.value })}
           />
@@ -528,6 +536,7 @@ export default function ThreatDetailPage() {
         open={closeModalOpen}
         onClose={() => setCloseModalOpen(false)}
         onConfirm={handleCloseThreat}
+        expectedDelay={threat?.expected_delay}
       />
     </div>
   );
@@ -537,12 +546,15 @@ function CloseTheatModal({
   open,
   onClose,
   onConfirm,
+  expectedDelay,
 }: {
   open: boolean;
   onClose: () => void;
-  onConfirm: (mitigatedRisk: RiskLevel) => void;
+  onConfirm: (mitigatedRisk: RiskLevel, actualDelay?: string) => void;
+  expectedDelay?: string;
 }) {
   const [mitigatedRisk, setMitigatedRisk] = useState<RiskLevel>('low');
+  const [actualDelay, setActualDelay] = useState('');
 
   const riskOptions = [
     { value: 'low', label: 'Low' },
@@ -554,7 +566,7 @@ function CloseTheatModal({
     <Modal open={open} onClose={onClose} title="Close Threat">
       <div className="space-y-4">
         <p className="text-gray-600">
-          Closing a threat indicates it has been successfully mitigated. Please select the final mitigated risk level.
+          Closing a threat indicates it has been successfully mitigated. Please provide the final details.
         </p>
         <Select
           label="Mitigated Risk Level"
@@ -562,12 +574,19 @@ function CloseTheatModal({
           value={mitigatedRisk}
           onChange={(value) => setMitigatedRisk(value as RiskLevel)}
         />
+        <Input
+          label="Actual Delay"
+          value={actualDelay}
+          onChange={(e) => setActualDelay(e.target.value)}
+          placeholder={expectedDelay ? `Expected was: ${expectedDelay}` : 'e.g., 2 weeks, None'}
+          hint="What was the actual delay impact? Leave blank if none."
+        />
       </div>
       <div className="flex justify-end gap-3 mt-6">
         <Button variant="outline" onClick={onClose}>
           Cancel
         </Button>
-        <Button onClick={() => onConfirm(mitigatedRisk)}>
+        <Button onClick={() => onConfirm(mitigatedRisk, actualDelay || undefined)}>
           <CheckCircleIcon className="w-4 h-4 mr-2" />
           Close Threat
         </Button>

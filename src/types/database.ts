@@ -92,6 +92,7 @@ export interface Threat {
   workstream_id: string;
   proposed_mitigation?: string;
   expected_delay?: string;
+  actual_delay?: string;
   unmitigated_risk: RiskLevel;
   current_risk: RiskLevel;
   solution?: string;

@@ -2,9 +2,10 @@
 -- Also adds status field to threats for open/closed tracking
 
 -- =====================================================
--- THREAT STATUS FIELD
+-- THREAT STATUS AND ACTUAL DELAY FIELDS
 -- =====================================================
 ALTER TABLE threats ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed'));
+ALTER TABLE threats ADD COLUMN IF NOT EXISTS actual_delay TEXT;
 
 -- Create index for threat status
 CREATE INDEX IF NOT EXISTS idx_threats_status ON threats(status);

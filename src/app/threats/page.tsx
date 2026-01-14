@@ -356,7 +356,7 @@ function ThreatCard({ threat }: { threat: ThreatWithRelations }) {
                       </span>
                     )}
                     {threat.expected_delay && (
-                      <span>Expected delay: {threat.expected_delay}</span>
+                      <span>Potential delay: {threat.expected_delay}</span>
                     )}
                   </div>
                 </div>
