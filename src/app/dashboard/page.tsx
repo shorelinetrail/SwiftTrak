@@ -19,7 +19,6 @@ import {
   ExclamationTriangleIcon,
   QuestionMarkCircleIcon,
   FlagIcon,
-  ArrowTrendingUpIcon,
   ClockIcon,
   CheckCircleIcon,
   ExclamationCircleIcon,
@@ -381,34 +380,6 @@ export default function DashboardPage() {
           </Link>
         </div>
 
-        {/* Progress by Workstream */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ArrowTrendingUpIcon className="w-5 h-5 text-gray-400" />
-              Progress by Workstream
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {workstreams.length === 0 ? (
-              <EmptyState
-                title="No workstreams configured"
-                description="Create workstreams to organize your crisis response."
-                action={{
-                  label: 'Create Workstream',
-                  onClick: () => window.location.href = '/admin',
-                }}
-              />
-            ) : (
-              <div className="space-y-4">
-                {workstreams.map((workstream) => (
-                  <WorkstreamProgress key={workstream.id} workstream={workstream} />
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
         {/* Main Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Recent Actions */}
@@ -683,65 +654,3 @@ export default function DashboardPage() {
   );
 }
 
-function WorkstreamProgress({ workstream }: { workstream: Workstream }) {
-  const [stats, setStats] = useState({ total: 0, completed: 0 });
-
-  useEffect(() => {
-    let mounted = true;
-
-    const fetchStats = async () => {
-      const supabase = createClient();
-
-      try {
-        // Add timeout to prevent hanging
-        const result = await Promise.race([
-          supabase.from('actions').select('status').eq('workstream_id', workstream.id),
-          new Promise<{ data: null }>((resolve) => setTimeout(() => resolve({ data: null }), 5000)),
-        ]);
-
-        if (result.data && mounted) {
-          setStats({
-            total: result.data.length,
-            completed: result.data.filter(a => a.status === 'complete').length,
-          });
-        }
-      } catch (error) {
-        console.error('[WorkstreamProgress] Error:', error);
-      }
-    };
-
-    fetchStats();
-
-    return () => {
-      mounted = false;
-    };
-  }, [workstream.id]);
-
-  const percentage = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div
-            className="w-3 h-3 rounded-full"
-            style={{ backgroundColor: workstream.color }}
-          />
-          <span className="text-sm font-medium text-gray-700">{workstream.name}</span>
-        </div>
-        <span className="text-sm text-gray-500">
-          {stats.completed}/{stats.total} ({percentage}%)
-        </span>
-      </div>
-      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-        <div
-          className="h-full rounded-full transition-all duration-500"
-          style={{
-            width: `${percentage}%`,
-            backgroundColor: workstream.color,
-          }}
-        />
-      </div>
-    </div>
-  );
-}
