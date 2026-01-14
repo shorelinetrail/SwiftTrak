@@ -36,6 +36,7 @@ async function fetchUserProfile(authUser: AuthUser): Promise<User> {
     email: authUser.email || '',
     full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
     role: 'view',
+    status: 'active',
     avatar_url: authUser.user_metadata?.avatar_url,
     created_at: authUser.created_at,
     updated_at: authUser.created_at,

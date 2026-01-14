@@ -11,9 +11,14 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS invited_by UUID REFERENCES users(id) 
 CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
 
 -- Allow admins to insert new users (for creating pending users)
-CREATE POLICY IF NOT EXISTS "Admins can insert users" ON users FOR INSERT WITH CHECK (
-    EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'admin')
-);
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admins can insert users' AND tablename = 'users') THEN
+        CREATE POLICY "Admins can insert users" ON users FOR INSERT WITH CHECK (
+            EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'admin')
+        );
+    END IF;
+END $$;
 
 -- Update the handle_new_user function to handle pending user linking
 CREATE OR REPLACE FUNCTION handle_new_user()

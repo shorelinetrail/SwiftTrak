@@ -19,14 +19,35 @@ import toast from 'react-hot-toast';
 import {
   PencilIcon,
   TrashIcon,
-  ArrowTrendingDownIcon,
+  CheckCircleIcon,
+  ArrowPathIcon,
+  ClockIcon,
 } from '@heroicons/react/24/outline';
-import type { Threat, Workstream, User, RiskLevel } from '@/types/database';
+import type { Threat, Workstream, User, RiskLevel, ThreatAudit } from '@/types/database';
 
 type ThreatWithRelations = Threat & {
   workstream?: Workstream;
   creator?: User;
 };
+
+function formatAuditEntry(entry: ThreatAudit): string {
+  switch (entry.change_type) {
+    case 'created':
+      return `Threat created: "${entry.new_value}"`;
+    case 'status_changed':
+      return `Status changed from ${entry.old_value} to ${entry.new_value}`;
+    case 'risk_changed':
+      return `Current risk changed from ${entry.old_value} to ${entry.new_value}`;
+    case 'title_changed':
+      return `Title changed from "${entry.old_value}" to "${entry.new_value}"`;
+    case 'mitigated_risk_changed':
+      return `Mitigated risk set to ${entry.new_value}`;
+    case 'solution_added':
+      return 'Solution was added';
+    default:
+      return `${entry.change_type}: ${entry.old_value || ''} → ${entry.new_value || ''}`;
+  }
+}
 
 export default function ThreatDetailPage() {
   const params = useParams();
@@ -40,34 +61,53 @@ export default function ThreatDetailPage() {
 
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [closeModalOpen, setCloseModalOpen] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Threat>>({});
+  const [auditLog, setAuditLog] = useState<(ThreatAudit & { user?: User })[]>([]);
 
   const fetchThreat = useCallback(async () => {
     const supabase = createClient();
 
     try {
       // Add timeout to prevent hanging
-      const result = await Promise.race([
-        supabase
-          .from('threats')
-          .select(`
-            *,
-            workstream:workstreams(id, name, color),
-            creator:users!threats_created_by_fkey(id, full_name)
-          `)
-          .eq('id', threatId)
-          .single(),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+      const [threatResult, auditResult] = await Promise.all([
+        Promise.race([
+          supabase
+            .from('threats')
+            .select(`
+              *,
+              workstream:workstreams(id, name, color),
+              creator:users!threats_created_by_fkey(id, full_name)
+            `)
+            .eq('id', threatId)
+            .single(),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+        ]),
+        Promise.race([
+          supabase
+            .from('threat_audit')
+            .select(`
+              *,
+              user:users(id, full_name)
+            `)
+            .eq('threat_id', threatId)
+            .order('created_at', { ascending: false }),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+        ]),
       ]);
 
-      if (!result || result.error || !result.data) {
+      if (!threatResult || threatResult.error || !threatResult.data) {
         toast.error('Threat not found');
         router.push('/threats');
         return;
       }
 
-      setThreat(result.data as unknown as ThreatWithRelations);
-      setEditForm(result.data);
+      setThreat(threatResult.data as unknown as ThreatWithRelations);
+      setEditForm(threatResult.data);
+
+      if (auditResult?.data) {
+        setAuditLog(auditResult.data as unknown as (ThreatAudit & { user?: User })[]);
+      }
     } catch (error) {
       console.error('[ThreatDetail] Error:', error);
       toast.error('Failed to load threat');
@@ -116,6 +156,69 @@ export default function ThreatDetailPage() {
     }
   };
 
+  const handleCloseThreat = async (mitigatedRisk: RiskLevel) => {
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase
+        .from('threats')
+        .update({
+          status: 'closed',
+          mitigated_risk: mitigatedRisk,
+        })
+        .eq('id', threatId);
+
+      if (error) throw error;
+
+      toast.success('Threat closed');
+      setCloseModalOpen(false);
+      fetchThreat();
+    } catch (error) {
+      console.error('Error closing threat:', error);
+      toast.error('Failed to close threat');
+    }
+  };
+
+  const handleReopenThreat = async () => {
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase
+        .from('threats')
+        .update({
+          status: 'open',
+        })
+        .eq('id', threatId);
+
+      if (error) throw error;
+
+      toast.success('Threat reopened');
+      fetchThreat();
+    } catch (error) {
+      console.error('Error reopening threat:', error);
+      toast.error('Failed to reopen threat');
+    }
+  };
+
+  const handleUpdateCurrentRisk = async (newRisk: RiskLevel) => {
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase
+        .from('threats')
+        .update({ current_risk: newRisk })
+        .eq('id', threatId);
+
+      if (error) throw error;
+
+      toast.success('Risk level updated');
+      fetchThreat();
+    } catch (error) {
+      console.error('Error updating risk:', error);
+      toast.error('Failed to update risk level');
+    }
+  };
+
   const handleDelete = async () => {
     try {
       const supabase = createClient();
@@ -160,10 +263,35 @@ export default function ThreatDetailPage() {
     <div className="min-h-screen">
       <Header
         title={threat.title}
-        subtitle={threat.workstream?.name}
+        subtitle={
+          <div className="flex items-center gap-2">
+            {threat.workstream?.name}
+            {threat.status === 'closed' ? (
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                Closed
+              </span>
+            ) : (
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+                Open
+              </span>
+            )}
+          </div>
+        }
         actions={
           !permissionLoading && (
             <div className="flex gap-2">
+              {canEdit && threat.status === 'open' && (
+                <Button variant="secondary" size="sm" onClick={() => setCloseModalOpen(true)}>
+                  <CheckCircleIcon className="w-4 h-4 mr-2" />
+                  Close Threat
+                </Button>
+              )}
+              {canEdit && threat.status === 'closed' && (
+                <Button variant="secondary" size="sm" onClick={handleReopenThreat}>
+                  <ArrowPathIcon className="w-4 h-4 mr-2" />
+                  Reopen
+                </Button>
+              )}
               {canEdit && (
                 <Button variant="outline" size="sm" onClick={() => setEditModalOpen(true)}>
                   <PencilIcon className="w-4 h-4 mr-2" />
@@ -192,7 +320,16 @@ export default function ThreatDetailPage() {
           <Card>
             <CardContent className="pt-4 text-center">
               <p className="text-sm text-gray-500 mb-2">Current Risk</p>
-              <RiskBadge risk={threat.current_risk} />
+              {canEdit && threat.status === 'open' ? (
+                <Select
+                  options={riskOptions}
+                  value={threat.current_risk}
+                  onChange={(value) => handleUpdateCurrentRisk(value as RiskLevel)}
+                  className="w-full"
+                />
+              ) : (
+                <RiskBadge risk={threat.current_risk} />
+              )}
             </CardContent>
           </Card>
           <Card>
@@ -265,6 +402,35 @@ export default function ThreatDetailPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Audit Log */}
+        {auditLog.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ClockIcon className="w-5 h-5 text-gray-400" />
+                Activity Log
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {auditLog.map((entry) => (
+                  <div key={entry.id} className="flex items-start gap-3 text-sm">
+                    <div className="w-2 h-2 mt-1.5 rounded-full bg-gray-400 flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-gray-900">
+                        {formatAuditEntry(entry)}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {entry.user?.full_name || 'System'} &middot; {formatDate(entry.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Edit Modal */}
@@ -356,6 +522,56 @@ export default function ThreatDetailPage() {
           </Button>
         </div>
       </Modal>
+
+      {/* Close Threat Modal */}
+      <CloseTheatModal
+        open={closeModalOpen}
+        onClose={() => setCloseModalOpen(false)}
+        onConfirm={handleCloseThreat}
+      />
     </div>
+  );
+}
+
+function CloseTheatModal({
+  open,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: (mitigatedRisk: RiskLevel) => void;
+}) {
+  const [mitigatedRisk, setMitigatedRisk] = useState<RiskLevel>('low');
+
+  const riskOptions = [
+    { value: 'low', label: 'Low' },
+    { value: 'medium', label: 'Medium' },
+    { value: 'high', label: 'High' },
+  ];
+
+  return (
+    <Modal open={open} onClose={onClose} title="Close Threat">
+      <div className="space-y-4">
+        <p className="text-gray-600">
+          Closing a threat indicates it has been successfully mitigated. Please select the final mitigated risk level.
+        </p>
+        <Select
+          label="Mitigated Risk Level"
+          options={riskOptions}
+          value={mitigatedRisk}
+          onChange={(value) => setMitigatedRisk(value as RiskLevel)}
+        />
+      </div>
+      <div className="flex justify-end gap-3 mt-6">
+        <Button variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button onClick={() => onConfirm(mitigatedRisk)}>
+          <CheckCircleIcon className="w-4 h-4 mr-2" />
+          Close Threat
+        </Button>
+      </div>
+    </Modal>
   );
 }

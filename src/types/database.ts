@@ -1,6 +1,7 @@
 export type UserRole = 'admin' | 'edit' | 'view';
 export type UserStatus = 'active' | 'pending';
 export type ActionStatus = 'pending' | 'in_progress' | 'complete' | 'cancelled';
+export type ThreatStatus = 'open' | 'closed';
 export type Priority = 'critical' | 'high' | 'medium' | 'low';
 export type RiskLevel = 'low' | 'medium' | 'high';
 export type QueryPriority = 'urgent' | 'high' | 'medium' | 'low';
@@ -95,12 +96,25 @@ export interface Threat {
   current_risk: RiskLevel;
   solution?: string;
   mitigated_risk?: RiskLevel;
+  status: ThreatStatus;
   created_at: string;
   updated_at: string;
   created_by: string;
   // Joined fields
   workstream?: Workstream;
   creator?: User;
+}
+
+export interface ThreatAudit {
+  id: string;
+  threat_id: string;
+  user_id: string;
+  change_type: string;
+  old_value?: string;
+  new_value?: string;
+  created_at: string;
+  // Joined fields
+  user?: User;
 }
 
 export interface TechnicalQuery {
@@ -135,6 +149,18 @@ export interface Decision {
   decision_maker?: User;
 }
 
+export interface DecisionAudit {
+  id: string;
+  decision_id: string;
+  user_id: string;
+  change_type: string;
+  old_value?: string;
+  new_value?: string;
+  created_at: string;
+  // Joined fields
+  user?: User;
+}
+
 export interface Milestone {
   id: string;
   title: string;
@@ -149,6 +175,18 @@ export interface Milestone {
   // Joined fields
   workstream?: Workstream;
   creator?: User;
+}
+
+export interface MilestoneAudit {
+  id: string;
+  milestone_id: string;
+  user_id: string;
+  change_type: string;
+  old_value?: string;
+  new_value?: string;
+  created_at: string;
+  // Joined fields
+  user?: User;
 }
 
 export interface GanttTask {
