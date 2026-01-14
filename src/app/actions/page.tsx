@@ -29,6 +29,7 @@ import {
   ExclamationCircleIcon,
   ChevronUpIcon,
   ChevronDownIcon,
+  MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import type { Action, Workstream, User, ActionStatus, Priority } from '@/types/database';
@@ -66,6 +67,9 @@ function ActionsPageContent() {
   const [uploading, setUploading] = useState(false);
   const [uploadResults, setUploadResults] = useState<{ success: number; errors: string[]; warnings: string[] } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Search
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Filters (arrays for multi-select)
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
@@ -105,6 +109,17 @@ function ActionsPageContent() {
   // Apply filters and sorting
   useEffect(() => {
     let filtered = [...actions];
+
+    // Search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(a =>
+        a.title.toLowerCase().includes(query) ||
+        a.description?.toLowerCase().includes(query) ||
+        a.owner?.full_name?.toLowerCase().includes(query) ||
+        a.workstream?.name?.toLowerCase().includes(query)
+      );
+    }
 
     if (statusFilter.length > 0) {
       filtered = filtered.filter(a => statusFilter.includes(a.status));
@@ -169,7 +184,7 @@ function ActionsPageContent() {
     });
 
     setFilteredActions(filtered);
-  }, [actions, statusFilter, workstreamFilter, priorityFilter, activeTab, user, sortColumn, sortDirection]);
+  }, [actions, searchQuery, statusFilter, workstreamFilter, priorityFilter, activeTab, user, sortColumn, sortDirection]);
 
   // Real-time updates disabled for stability
   // useRealtime({
@@ -210,7 +225,7 @@ function ActionsPageContent() {
     window.location.href = `/api/export/actions?${params.toString()}`;
   };
 
-  const hasActiveFilters = statusFilter.length > 0 || priorityFilter.length > 0 || workstreamFilter.length > 0;
+  const hasActiveFilters = searchQuery.trim() || statusFilter.length > 0 || priorityFilter.length > 0 || workstreamFilter.length > 0;
 
   const handleSort = (column: SortColumn) => {
     if (sortColumn === column) {
@@ -575,10 +590,22 @@ function ActionsPageContent() {
         {/* Tabs */}
         <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
 
-        {/* Filters */}
+        {/* Search & Filters */}
         <Card padding="sm">
           <CardContent>
             <div className="flex flex-wrap items-center gap-4">
+              {/* Search */}
+              <div className="relative">
+                <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search actions..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent w-48"
+                />
+              </div>
+              <div className="h-6 w-px bg-gray-200" />
               <div className="flex items-center gap-2 text-gray-500">
                 <FunnelIcon className="w-4 h-4" />
                 <span className="text-sm font-medium">Filters:</span>
@@ -609,6 +636,7 @@ function ActionsPageContent() {
                   variant="ghost"
                   size="sm"
                   onClick={() => {
+                    setSearchQuery('');
                     setStatusFilter([]);
                     setPriorityFilter([]);
                     setWorkstreamFilter([]);
