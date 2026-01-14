@@ -1,4 +1,5 @@
 export type UserRole = 'admin' | 'edit' | 'view';
+export type UserStatus = 'active' | 'pending';
 export type ActionStatus = 'pending' | 'in_progress' | 'complete' | 'cancelled';
 export type Priority = 'critical' | 'high' | 'medium' | 'low';
 export type RiskLevel = 'low' | 'medium' | 'high';
@@ -10,8 +11,12 @@ export interface User {
   full_name: string;
   avatar_url?: string;
   role: UserRole;
+  status: UserStatus;
+  invited_by?: string;
   created_at: string;
   updated_at: string;
+  // Joined fields
+  inviter?: User;
 }
 
 export interface UserWorkstreamPermission {

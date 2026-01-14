@@ -24,7 +24,7 @@ import {
   LinkIcon,
   ClipboardDocumentIcon,
 } from '@heroicons/react/24/outline';
-import type { User, Workstream, StakeholderLink, UserRole } from '@/types/database';
+import type { User, Workstream, StakeholderLink, UserRole, UserStatus } from '@/types/database';
 
 export default function AdminPage() {
   const router = useRouter();
@@ -37,10 +37,9 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState('users');
 
   // Modal states
-  const [userModalOpen, setUserModalOpen] = useState(false);
+  const [createUserModalOpen, setCreateUserModalOpen] = useState(false);
   const [workstreamModalOpen, setWorkstreamModalOpen] = useState(false);
   const [stakeholderLinkModalOpen, setStakeholderLinkModalOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedWorkstream, setSelectedWorkstream] = useState<Workstream | null>(null);
 
   // Direct auth check and data fetch - bypasses complex hook chain
@@ -165,6 +164,41 @@ export default function AdminPage() {
       toast.error('Failed to update user role');
     } else {
       toast.success('User role updated');
+      fetchData();
+    }
+  };
+
+  const handleCreatePendingUser = async (data: { email: string; full_name: string; role: UserRole }) => {
+    const supabase = createClient();
+
+    // Check if user already exists
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('id, status')
+      .eq('email', data.email.toLowerCase())
+      .single();
+
+    if (existingUser) {
+      toast.error('A user with this email already exists');
+      return;
+    }
+
+    // Create pending user with a temporary UUID
+    const { error } = await supabase.from('users').insert({
+      id: crypto.randomUUID(),
+      email: data.email.toLowerCase(),
+      full_name: data.full_name,
+      role: data.role,
+      status: 'pending',
+      invited_by: currentUser?.id,
+    });
+
+    if (error) {
+      console.error('[AdminPage] Failed to create pending user:', error);
+      toast.error(`Failed to create user: ${error.message}`);
+    } else {
+      toast.success('User created. They will be linked when they sign up.');
+      setCreateUserModalOpen(false);
       fetchData();
     }
   };
@@ -302,23 +336,40 @@ export default function AdminPage() {
         {/* Users Tab */}
         {activeTab === 'users' && (
           <Card>
-            <CardHeader>
+            <CardHeader
+              actions={
+                <Button size="sm" onClick={() => setCreateUserModalOpen(true)}>
+                  <PlusIcon className="w-4 h-4 mr-2" />
+                  Add User
+                </Button>
+              }
+            >
               <CardTitle className="flex items-center gap-2">
                 <UserGroupIcon className="w-5 h-5 text-gray-400" />
                 User Management
               </CardTitle>
             </CardHeader>
             <CardContent>
+              <p className="text-sm text-gray-500 mb-4">
+                Add users before they sign up. When they register with the same email, their account will be automatically linked.
+              </p>
               <div className="space-y-3">
                 {users.map((user) => (
                   <div
                     key={user.id}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                    className={`flex items-center justify-between p-3 rounded-lg ${
+                      user.status === 'pending' ? 'bg-amber-50 border border-amber-200' : 'bg-gray-50'
+                    }`}
                   >
                     <div className="flex items-center gap-3">
                       <Avatar src={user.avatar_url} name={user.full_name} size="sm" />
                       <div>
-                        <p className="font-medium text-gray-900">{user.full_name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-gray-900">{user.full_name}</p>
+                          {user.status === 'pending' && (
+                            <Badge variant="warning" size="sm">Pending</Badge>
+                          )}
+                        </div>
                         <p className="text-sm text-gray-500">{user.email}</p>
                       </div>
                     </div>
@@ -334,6 +385,11 @@ export default function AdminPage() {
                     />
                   </div>
                 ))}
+                {users.length === 0 && (
+                  <p className="text-center text-gray-500 py-8">
+                    No users yet. Add users to pre-configure their roles before they sign up.
+                  </p>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -494,6 +550,13 @@ export default function AdminPage() {
         workstreams={workstreams}
         onSave={handleCreateStakeholderLink}
       />
+
+      {/* Create User Modal */}
+      <CreateUserModal
+        open={createUserModalOpen}
+        onClose={() => setCreateUserModalOpen(false)}
+        onSave={handleCreatePendingUser}
+      />
     </div>
   );
 }
@@ -651,6 +714,77 @@ function StakeholderLinkModal({
           }
         }}>
           Create Link
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+function CreateUserModal({
+  open,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSave: (data: { email: string; full_name: string; role: UserRole }) => void;
+}) {
+  const [formData, setFormData] = useState({
+    email: '',
+    full_name: '',
+    role: 'view' as UserRole,
+  });
+
+  useEffect(() => {
+    if (!open) {
+      setFormData({ email: '', full_name: '', role: 'view' });
+    }
+  }, [open]);
+
+  return (
+    <Modal open={open} onClose={onClose} title="Add User">
+      <div className="space-y-4">
+        <p className="text-sm text-gray-500">
+          Create a user before they sign up. When they register with this email, they&apos;ll automatically inherit the role you set here.
+        </p>
+        <Input
+          label="Email"
+          type="email"
+          value={formData.email}
+          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+          placeholder="user@example.com"
+          required
+        />
+        <Input
+          label="Full Name"
+          value={formData.full_name}
+          onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+          placeholder="John Doe"
+          required
+        />
+        <Select
+          label="Role"
+          options={[
+            { value: 'view', label: 'View Only' },
+            { value: 'edit', label: 'Can Edit' },
+            { value: 'admin', label: 'Admin' },
+          ]}
+          value={formData.role}
+          onChange={(value) => setFormData({ ...formData, role: value as UserRole })}
+        />
+      </div>
+      <div className="flex justify-end gap-3 mt-6">
+        <Button variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          onClick={() => {
+            if (formData.email.trim() && formData.full_name.trim()) {
+              onSave(formData);
+            }
+          }}
+        >
+          Add User
         </Button>
       </div>
     </Modal>
