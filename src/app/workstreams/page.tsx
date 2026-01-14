@@ -17,6 +17,8 @@ import {
   TrashIcon,
   SwatchIcon,
   ChevronRightIcon,
+  ChevronUpIcon,
+  ChevronDownIcon,
 } from '@heroicons/react/24/outline';
 import { Select } from '@/components/ui/select';
 import { useMemo } from 'react';
@@ -140,9 +142,11 @@ export default function WorkstreamsPage() {
     }
   }, [setWorkstreams]);
 
-  // Organize workstreams into hierarchy
+  // Organize workstreams into hierarchy, sorted by order_index
   const workstreamHierarchy = useMemo(() => {
-    const rootWorkstreams = workstreams.filter(ws => !ws.parent_id);
+    const rootWorkstreams = workstreams
+      .filter(ws => !ws.parent_id)
+      .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
     const childrenMap = new Map<string, Workstream[]>();
 
     workstreams.forEach(ws => {
@@ -151,6 +155,14 @@ export default function WorkstreamsPage() {
         existing.push(ws);
         childrenMap.set(ws.parent_id, existing);
       }
+    });
+
+    // Sort children by order_index
+    childrenMap.forEach((children, parentId) => {
+      childrenMap.set(
+        parentId,
+        children.sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
+      );
     });
 
     return { rootWorkstreams, childrenMap };
@@ -207,6 +219,45 @@ export default function WorkstreamsPage() {
       setWorkstreamModalOpen(false);
       setSelectedWorkstream(null);
       fetchWorkstreams();
+    }
+  };
+
+  const handleMoveWorkstream = async (workstreamId: string, direction: 'up' | 'down') => {
+    const supabase = createClient();
+
+    // Find the workstream and its siblings (same parent level)
+    const workstream = workstreams.find(ws => ws.id === workstreamId);
+    if (!workstream) return;
+
+    // Get siblings at the same level (same parent_id)
+    const siblings = workstreams
+      .filter(ws => ws.parent_id === workstream.parent_id)
+      .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+
+    const currentIndex = siblings.findIndex(ws => ws.id === workstreamId);
+    const swapIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+
+    if (swapIndex < 0 || swapIndex >= siblings.length) return;
+
+    const swapWith = siblings[swapIndex];
+
+    try {
+      // Swap order_index values
+      await Promise.all([
+        supabase
+          .from('workstreams')
+          .update({ order_index: swapWith.order_index ?? swapIndex })
+          .eq('id', workstreamId),
+        supabase
+          .from('workstreams')
+          .update({ order_index: workstream.order_index ?? currentIndex })
+          .eq('id', swapWith.id),
+      ]);
+
+      fetchWorkstreams();
+    } catch (error) {
+      console.error('[WorkstreamsPage] Failed to reorder workstream:', error);
+      toast.error('Failed to reorder workstream');
     }
   };
 
@@ -273,13 +324,38 @@ export default function WorkstreamsPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {workstreamHierarchy.rootWorkstreams.map((workstream) => {
+              {workstreamHierarchy.rootWorkstreams.map((workstream, index) => {
                 const children = workstreamHierarchy.childrenMap.get(workstream.id) || [];
+                const isFirst = index === 0;
+                const isLast = index === workstreamHierarchy.rootWorkstreams.length - 1;
                 return (
                   <div key={workstream.id}>
                     {/* Parent Workstream */}
                     <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                       <div className="flex items-center gap-3">
+                        {/* Reorder buttons */}
+                        <div className="flex flex-col">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="p-0.5 h-5"
+                            disabled={isFirst}
+                            onClick={() => handleMoveWorkstream(workstream.id, 'up')}
+                            title="Move up"
+                          >
+                            <ChevronUpIcon className={`w-3 h-3 ${isFirst ? 'text-gray-300' : 'text-gray-500'}`} />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="p-0.5 h-5"
+                            disabled={isLast}
+                            onClick={() => handleMoveWorkstream(workstream.id, 'down')}
+                            title="Move down"
+                          >
+                            <ChevronDownIcon className={`w-3 h-3 ${isLast ? 'text-gray-300' : 'text-gray-500'}`} />
+                          </Button>
+                        </div>
                         <div
                           className="w-4 h-4 rounded-full"
                           style={{ backgroundColor: workstream.color }}
@@ -333,47 +409,73 @@ export default function WorkstreamsPage() {
                     {/* Child Workstreams (Sub-workstreams) */}
                     {children.length > 0 && (
                       <div className="ml-6 mt-2 space-y-2 border-l-2 border-gray-200 pl-4">
-                        {children.map((child) => (
-                          <div
-                            key={child.id}
-                            className="flex items-center justify-between p-2 bg-gray-50 rounded-lg"
-                          >
-                            <div className="flex items-center gap-3">
-                              <ChevronRightIcon className="w-3 h-3 text-gray-400" />
-                              <div
-                                className="w-3 h-3 rounded-full"
-                                style={{ backgroundColor: child.color }}
-                              />
-                              <div>
-                                <p className="text-sm font-medium text-gray-900">{child.name}</p>
-                                {child.description && (
-                                  <p className="text-xs text-gray-500">{child.description}</p>
-                                )}
+                        {children.map((child, childIndex) => {
+                          const isChildFirst = childIndex === 0;
+                          const isChildLast = childIndex === children.length - 1;
+                          return (
+                            <div
+                              key={child.id}
+                              className="flex items-center justify-between p-2 bg-gray-50 rounded-lg"
+                            >
+                              <div className="flex items-center gap-3">
+                                {/* Reorder buttons for children */}
+                                <div className="flex flex-col">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="p-0 h-4"
+                                    disabled={isChildFirst}
+                                    onClick={() => handleMoveWorkstream(child.id, 'up')}
+                                    title="Move up"
+                                  >
+                                    <ChevronUpIcon className={`w-2.5 h-2.5 ${isChildFirst ? 'text-gray-300' : 'text-gray-500'}`} />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="p-0 h-4"
+                                    disabled={isChildLast}
+                                    onClick={() => handleMoveWorkstream(child.id, 'down')}
+                                    title="Move down"
+                                  >
+                                    <ChevronDownIcon className={`w-2.5 h-2.5 ${isChildLast ? 'text-gray-300' : 'text-gray-500'}`} />
+                                  </Button>
+                                </div>
+                                <div
+                                  className="w-3 h-3 rounded-full"
+                                  style={{ backgroundColor: child.color }}
+                                />
+                                <div>
+                                  <p className="text-sm font-medium text-gray-900">{child.name}</p>
+                                  {child.description && (
+                                    <p className="text-xs text-gray-500">{child.description}</p>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                            <div className="flex gap-1">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  setSelectedWorkstream(child);
-                                  setWorkstreamModalOpen(true);
-                                }}
-                              >
-                                <PencilIcon className="w-3 h-3" />
-                              </Button>
-                              {isAdmin && (
+                              <div className="flex gap-1">
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => handleDeleteWorkstream(child.id)}
+                                  onClick={() => {
+                                    setSelectedWorkstream(child);
+                                    setWorkstreamModalOpen(true);
+                                  }}
                                 >
-                                  <TrashIcon className="w-3 h-3 text-red-500" />
+                                  <PencilIcon className="w-3 h-3" />
                                 </Button>
-                              )}
+                                {isAdmin && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleDeleteWorkstream(child.id)}
+                                  >
+                                    <TrashIcon className="w-3 h-3 text-red-500" />
+                                  </Button>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>

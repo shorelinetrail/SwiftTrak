@@ -268,15 +268,20 @@ export function buildWorkstreamOptions<T extends { id: string; name: string; par
     includeAll?: boolean;
     allLabel?: string;
     allValue?: string;
+    labelFormat?: 'hierarchy' | 'path'; // 'hierarchy' = "— Child", 'path' = "Parent/Child"
     mapOption?: (ws: T, isChild: boolean) => Record<string, unknown>;
   } = {}
 ): Array<{ value: string; label: string } & Record<string, unknown>> {
-  const { includeAll = true, allLabel = 'All Workstreams', allValue = 'all', mapOption } = config;
+  const { includeAll = true, allLabel = 'All Workstreams', allValue = 'all', labelFormat = 'hierarchy', mapOption } = config;
   const options: Array<{ value: string; label: string } & Record<string, unknown>> = [];
 
   if (includeAll) {
     options.push({ value: allValue, label: allLabel });
   }
+
+  // Build a map of workstreams by id for parent lookup
+  const workstreamMap = new Map<string, T>();
+  workstreams.forEach(ws => workstreamMap.set(ws.id, ws));
 
   // Get root workstreams (no parent)
   const rootWorkstreams = workstreams
@@ -302,14 +307,17 @@ export function buildWorkstreamOptions<T extends { id: string; name: string; par
     };
     options.push(rootOption);
 
-    // Add children with indentation
+    // Add children with appropriate format
     const children = childrenMap.get(root.id) || [];
     children
       .sort((a, b) => a.name.localeCompare(b.name))
       .forEach(child => {
+        const childLabel = labelFormat === 'path'
+          ? `${root.name}/${child.name}`
+          : `— ${child.name}`;
         const childOption: { value: string; label: string } & Record<string, unknown> = {
           value: child.id,
-          label: `— ${child.name}`,
+          label: childLabel,
           ...(mapOption ? mapOption(child, true) : {}),
         };
         options.push(childOption);

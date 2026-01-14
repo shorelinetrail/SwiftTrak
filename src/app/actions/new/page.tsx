@@ -25,7 +25,7 @@ export default function NewActionPage() {
     description: '',
     workstream_id: '',
     owner_id: '',
-    priority: 'medium' as Priority,
+    priority: '' as Priority | '', // Optional - can be unassigned
     due_date: '',
     completed_at: '', // Date closed for importing already-closed actions
     initial_comment: '', // For importing legacy comments
@@ -101,7 +101,7 @@ export default function NewActionPage() {
           description: formData.description.trim() || null,
           workstream_id: formData.workstream_id,
           owner_id: formData.owner_id || null,
-          priority: formData.priority,
+          priority: formData.priority || null,
           due_date: formData.due_date || null,
           status,
           completed_at: formData.completed_at || null,
@@ -133,9 +133,11 @@ export default function NewActionPage() {
     }
   };
 
+  // Use path format (Parent/Child) for clearer identification in bulk uploads
   const workstreamOptions = buildWorkstreamOptions(workstreams, {
     allLabel: 'Select a workstream...',
     allValue: '',
+    labelFormat: 'path',
   });
 
   const userOptions = [
@@ -150,6 +152,7 @@ export default function NewActionPage() {
   ];
 
   const priorityOptions = [
+    { value: '', label: 'Unassigned' },
     { value: 'critical', label: 'Critical' },
     { value: 'high', label: 'High' },
     { value: 'medium', label: 'Medium' },
