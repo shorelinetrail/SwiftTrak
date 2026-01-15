@@ -125,7 +125,7 @@ export default function DecisionsPage() {
         ) : (
           <div className="space-y-4">
             {filteredDecisions.map((decision, index) => (
-              <DecisionCard key={decision.id} decision={decision} isFirst={index === 0} />
+              <DecisionCard key={decision.id} decision={decision} isFirst={index === 0} workstreams={workstreams} />
             ))}
           </div>
         )}
@@ -134,7 +134,7 @@ export default function DecisionsPage() {
   );
 }
 
-function DecisionCard({ decision, isFirst }: { decision: DecisionWithRelations; isFirst: boolean }) {
+function DecisionCard({ decision, isFirst, workstreams }: { decision: DecisionWithRelations; isFirst: boolean; workstreams: Workstream[] }) {
   return (
     <div className="relative pl-8">
       {/* Timeline line */}
