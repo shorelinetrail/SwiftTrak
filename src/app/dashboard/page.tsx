@@ -213,16 +213,16 @@ export default function DashboardPage() {
                   .from('actions')
                   .select(actionSelect)
                   .eq('owner_id', userId)
-                  .in('status', ['pending', 'in_progress'])
+                  .in('status', ['pending', 'in_progress', 'on_hold'])
                   .order('updated_at', { ascending: false })
                   .limit(5)
                   .then(r => r.data)
               : Promise.resolve([]),
-            // Recently Updated Actions
+            // Recently Updated Actions (active statuses only)
             supabase
               .from('actions')
               .select(actionSelect)
-              .in('status', ['pending', 'in_progress'])
+              .in('status', ['pending', 'in_progress', 'on_hold'])
               .order('updated_at', { ascending: false })
               .limit(5)
               .then(r => r.data),
