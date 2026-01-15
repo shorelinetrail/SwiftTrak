@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
@@ -8,60 +8,191 @@ import { usePermission } from '@/hooks/use-user';
 import { Header } from '@/components/layout/header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/input';
 import { Avatar } from '@/components/ui/avatar';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDate, getRelativeTime, getWorkstreamDisplayName, cn } from '@/lib/utils';
+import { RiskBadge } from '@/components/ui/badge';
+import { formatDate, getRelativeTime, getWorkstreamDisplayName, buildWorkstreamOptions, cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import {
   PlusIcon,
   MegaphoneIcon,
-  FlagIcon,
   CheckCircleIcon,
   PencilIcon,
   TrashIcon,
+  FunnelIcon,
 } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkSolidIcon } from '@heroicons/react/24/solid';
-import type { Update, Workstream, User } from '@/types/database';
+import type { Update, Workstream, User, Threat, Milestone, RiskLevel } from '@/types/database';
 
 type UpdateWithRelations = Update & {
   workstream?: Workstream;
   creator?: User;
 };
 
+type RecentUpdateItem = {
+  type: 'update' | 'threat' | 'milestone';
+  id: string;
+  content: string;
+  posted_at: string;
+  workstream?: Workstream;
+  creator?: User;
+  // Update-specific
+  is_pinned?: boolean;
+  source_type?: string;
+  created_by?: string;
+  // Threat-specific
+  threat_title?: string;
+  current_risk?: RiskLevel;
+  // Milestone-specific
+  milestone_title?: string;
+};
+
 export default function UpdatesPage() {
-  const { workstreams, user } = useAppStore();
+  const { workstreams, user, setWorkstreams } = useAppStore();
   const { canEdit, canAdmin } = usePermission();
   const [loading, setLoading] = useState(true);
-  const [updates, setUpdates] = useState<UpdateWithRelations[]>([]);
+  const [updateItems, setUpdateItems] = useState<RecentUpdateItem[]>([]);
+  const [selectedWorkstream, setSelectedWorkstream] = useState<string>('all');
 
   // Editing states
   const [editingUpdateId, setEditingUpdateId] = useState<string | null>(null);
   const [editingUpdateContent, setEditingUpdateContent] = useState('');
   const [deletingUpdateId, setDeletingUpdateId] = useState<string | null>(null);
 
+  // Workstream filter options
+  const workstreamOptions = useMemo(() =>
+    buildWorkstreamOptions(workstreams, {
+      mapOption: (ws) => ({
+        icon: <div className="w-3 h-3 rounded-full" style={{ backgroundColor: ws.color }} />,
+      }),
+    }),
+  [workstreams]);
+
+  // Filter by workstream
+  const filteredUpdateItems = useMemo(() =>
+    selectedWorkstream === 'all'
+      ? updateItems
+      : updateItems.filter(item => item.workstream?.id === selectedWorkstream),
+    [updateItems, selectedWorkstream]
+  );
+
   const fetchUpdates = useCallback(async () => {
     const supabase = createClient();
+    const items: RecentUpdateItem[] = [];
 
-    const { data, error } = await supabase
-      .from('updates')
-      .select(`
-        *,
-        workstream:workstreams(id, name, color, parent_id),
-        creator:users!updates_created_by_fkey(id, full_name, avatar_url)
-      `)
-      .order('is_pinned', { ascending: false })
-      .order('posted_at', { ascending: false })
-      .limit(100);
+    try {
+      // Fetch workstreams if not already loaded
+      if (workstreams.length === 0) {
+        const { data: workstreamsData } = await supabase
+          .from('workstreams')
+          .select('*')
+          .order('order_index');
+        if (workstreamsData) {
+          setWorkstreams(workstreamsData as Workstream[]);
+        }
+      }
 
-    if (error) {
+      // Fetch regular updates
+      const { data: updatesData, error: updatesError } = await supabase
+        .from('updates')
+        .select(`
+          *,
+          workstream:workstreams(id, name, color, parent_id),
+          creator:users!updates_created_by_fkey(id, full_name, avatar_url)
+        `)
+        .order('is_pinned', { ascending: false })
+        .order('posted_at', { ascending: false })
+        .limit(100);
+
+      if (updatesError) {
+        console.error('Error fetching updates:', updatesError);
+      } else if (updatesData) {
+        for (const update of updatesData as UpdateWithRelations[]) {
+          // Skip system-generated updates for milestones and threats (we'll fetch those separately)
+          const lowerContent = update.content.toLowerCase();
+          if (lowerContent.startsWith('milestone complete') || lowerContent.startsWith('threat closed')) {
+            continue;
+          }
+          items.push({
+            type: 'update',
+            id: update.id,
+            content: update.content,
+            posted_at: update.posted_at,
+            workstream: update.workstream,
+            creator: update.creator,
+            is_pinned: update.is_pinned,
+            source_type: update.source_type,
+            created_by: update.created_by,
+          });
+        }
+      }
+
+      // Fetch recently closed threats (last 30 days)
+      const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      const { data: closedThreatsData } = await supabase
+        .from('threats')
+        .select(`*, workstream:workstreams(id, name, color, parent_id)`)
+        .eq('status', 'closed')
+        .gte('updated_at', new Date(thirtyDaysAgo).toISOString())
+        .order('updated_at', { ascending: false })
+        .limit(50);
+
+      if (closedThreatsData) {
+        for (const threat of closedThreatsData as (Threat & { workstream?: Workstream })[]) {
+          items.push({
+            type: 'threat',
+            id: threat.id,
+            content: `Threat closed: ${threat.title}`,
+            posted_at: threat.updated_at,
+            workstream: threat.workstream,
+            threat_title: threat.title,
+            current_risk: threat.current_risk as RiskLevel,
+          });
+        }
+      }
+
+      // Fetch recently completed milestones (last 30 days)
+      const { data: completedMilestonesData } = await supabase
+        .from('milestones')
+        .select(`*, workstream:workstreams(id, name, color, parent_id)`)
+        .eq('status', 'completed')
+        .gte('updated_at', new Date(thirtyDaysAgo).toISOString())
+        .order('updated_at', { ascending: false })
+        .limit(50);
+
+      if (completedMilestonesData) {
+        for (const milestone of completedMilestonesData as (Milestone & { workstream?: Workstream })[]) {
+          items.push({
+            type: 'milestone',
+            id: milestone.id,
+            content: `Milestone complete: ${milestone.title}`,
+            posted_at: milestone.updated_at,
+            workstream: milestone.workstream,
+            milestone_title: milestone.title,
+          });
+        }
+      }
+
+      // Sort by pinned first, then by posted_at
+      items.sort((a, b) => {
+        // Pinned items first
+        if (a.is_pinned && !b.is_pinned) return -1;
+        if (!a.is_pinned && b.is_pinned) return 1;
+        // Then by date
+        return new Date(b.posted_at).getTime() - new Date(a.posted_at).getTime();
+      });
+
+      setUpdateItems(items);
+    } catch (error) {
       console.error('Error fetching updates:', error);
-    } else {
-      setUpdates(data as unknown as UpdateWithRelations[]);
+      toast.error('Failed to load updates');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  }, []);
+  }, [workstreams.length, setWorkstreams]);
 
   useEffect(() => {
     fetchUpdates();
@@ -129,28 +260,6 @@ export default function UpdatesPage() {
     }
   };
 
-  const getSourceIcon = (sourceType?: string) => {
-    switch (sourceType) {
-      case 'milestone_completed':
-        return <FlagIcon className="w-5 h-5 text-green-600" />;
-      case 'action_completed':
-        return <CheckCircleIcon className="w-5 h-5 text-blue-600" />;
-      default:
-        return <MegaphoneIcon className="w-5 h-5 text-red-600" />;
-    }
-  };
-
-  const getSourceLabel = (sourceType?: string) => {
-    switch (sourceType) {
-      case 'milestone_completed':
-        return 'Milestone Completed';
-      case 'action_completed':
-        return 'Action Completed';
-      default:
-        return 'Announcement';
-    }
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen">
@@ -166,18 +275,30 @@ export default function UpdatesPage() {
     <div className="min-h-screen bg-gray-50">
       <Header
         title="Updates"
+        subtitle="Announcements, completed milestones, and closed threats"
         actions={
-          <Link href="/updates/new">
-            <Button>
-              <PlusIcon className="w-4 h-4 mr-2" />
-              Post Update
-            </Button>
-          </Link>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <FunnelIcon className="w-4 h-4 text-gray-400" />
+              <Select
+                options={workstreamOptions}
+                value={selectedWorkstream}
+                onChange={setSelectedWorkstream}
+                className="w-48"
+              />
+            </div>
+            <Link href="/updates/new">
+              <Button>
+                <PlusIcon className="w-4 h-4 mr-2" />
+                Post Update
+              </Button>
+            </Link>
+          </div>
         }
       />
 
       <div className="p-6 max-w-4xl mx-auto">
-        {updates.length === 0 ? (
+        {filteredUpdateItems.length === 0 ? (
           <EmptyState
             icon={<MegaphoneIcon className="w-6 h-6" />}
             title="No updates yet"
@@ -189,71 +310,83 @@ export default function UpdatesPage() {
           />
         ) : (
           <div className="space-y-4">
-            {updates.map((update) => (
+            {filteredUpdateItems.map((item) => (
               <Card
-                key={update.id}
+                key={`${item.type}-${item.id}`}
                 className={cn(
-                  update.is_pinned && 'border-red-200 bg-red-50/30'
+                  item.is_pinned && 'border-red-200 bg-red-50/30'
                 )}
               >
                 <CardContent className="p-4">
                   <div className="flex gap-4">
                     {/* Icon */}
-                    <div className={cn(
-                      'w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0',
-                      update.source_type === 'milestone_completed' && 'bg-green-100',
-                      update.source_type === 'action_completed' && 'bg-blue-100',
-                      (!update.source_type || update.source_type === 'manual') && 'bg-red-100'
-                    )}>
-                      {getSourceIcon(update.source_type)}
-                    </div>
+                    {item.type === 'threat' && (
+                      <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                        <CheckCircleIcon className="w-5 h-5 text-green-600" />
+                      </div>
+                    )}
+                    {item.type === 'milestone' && (
+                      <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                        <CheckCircleIcon className="w-5 h-5 text-green-600" />
+                      </div>
+                    )}
+                    {item.type === 'update' && (
+                      <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                        <MegaphoneIcon className="w-5 h-5 text-blue-600" />
+                      </div>
+                    )}
 
                     {/* Content */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-xs font-medium text-gray-500 uppercase">
-                            {getSourceLabel(update.source_type)}
+                            {item.type === 'threat' ? 'Threat Closed' :
+                             item.type === 'milestone' ? 'Milestone Complete' :
+                             'Announcement'}
                           </span>
-                          {update.is_pinned && (
+                          {item.is_pinned && (
                             <span className="inline-flex items-center gap-1 text-xs text-red-600">
                               <BookmarkSolidIcon className="w-3 h-3" />
                               Pinned
                             </span>
                           )}
-                          {update.workstream && (
+                          {item.workstream && (
                             <span
                               className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
                               style={{
-                                backgroundColor: `${update.workstream.color}20`,
-                                color: update.workstream.color,
+                                backgroundColor: `${item.workstream.color}20`,
+                                color: item.workstream.color,
                               }}
                             >
-                              {getWorkstreamDisplayName(update.workstream, workstreams)}
+                              {getWorkstreamDisplayName(item.workstream, workstreams)}
                             </span>
+                          )}
+                          {item.type === 'threat' && item.current_risk && (
+                            <RiskBadge risk={item.current_risk} />
                           )}
                         </div>
                         <div className="flex items-center gap-1">
-                          {canEdit && (update.created_by === user?.id || canAdmin) && (
+                          {item.type === 'update' && canEdit && (item.created_by === user?.id || canAdmin) && (
                             <>
                               {canAdmin && (
                                 <button
-                                  onClick={() => handleTogglePin(update.id, update.is_pinned)}
+                                  onClick={() => handleTogglePin(item.id, item.is_pinned || false)}
                                   className={cn(
                                     'p-1 rounded',
-                                    update.is_pinned
+                                    item.is_pinned
                                       ? 'text-red-600 hover:text-red-700'
                                       : 'text-gray-400 hover:text-gray-600'
                                   )}
-                                  title={update.is_pinned ? 'Unpin' : 'Pin'}
+                                  title={item.is_pinned ? 'Unpin' : 'Pin'}
                                 >
                                   <BookmarkSolidIcon className="w-4 h-4" />
                                 </button>
                               )}
                               <button
                                 onClick={() => {
-                                  setEditingUpdateId(update.id);
-                                  setEditingUpdateContent(update.content);
+                                  setEditingUpdateId(item.id);
+                                  setEditingUpdateContent(item.content);
                                 }}
                                 className="p-1 text-gray-400 hover:text-gray-600 rounded"
                                 title="Edit"
@@ -261,7 +394,7 @@ export default function UpdatesPage() {
                                 <PencilIcon className="w-4 h-4" />
                               </button>
                               <button
-                                onClick={() => setDeletingUpdateId(update.id)}
+                                onClick={() => setDeletingUpdateId(item.id)}
                                 className="p-1 text-gray-400 hover:text-red-600 rounded"
                                 title="Delete"
                               >
@@ -270,12 +403,12 @@ export default function UpdatesPage() {
                             </>
                           )}
                           <span className="text-xs text-gray-400 whitespace-nowrap ml-2">
-                            {getRelativeTime(update.posted_at)}
+                            {getRelativeTime(item.posted_at)}
                           </span>
                         </div>
                       </div>
 
-                      {editingUpdateId === update.id ? (
+                      {item.type === 'update' && editingUpdateId === item.id ? (
                         <div className="mt-2">
                           <Textarea
                             value={editingUpdateContent}
@@ -295,28 +428,40 @@ export default function UpdatesPage() {
                             </Button>
                             <Button
                               size="sm"
-                              onClick={() => handleEditUpdate(update.id)}
+                              onClick={() => handleEditUpdate(item.id)}
                             >
                               Save
                             </Button>
                           </div>
                         </div>
+                      ) : item.type === 'threat' ? (
+                        <Link href={`/threats/${item.id}`} className="block hover:underline mt-1">
+                          <p className="text-gray-900">
+                            <span className="font-medium">Threat closed:</span> {item.threat_title}
+                          </p>
+                        </Link>
+                      ) : item.type === 'milestone' ? (
+                        <Link href={`/milestones/${item.id}`} className="block hover:underline mt-1">
+                          <p className="text-gray-900">
+                            <span className="font-medium">Milestone complete:</span> {item.milestone_title}
+                          </p>
+                        </Link>
                       ) : (
                         <p className="text-gray-900 mt-1 whitespace-pre-wrap">
-                          {update.content}
+                          {item.content}
                         </p>
                       )}
 
-                      {update.creator && (
+                      {item.type === 'update' && item.creator && (
                         <div className="flex items-center gap-2 mt-3 text-sm text-gray-500">
                           <Avatar
-                            src={update.creator.avatar_url}
-                            name={update.creator.full_name}
+                            src={item.creator.avatar_url}
+                            name={item.creator.full_name}
                             size="xs"
                           />
-                          <span>{update.creator.full_name}</span>
+                          <span>{item.creator.full_name}</span>
                           <span className="text-gray-300">•</span>
-                          <span>{formatDate(update.posted_at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+                          <span>{formatDate(item.posted_at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
                         </div>
                       )}
                     </div>
