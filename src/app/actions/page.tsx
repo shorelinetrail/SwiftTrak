@@ -82,6 +82,45 @@ function ActionsPageContent() {
   const [sortColumn, setSortColumn] = useState<SortColumn>('created_at');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
+  // Restore filter/sort state from sessionStorage on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem('actionListState');
+      if (saved) {
+        try {
+          const state = JSON.parse(saved);
+          if (state.searchQuery) setSearchQuery(state.searchQuery);
+          if (state.statusFilter) setStatusFilter(state.statusFilter);
+          if (state.workstreamFilter) setWorkstreamFilter(state.workstreamFilter);
+          if (state.priorityFilter) setPriorityFilter(state.priorityFilter);
+          if (state.activeTab) setActiveTab(state.activeTab);
+          if (state.sortColumn) setSortColumn(state.sortColumn);
+          if (state.sortDirection) setSortDirection(state.sortDirection);
+          if (state.viewMode) setViewMode(state.viewMode);
+        } catch {
+          // Invalid JSON, ignore
+        }
+      }
+    }
+  }, []);
+
+  // Save filter/sort state to sessionStorage when they change
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const state = {
+        searchQuery,
+        statusFilter,
+        workstreamFilter,
+        priorityFilter,
+        activeTab,
+        sortColumn,
+        sortDirection,
+        viewMode,
+      };
+      sessionStorage.setItem('actionListState', JSON.stringify(state));
+    }
+  }, [searchQuery, statusFilter, workstreamFilter, priorityFilter, activeTab, sortColumn, sortDirection, viewMode]);
+
   const fetchActions = useCallback(async () => {
     const supabase = createClient();
 
