@@ -283,102 +283,101 @@ export default function DashboardPage() {
 
           const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
 
-          // Process recently updated actions
-          if (recentlyUpdatedData) {
-            const actionsWithEffectiveDate = (recentlyUpdatedData as (Action & { owner?: User; workstream?: Workstream })[])
-              .map(action => {
-                let effectiveDate: string | undefined = undefined;
-                const createdAtTime = new Date(action.created_at).getTime();
-                const isLegacyImport = createdAtTime < sevenDaysAgo;
+          // Fetch recent audit entries first, then get corresponding actions
+          // This ensures only actions with actual recent activity show up (not bulk imports)
+          let auditData: { id: string; action_id: string; change_type: string; old_value?: string; new_value?: string; created_at: string }[] | null = null;
+          const { data: auditWithFilter, error: filterError } = await supabase
+            .from('action_audit')
+            .select('id, action_id, change_type, old_value, new_value, created_at, hide_from_recent')
+            .gte('created_at', new Date(sevenDaysAgo).toISOString())
+            .eq('hide_from_recent', false)
+            .order('created_at', { ascending: false })
+            .limit(20);
 
-                if (action.status === 'complete') {
-                  // Completed actions: use completed_at
-                  if (action.completed_at) {
-                    effectiveDate = action.completed_at;
-                  }
-                } else if (isLegacyImport) {
-                  // Legacy imports with old created_at: use created_at (will be filtered out)
-                  effectiveDate = action.created_at;
-                } else if (new Date(action.updated_at).getTime() - createdAtTime < 60000) {
-                  // New action (created recently): use created_at
-                  effectiveDate = action.created_at;
-                } else {
-                  // Recently modified action: use updated_at
-                  effectiveDate = action.updated_at;
-                }
-                return { ...action, effective_date: effectiveDate };
-              })
-              .filter((action): action is typeof action & { effective_date: string } =>
-                !!action.effective_date && new Date(action.effective_date).getTime() >= sevenDaysAgo)
-              .sort((a, b) => new Date(b.effective_date!).getTime() - new Date(a.effective_date!).getTime())
-              .slice(0, 5);
+          if (filterError) {
+            const { data: auditWithoutFilter } = await supabase
+              .from('action_audit')
+              .select('id, action_id, change_type, old_value, new_value, created_at')
+              .gte('created_at', new Date(sevenDaysAgo).toISOString())
+              .order('created_at', { ascending: false })
+              .limit(20);
+            auditData = auditWithoutFilter;
+          } else {
+            auditData = auditWithFilter;
+          }
 
-            // Fetch audit entries for actions
-            const actionIds = actionsWithEffectiveDate.map(a => a.id);
-            if (actionIds.length > 0) {
-              let auditData: { id: string; action_id: string; change_type: string; old_value?: string; new_value?: string; created_at: string }[] | null = null;
-              const { data: auditWithFilter, error: filterError } = await supabase
-                .from('action_audit')
-                .select('id, action_id, change_type, old_value, new_value, created_at, hide_from_recent')
-                .in('action_id', actionIds)
-                .eq('hide_from_recent', false)
-                .order('created_at', { ascending: false });
+          if (auditData && auditData.length > 0) {
+            // Get unique action IDs from audit entries (most recent first)
+            const seenActionIds = new Set<string>();
+            const latestAuditByAction = new Map<string, { id: string; change_type: string; old_value?: string; new_value?: string; created_at: string }>();
 
-              if (filterError) {
-                const { data: auditWithoutFilter } = await supabase
-                  .from('action_audit')
-                  .select('id, action_id, change_type, old_value, new_value, created_at')
-                  .in('action_id', actionIds)
-                  .order('created_at', { ascending: false });
-                auditData = auditWithoutFilter;
-              } else {
-                auditData = auditWithFilter;
+            for (const entry of auditData) {
+              if (!seenActionIds.has(entry.action_id)) {
+                seenActionIds.add(entry.action_id);
+                latestAuditByAction.set(entry.action_id, entry);
               }
+            }
 
-              const latestAuditByAction = new Map<string, { id: string; change_type: string; old_value?: string; new_value?: string }>();
-              if (auditData) {
-                for (const entry of auditData) {
-                  if (!latestAuditByAction.has(entry.action_id)) {
-                    latestAuditByAction.set(entry.action_id, entry as { id: string; change_type: string; old_value?: string; new_value?: string });
-                  }
-                }
-              }
+            // Fetch action details for the actions with recent audit entries
+            const actionIds = Array.from(seenActionIds).slice(0, 5);
+            const { data: actionsData } = await supabase
+              .from('actions')
+              .select(`*, owner:users!actions_owner_id_fkey(id, full_name, avatar_url), workstream:workstreams(id, name, color, parent_id)`)
+              .in('id', actionIds);
 
-              const actionsWithChanges = actionsWithEffectiveDate.map(action => {
-                const audit = latestAuditByAction.get(action.id);
-                let last_change = '';
-                let audit_id: string | undefined;
-                if (audit) {
-                  audit_id = audit.id;
-                  switch (audit.change_type) {
-                    case 'status_changed':
-                      last_change = audit.new_value === 'complete' ? 'Marked complete' : `Status → ${audit.new_value?.replace('_', ' ')}`;
-                      break;
-                    case 'owner_changed':
-                      last_change = 'Owner changed';
-                      break;
-                    case 'priority_changed':
-                      last_change = `Priority → ${audit.new_value}`;
-                      break;
-                    case 'due_date_changed':
-                      last_change = 'Due date changed';
-                      break;
-                    case 'update_added':
-                      last_change = 'Update posted';
-                      break;
-                    case 'created':
-                      last_change = 'Created';
-                      break;
-                    default:
-                      last_change = 'Updated';
+            if (actionsData) {
+              // Build actions with audit info, sorted by audit entry time
+              const actionsWithChanges = actionIds
+                .map(actionId => {
+                  const action = actionsData.find(a => a.id === actionId);
+                  if (!action) return null;
+
+                  const audit = latestAuditByAction.get(actionId);
+                  let last_change = '';
+                  let audit_id: string | undefined;
+                  let effective_date = audit?.created_at || action.updated_at;
+
+                  if (audit) {
+                    audit_id = audit.id;
+                    switch (audit.change_type) {
+                      case 'status_changed':
+                        last_change = audit.new_value === 'complete' ? 'Marked complete' : `Status → ${audit.new_value?.replace('_', ' ')}`;
+                        break;
+                      case 'owner_changed':
+                        last_change = 'Owner changed';
+                        break;
+                      case 'priority_changed':
+                        last_change = `Priority → ${audit.new_value}`;
+                        break;
+                      case 'due_date_changed':
+                        last_change = 'Due date changed';
+                        break;
+                      case 'update_added':
+                        last_change = 'Update posted';
+                        break;
+                      case 'created':
+                        last_change = 'Created';
+                        break;
+                      default:
+                        last_change = 'Updated';
+                    }
                   }
-                }
-                return { ...action, last_change, audit_id };
-              });
+
+                  return {
+                    ...action,
+                    last_change,
+                    audit_id,
+                    effective_date,
+                  } as RecentlyUpdatedAction;
+                })
+                .filter((a): a is RecentlyUpdatedAction => a !== null);
+
               setRecentlyUpdated(actionsWithChanges);
             } else {
               setRecentlyUpdated([]);
             }
+          } else {
+            setRecentlyUpdated([]);
           }
 
           // Combine updates and closed threats for the Recent Updates section
