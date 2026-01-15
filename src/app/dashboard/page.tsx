@@ -94,7 +94,7 @@ export default function DashboardPage() {
       totalActions: filteredActions.length,
       completedActions: filteredActions.filter(a => a.status === 'complete').length,
       overdueActions: filteredActions.filter(a => a.due_date && new Date(a.due_date) < now && a.status !== 'complete' && a.status !== 'cancelled').length,
-      criticalActions: filteredActions.filter(a => a.priority === 'critical' && a.status !== 'complete' && a.status !== 'cancelled').length,
+      criticalActions: filteredActions.filter(a => (a.priority === 'critical' || a.priority === 'high') && a.status !== 'complete' && a.status !== 'cancelled').length,
       totalThreats: filteredThreats.length,
       highRiskThreats: filteredThreats.filter(t => t.current_risk === 'high').length,
       pendingQueries: allQueries.filter(q => !q.responded_at).length, // Queries aren't workstream-specific in the same way
@@ -406,12 +406,12 @@ export default function DashboardPage() {
       <div className="p-6 space-y-6">
         {/* Stats Grid - Clickable Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Link href={`/actions?priority=critical${selectedWorkstream !== 'all' ? `&workstream=${selectedWorkstream}` : ''}`}>
+          <Link href={`/actions?priority=critical,high${selectedWorkstream !== 'all' ? `&workstream=${selectedWorkstream}` : ''}`}>
             <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white border-0 cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all">
               <CardContent className="pt-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-red-100 text-sm font-medium">Critical Actions</p>
+                    <p className="text-red-100 text-sm font-medium">High Priority Actions</p>
                     <p className="text-3xl font-bold mt-1">{stats?.criticalActions || 0}</p>
                   </div>
                   <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">

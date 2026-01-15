@@ -82,27 +82,52 @@ function ActionsPageContent() {
   const [sortColumn, setSortColumn] = useState<SortColumn>('created_at');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
-  // Restore filter/sort state from sessionStorage on mount
+  // Restore filter/sort state from URL params or sessionStorage on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const saved = sessionStorage.getItem('actionListState');
-      if (saved) {
-        try {
-          const state = JSON.parse(saved);
-          if (state.searchQuery) setSearchQuery(state.searchQuery);
-          if (state.statusFilter) setStatusFilter(state.statusFilter);
-          if (state.workstreamFilter) setWorkstreamFilter(state.workstreamFilter);
-          if (state.priorityFilter) setPriorityFilter(state.priorityFilter);
-          if (state.activeTab) setActiveTab(state.activeTab);
-          if (state.sortColumn) setSortColumn(state.sortColumn);
-          if (state.sortDirection) setSortDirection(state.sortDirection);
-          if (state.viewMode) setViewMode(state.viewMode);
-        } catch {
-          // Invalid JSON, ignore
+      // URL params take precedence over sessionStorage
+      const urlPriority = searchParams.get('priority');
+      const urlStatus = searchParams.get('status');
+      const urlWorkstream = searchParams.get('workstream');
+
+      if (urlPriority || urlStatus || urlWorkstream) {
+        // Apply URL params
+        if (urlPriority) {
+          setPriorityFilter(urlPriority.split(','));
+        }
+        if (urlStatus) {
+          if (urlStatus === 'overdue') {
+            setActiveTab('overdue');
+          } else {
+            setStatusFilter(urlStatus.split(','));
+          }
+        }
+        if (urlWorkstream) {
+          setWorkstreamFilter(urlWorkstream);
+        }
+        // Clear sessionStorage to avoid conflict on next visit
+        sessionStorage.removeItem('actionListState');
+      } else {
+        // Fall back to sessionStorage
+        const saved = sessionStorage.getItem('actionListState');
+        if (saved) {
+          try {
+            const state = JSON.parse(saved);
+            if (state.searchQuery) setSearchQuery(state.searchQuery);
+            if (state.statusFilter) setStatusFilter(state.statusFilter);
+            if (state.workstreamFilter) setWorkstreamFilter(state.workstreamFilter);
+            if (state.priorityFilter) setPriorityFilter(state.priorityFilter);
+            if (state.activeTab) setActiveTab(state.activeTab);
+            if (state.sortColumn) setSortColumn(state.sortColumn);
+            if (state.sortDirection) setSortDirection(state.sortDirection);
+            if (state.viewMode) setViewMode(state.viewMode);
+          } catch {
+            // Invalid JSON, ignore
+          }
         }
       }
     }
-  }, []);
+  }, [searchParams]);
 
   // Save filter/sort state to sessionStorage when they change
   useEffect(() => {
