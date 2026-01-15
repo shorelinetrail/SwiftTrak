@@ -66,6 +66,7 @@ export default function VendorDetailPage() {
   // Form states
   const [vendorForm, setVendorForm] = useState({
     name: '',
+    vendor_number: '',
     notes: '',
   });
 
@@ -135,6 +136,7 @@ export default function VendorDetailPage() {
     setVendor(vendorRes.data as VendorWithRelations);
     setVendorForm({
       name: vendorRes.data.name,
+      vendor_number: vendorRes.data.vendor_number || '',
       notes: vendorRes.data.notes || '',
     });
 
@@ -177,11 +179,15 @@ export default function VendorDetailPage() {
       if (vendor?.name !== vendorForm.name) {
         changes.push({ field: 'name', old_value: vendor?.name || '', new_value: vendorForm.name });
       }
+      if (vendor?.vendor_number !== vendorForm.vendor_number) {
+        changes.push({ field: 'vendor_number', old_value: vendor?.vendor_number || '', new_value: vendorForm.vendor_number });
+      }
 
       const { error } = await supabase
         .from('vendors')
         .update({
           name: vendorForm.name.trim(),
+          vendor_number: vendorForm.vendor_number.trim() || null,
           notes: vendorForm.notes.trim() || null,
           updated_at: new Date().toISOString(),
         })
@@ -592,8 +598,13 @@ export default function VendorDetailPage() {
           <Card>
             <CardContent className="pt-6">
               {/* Title and Actions Row */}
-              <div className="flex items-start justify-between gap-4 mb-6">
-                <h1 className="text-2xl font-bold text-gray-900">{vendor.name}</h1>
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <div>
+                  {vendor.vendor_number && (
+                    <span className="text-sm font-mono text-gray-500 block mb-1">{vendor.vendor_number}</span>
+                  )}
+                  <h1 className="text-2xl font-bold text-gray-900">{vendor.name}</h1>
+                </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   {canEdit && (
                     <Button variant="outline" size="sm" onClick={() => setEditVendorModalOpen(true)}>
@@ -917,12 +928,20 @@ export default function VendorDetailPage() {
         title="Edit Vendor"
       >
         <div className="space-y-4">
-          <Input
-            label="Vendor Name"
-            value={vendorForm.name}
-            onChange={(e) => setVendorForm({ ...vendorForm, name: e.target.value })}
-            required
-          />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input
+              label="Vendor Name"
+              value={vendorForm.name}
+              onChange={(e) => setVendorForm({ ...vendorForm, name: e.target.value })}
+              required
+            />
+            <Input
+              label="Vendor Number"
+              value={vendorForm.vendor_number}
+              onChange={(e) => setVendorForm({ ...vendorForm, vendor_number: e.target.value })}
+              placeholder="e.g., V-001"
+            />
+          </div>
           <Textarea
             label="Notes"
             value={vendorForm.notes}

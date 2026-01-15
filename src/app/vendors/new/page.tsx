@@ -17,6 +17,7 @@ export default function NewVendorPage() {
 
   const [formData, setFormData] = useState({
     name: '',
+    vendor_number: '',
     contact_name: '',
     contact_email: '',
     contact_phone: '',
@@ -40,9 +41,7 @@ export default function NewVendorPage() {
         .from('vendors')
         .insert({
           name: formData.name.trim(),
-          contact_name: formData.contact_name.trim() || null,
-          contact_email: formData.contact_email.trim() || null,
-          contact_phone: formData.contact_phone.trim() || null,
+          vendor_number: formData.vendor_number.trim() || null,
           notes: formData.notes.trim() || null,
           created_by: user?.id,
         })
@@ -50,6 +49,19 @@ export default function NewVendorPage() {
         .single();
 
       if (error) throw error;
+
+      // Create primary contact if contact info was provided
+      const hasContactInfo = formData.contact_name.trim() || formData.contact_email.trim() || formData.contact_phone.trim();
+      if (hasContactInfo) {
+        await supabase.from('vendor_contacts').insert({
+          vendor_id: data.id,
+          name: formData.contact_name.trim() || 'Primary Contact',
+          email: formData.contact_email.trim() || null,
+          phone: formData.contact_phone.trim() || null,
+          is_primary: true,
+          created_by: user?.id,
+        });
+      }
 
       // Create audit entry
       await supabase.from('vendor_audit').insert({
@@ -83,36 +95,49 @@ export default function NewVendorPage() {
         <Card>
           <CardContent className="pt-6">
             <form onSubmit={handleSubmit} className="space-y-6">
-              <Input
-                label="Vendor Name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="Enter vendor name"
-                required
-              />
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Input
-                  label="Contact Name"
-                  value={formData.contact_name}
-                  onChange={(e) => setFormData({ ...formData, contact_name: e.target.value })}
-                  placeholder="Primary contact"
+                  label="Vendor Name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="Enter vendor name"
+                  required
                 />
                 <Input
-                  label="Contact Email"
-                  type="email"
-                  value={formData.contact_email}
-                  onChange={(e) => setFormData({ ...formData, contact_email: e.target.value })}
-                  placeholder="contact@vendor.com"
+                  label="Vendor Number"
+                  value={formData.vendor_number}
+                  onChange={(e) => setFormData({ ...formData, vendor_number: e.target.value })}
+                  placeholder="e.g., V-001"
                 />
               </div>
 
-              <Input
-                label="Contact Phone"
-                value={formData.contact_phone}
-                onChange={(e) => setFormData({ ...formData, contact_phone: e.target.value })}
-                placeholder="+44 123 456 7890"
-              />
+              <div className="border-t pt-6">
+                <h3 className="text-sm font-medium text-gray-700 mb-4">Primary Contact</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Input
+                    label="Contact Name"
+                    value={formData.contact_name}
+                    onChange={(e) => setFormData({ ...formData, contact_name: e.target.value })}
+                    placeholder="Primary contact name"
+                  />
+                  <Input
+                    label="Contact Email"
+                    type="email"
+                    value={formData.contact_email}
+                    onChange={(e) => setFormData({ ...formData, contact_email: e.target.value })}
+                    placeholder="contact@vendor.com"
+                  />
+                </div>
+
+                <div className="mt-4">
+                  <Input
+                    label="Contact Phone"
+                    value={formData.contact_phone}
+                    onChange={(e) => setFormData({ ...formData, contact_phone: e.target.value })}
+                    placeholder="+44 123 456 7890"
+                  />
+                </div>
+              </div>
 
               <Textarea
                 label="Notes"

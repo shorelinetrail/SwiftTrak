@@ -76,8 +76,9 @@ function VendorsPageContent() {
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(v => {
-        // Search vendor name
+        // Search vendor name and number
         if (v.name.toLowerCase().includes(query)) return true;
+        if (v.vendor_number?.toLowerCase().includes(query)) return true;
         // Search contacts
         const contacts = v.contacts || [];
         return contacts.some(c =>
@@ -310,7 +311,12 @@ function VendorsPageContent() {
                             <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
                               <BuildingOfficeIcon className="w-4 h-4 text-blue-600" />
                             </div>
-                            <span className="font-medium text-gray-900">{vendor.name}</span>
+                            <div>
+                              {vendor.vendor_number && (
+                                <span className="text-xs font-mono text-gray-500 block">{vendor.vendor_number}</span>
+                              )}
+                              <span className="font-medium text-gray-900">{vendor.name}</span>
+                            </div>
                           </div>
                         </td>
                         <td className="px-4 py-3">

@@ -302,6 +302,7 @@ export type VendorActivityStatus = 'planned' | 'confirmed' | 'in_progress' | 'co
 export interface Vendor {
   id: string;
   name: string;
+  vendor_number?: string;
   contact_name?: string;
   contact_email?: string;
   contact_phone?: string;
