@@ -3,7 +3,20 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password, full_name } = await request.json() as {
+    // Check for required environment variables
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.error('[API /auth/signup] SUPABASE_SERVICE_ROLE_KEY is not configured');
+      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
+    }
+
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+    }
+
+    const { email, password, full_name } = body as {
       email: string;
       password: string;
       full_name: string;
@@ -55,9 +68,12 @@ export async function POST(request: NextRequest) {
 
     if (pendingUser) {
       // Delete pending record and create new one with auth ID
-      await adminClient.from('users').delete().eq('id', pendingUser.id);
+      const { error: deleteError } = await adminClient.from('users').delete().eq('id', pendingUser.id);
+      if (deleteError) {
+        console.error('[API /auth/signup] Failed to delete pending user:', deleteError);
+      }
 
-      await adminClient.from('users').insert({
+      const { error: insertError } = await adminClient.from('users').insert({
         id: authData.user.id,
         email: pendingUser.email,
         full_name: pendingUser.full_name || full_name,
@@ -67,9 +83,13 @@ export async function POST(request: NextRequest) {
         invited_by: pendingUser.invited_by,
         invited_at: pendingUser.invited_at,
       });
+      if (insertError) {
+        console.error('[API /auth/signup] Failed to insert linked user:', insertError);
+        // User exists in auth, so still return success - profile API will create user record
+      }
     } else {
       // Create new user record
-      await adminClient.from('users').insert({
+      const { error: insertError } = await adminClient.from('users').insert({
         id: authData.user.id,
         email: email.toLowerCase(),
         full_name,
@@ -77,6 +97,10 @@ export async function POST(request: NextRequest) {
         status: 'active',
         auth_linked: true,
       });
+      if (insertError) {
+        console.error('[API /auth/signup] Failed to insert new user:', insertError);
+        // User exists in auth, so still return success - profile API will create user record
+      }
     }
 
     return NextResponse.json({
