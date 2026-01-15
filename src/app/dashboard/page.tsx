@@ -202,7 +202,7 @@ export default function DashboardPage() {
         setAllMilestones(milestonesData as { id: string; target_date: string; status: string; workstream_id: string | null }[]);
 
         const now = new Date();
-        const actionSelect = `*, owner:users!actions_owner_id_fkey(id, full_name, avatar_url), workstream:workstreams(id, name, color)`;
+        const actionSelect = `*, owner:users!actions_owner_id_fkey(id, full_name, avatar_url), workstream:workstreams(id, name, color, parent_id)`;
 
         // Fetch detailed data in parallel with timeout
         const detailResult = await Promise.race([
