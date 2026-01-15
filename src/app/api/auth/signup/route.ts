@@ -59,49 +59,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to create user' }, { status: 500 });
     }
 
-    // Check if there's a pending user record to link
-    const { data: pendingUser } = await adminClient
-      .from('users')
-      .select('*')
-      .eq('email', email.toLowerCase())
-      .single();
-
-    if (pendingUser) {
-      // Delete pending record and create new one with auth ID
-      const { error: deleteError } = await adminClient.from('users').delete().eq('id', pendingUser.id);
-      if (deleteError) {
-        console.error('[API /auth/signup] Failed to delete pending user:', deleteError);
-      }
-
-      const { error: insertError } = await adminClient.from('users').insert({
-        id: authData.user.id,
-        email: pendingUser.email,
-        full_name: pendingUser.full_name || full_name,
-        role: pendingUser.role,
-        status: 'active',
-        auth_linked: true,
-        invited_by: pendingUser.invited_by,
-        invited_at: pendingUser.invited_at,
-      });
-      if (insertError) {
-        console.error('[API /auth/signup] Failed to insert linked user:', insertError);
-        // User exists in auth, so still return success - profile API will create user record
-      }
-    } else {
-      // Create new user record
-      const { error: insertError } = await adminClient.from('users').insert({
-        id: authData.user.id,
-        email: email.toLowerCase(),
-        full_name,
-        role: 'view',
-        status: 'active',
-        auth_linked: true,
-      });
-      if (insertError) {
-        console.error('[API /auth/signup] Failed to insert new user:', insertError);
-        // User exists in auth, so still return success - profile API will create user record
-      }
-    }
+    // The database trigger `handle_new_user` automatically creates/links the user
+    // record in the users table when a new auth user is created.
+    // We don't need to do any additional database operations here.
 
     return NextResponse.json({
       success: true,
