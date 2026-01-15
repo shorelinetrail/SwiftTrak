@@ -764,7 +764,7 @@ export default function DashboardPage() {
           <Card>
             <CardHeader
               actions={
-                <Link href="/actions">
+                <Link href="/actions/recent">
                   <Button variant="ghost" size="sm">View All</Button>
                 </Link>
               }
