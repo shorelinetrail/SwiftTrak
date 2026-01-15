@@ -35,26 +35,23 @@ import type { Action, Threat, TechnicalQuery, Milestone, Workstream, User, Updat
 
 type RecentlyUpdatedAction = Action & { owner?: User; workstream?: Workstream; last_change?: string; effective_date?: string; audit_id?: string };
 
-type RecentActivityItem = {
-  type: 'action' | 'threat';
-  id: string;
-  title: string;
-  workstream?: Workstream;
-  effective_date: string;
-  last_change: string;
-  // Action-specific
-  owner?: User;
-  priority?: Priority;
-  status?: ActionStatus;
-  audit_id?: string;
-  // Threat-specific
-  current_risk?: RiskLevel;
-};
 import { MegaphoneIcon } from '@heroicons/react/24/outline';
 
 type UpdateWithRelations = Update & {
   workstream?: Workstream;
   creator?: User;
+};
+
+type RecentUpdateItem = {
+  type: 'update' | 'threat';
+  id: string;
+  content: string;
+  posted_at: string;
+  workstream?: Workstream;
+  creator?: User;
+  // Threat-specific
+  threat_title?: string;
+  current_risk?: RiskLevel;
 };
 
 interface DashboardStats {
@@ -79,11 +76,11 @@ export default function DashboardPage() {
   const [allQueries, setAllQueries] = useState<{ id: string; responded_at: string | null }[]>([]);
   const [allMilestones, setAllMilestones] = useState<{ id: string; target_date: string; status: string; workstream_id: string | null }[]>([]);
   const [myActions, setMyActions] = useState<(Action & { owner?: User; workstream?: Workstream })[]>([]);
-  const [recentActivity, setRecentActivity] = useState<RecentActivityItem[]>([]);
+  const [recentlyUpdated, setRecentlyUpdated] = useState<RecentlyUpdatedAction[]>([]);
   const [recentThreats, setRecentThreats] = useState<(Threat & { workstream?: Workstream })[]>([]);
   const [pendingQueries, setPendingQueries] = useState<(TechnicalQuery & { assignee?: User })[]>([]);
   const [upcomingMilestones, setUpcomingMilestones] = useState<(Milestone & { workstream?: Workstream })[]>([]);
-  const [recentUpdates, setRecentUpdates] = useState<UpdateWithRelations[]>([]);
+  const [recentUpdateItems, setRecentUpdateItems] = useState<RecentUpdateItem[]>([]);
 
   // Workstream filter options with hierarchy
   const workstreamOptions = useMemo(() =>
@@ -131,11 +128,11 @@ export default function DashboardPage() {
     [myActions, selectedWorkstream]
   );
 
-  const filteredRecentActivity = useMemo(() =>
+  const filteredRecentlyUpdated = useMemo(() =>
     selectedWorkstream === 'all'
-      ? recentActivity
-      : recentActivity.filter(a => a.workstream?.id === selectedWorkstream),
-    [recentActivity, selectedWorkstream]
+      ? recentlyUpdated
+      : recentlyUpdated.filter(a => a.workstream_id === selectedWorkstream),
+    [recentlyUpdated, selectedWorkstream]
   );
 
   const filteredRecentThreats = useMemo(() =>
@@ -285,33 +282,39 @@ export default function DashboardPage() {
           }
 
           const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-          const activityItems: RecentActivityItem[] = [];
 
-          // Process actions into activity items
+          // Process recently updated actions
           if (recentlyUpdatedData) {
-            // Calculate effective date for each action
             const actionsWithEffectiveDate = (recentlyUpdatedData as (Action & { owner?: User; workstream?: Workstream })[])
               .map(action => {
                 let effectiveDate: string | undefined = undefined;
+                const createdAtTime = new Date(action.created_at).getTime();
+                const isLegacyImport = createdAtTime < sevenDaysAgo;
 
                 if (action.status === 'complete') {
+                  // Completed actions: use completed_at
                   if (action.completed_at) {
                     effectiveDate = action.completed_at;
                   }
-                } else if (new Date(action.updated_at).getTime() - new Date(action.created_at).getTime() < 60000) {
+                } else if (isLegacyImport) {
+                  // Legacy imports with old created_at: use created_at (will be filtered out)
+                  effectiveDate = action.created_at;
+                } else if (new Date(action.updated_at).getTime() - createdAtTime < 60000) {
+                  // New action (created recently): use created_at
                   effectiveDate = action.created_at;
                 } else {
+                  // Recently modified action: use updated_at
                   effectiveDate = action.updated_at;
                 }
                 return { ...action, effective_date: effectiveDate };
               })
               .filter((action): action is typeof action & { effective_date: string } =>
-                !!action.effective_date && new Date(action.effective_date).getTime() >= sevenDaysAgo);
+                !!action.effective_date && new Date(action.effective_date).getTime() >= sevenDaysAgo)
+              .sort((a, b) => new Date(b.effective_date!).getTime() - new Date(a.effective_date!).getTime())
+              .slice(0, 5);
 
             // Fetch audit entries for actions
             const actionIds = actionsWithEffectiveDate.map(a => a.id);
-            let auditMap = new Map<string, { id: string; change_type: string; old_value?: string; new_value?: string }>();
-
             if (actionIds.length > 0) {
               let auditData: { id: string; action_id: string; change_type: string; old_value?: string; new_value?: string; created_at: string }[] | null = null;
               const { data: auditWithFilter, error: filterError } = await supabase
@@ -332,95 +335,101 @@ export default function DashboardPage() {
                 auditData = auditWithFilter;
               }
 
+              const latestAuditByAction = new Map<string, { id: string; change_type: string; old_value?: string; new_value?: string }>();
               if (auditData) {
                 for (const entry of auditData) {
-                  if (!auditMap.has(entry.action_id)) {
-                    auditMap.set(entry.action_id, entry as { id: string; change_type: string; old_value?: string; new_value?: string });
+                  if (!latestAuditByAction.has(entry.action_id)) {
+                    latestAuditByAction.set(entry.action_id, entry as { id: string; change_type: string; old_value?: string; new_value?: string });
                   }
                 }
               }
-            }
 
-            // Transform actions to activity items
-            for (const action of actionsWithEffectiveDate) {
-              const audit = auditMap.get(action.id);
-              let last_change = 'Updated';
-              let audit_id: string | undefined;
-
-              if (audit) {
-                audit_id = audit.id;
-                switch (audit.change_type) {
-                  case 'status_changed':
-                    last_change = audit.new_value === 'complete' ? 'Marked complete' : `Status → ${audit.new_value?.replace('_', ' ')}`;
-                    break;
-                  case 'owner_changed':
-                    last_change = 'Owner changed';
-                    break;
-                  case 'priority_changed':
-                    last_change = `Priority → ${audit.new_value}`;
-                    break;
-                  case 'due_date_changed':
-                    last_change = 'Due date changed';
-                    break;
-                  case 'update_added':
-                    last_change = 'Update posted';
-                    break;
-                  case 'created':
-                    last_change = 'Created';
-                    break;
+              const actionsWithChanges = actionsWithEffectiveDate.map(action => {
+                const audit = latestAuditByAction.get(action.id);
+                let last_change = '';
+                let audit_id: string | undefined;
+                if (audit) {
+                  audit_id = audit.id;
+                  switch (audit.change_type) {
+                    case 'status_changed':
+                      last_change = audit.new_value === 'complete' ? 'Marked complete' : `Status → ${audit.new_value?.replace('_', ' ')}`;
+                      break;
+                    case 'owner_changed':
+                      last_change = 'Owner changed';
+                      break;
+                    case 'priority_changed':
+                      last_change = `Priority → ${audit.new_value}`;
+                      break;
+                    case 'due_date_changed':
+                      last_change = 'Due date changed';
+                      break;
+                    case 'update_added':
+                      last_change = 'Update posted';
+                      break;
+                    case 'created':
+                      last_change = 'Created';
+                      break;
+                    default:
+                      last_change = 'Updated';
+                  }
                 }
-              }
+                return { ...action, last_change, audit_id };
+              });
+              setRecentlyUpdated(actionsWithChanges);
+            } else {
+              setRecentlyUpdated([]);
+            }
+          }
 
-              activityItems.push({
-                type: 'action',
-                id: action.id,
-                title: action.title,
-                workstream: action.workstream,
-                effective_date: action.effective_date,
-                last_change,
-                owner: action.owner,
-                priority: action.priority as Priority,
-                status: action.status as ActionStatus,
-                audit_id,
+          // Combine updates and closed threats for the Recent Updates section
+          const updateItems: RecentUpdateItem[] = [];
+
+          // Add regular updates
+          if (recentUpdatesData) {
+            for (const update of recentUpdatesData as UpdateWithRelations[]) {
+              updateItems.push({
+                type: 'update',
+                id: update.id,
+                content: update.content,
+                posted_at: update.posted_at,
+                workstream: update.workstream,
+                creator: update.creator,
               });
             }
           }
 
-          // Fetch and process recently closed threats
+          // Fetch and add recently closed threats
           const { data: closedThreatsData } = await supabase
             .from('threats')
             .select(`*, workstream:workstreams(id, name, color, parent_id)`)
             .eq('status', 'closed')
             .gte('updated_at', new Date(sevenDaysAgo).toISOString())
             .order('updated_at', { ascending: false })
-            .limit(10);
+            .limit(5);
 
           if (closedThreatsData) {
             for (const threat of closedThreatsData as (Threat & { workstream?: Workstream })[]) {
-              activityItems.push({
+              updateItems.push({
                 type: 'threat',
                 id: threat.id,
-                title: threat.title,
+                content: `Threat closed: ${threat.title}`,
+                posted_at: threat.updated_at,
                 workstream: threat.workstream,
-                effective_date: threat.updated_at,
-                last_change: 'Threat closed',
+                threat_title: threat.title,
                 current_risk: threat.current_risk as RiskLevel,
               });
             }
           }
 
-          // Sort all activity by effective date and take top 5
-          activityItems.sort((a, b) => new Date(b.effective_date).getTime() - new Date(a.effective_date).getTime());
-          setRecentActivity(activityItems.slice(0, 5));
+          // Sort by posted_at and set
+          updateItems.sort((a, b) => new Date(b.posted_at).getTime() - new Date(a.posted_at).getTime());
+          setRecentUpdateItems(updateItems);
 
           if (recentThreatsData) {
             setRecentThreats(recentThreatsData as unknown as (Threat & { workstream?: Workstream })[]);
           }
           if (upcomingMilestonesData) {
             setUpcomingMilestones(upcomingMilestonesData as unknown as (Milestone & { workstream?: Workstream })[]);
-          }
-          if (recentUpdatesData) {
-            setRecentUpdates(recentUpdatesData as unknown as UpdateWithRelations[]);
           }
         }
 
@@ -471,13 +480,12 @@ export default function DashboardPage() {
   // Real-time updates disabled temporarily for stability
   // TODO: Re-enable with proper memoization
 
-  // Handler to hide an item from recent activity
-  const handleHideFromRecent = async (e: React.MouseEvent, item: RecentActivityItem) => {
+  // Handler to hide an action from recently updated
+  const handleHideFromRecent = async (e: React.MouseEvent, action: RecentlyUpdatedAction) => {
     e.preventDefault();
     e.stopPropagation();
 
-    // Only actions with audit_id can be hidden
-    if (item.type !== 'action' || !item.audit_id) {
+    if (!action.audit_id) {
       toast.error('Cannot hide this entry');
       return;
     }
@@ -486,7 +494,7 @@ export default function DashboardPage() {
     const { error } = await supabase
       .from('action_audit')
       .update({ hide_from_recent: true })
-      .eq('id', item.audit_id);
+      .eq('id', action.audit_id);
 
     if (error) {
       console.error('[Dashboard] Error hiding action:', error);
@@ -495,7 +503,7 @@ export default function DashboardPage() {
     }
 
     // Remove from state
-    setRecentActivity(prev => prev.filter(a => a.id !== item.id));
+    setRecentlyUpdated(prev => prev.filter(a => a.id !== action.id));
     toast.success('Hidden from recent updates');
   };
 
@@ -632,7 +640,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Updates Ticker */}
-        {recentUpdates.length > 0 && (
+        {recentUpdateItems.length > 0 && (
           <Card className="bg-gradient-to-r from-red-50 to-orange-50 border-red-100">
             <CardHeader
               actions={
@@ -648,34 +656,53 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {recentUpdates.slice(0, 3).map((update) => (
+                {recentUpdateItems.slice(0, 3).map((item) => (
                   <div
-                    key={update.id}
+                    key={`${item.type}-${item.id}`}
                     className="flex items-start gap-3 p-3 bg-white rounded-lg border border-red-100"
                   >
+                    {item.type === 'threat' && (
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+                        <CheckCircleIcon className="w-4 h-4 text-green-600" />
+                      </div>
+                    )}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-900 whitespace-pre-wrap">{update.content}</p>
+                      {item.type === 'threat' ? (
+                        <Link href={`/threats/${item.id}`} className="block hover:underline">
+                          <p className="text-sm text-gray-900">
+                            <span className="font-medium">Threat closed:</span> {item.threat_title}
+                          </p>
+                        </Link>
+                      ) : (
+                        <p className="text-sm text-gray-900 whitespace-pre-wrap">{item.content}</p>
+                      )}
                       <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
-                        {update.creator && (
+                        {item.type === 'update' && item.creator && (
                           <>
-                            <Avatar src={update.creator.avatar_url} name={update.creator.full_name} size="xs" />
-                            <span>{update.creator.full_name}</span>
+                            <Avatar src={item.creator.avatar_url} name={item.creator.full_name} size="xs" />
+                            <span>{item.creator.full_name}</span>
                             <span className="text-gray-300">•</span>
                           </>
                         )}
-                        <span>{getRelativeTime(update.posted_at)}</span>
-                        {update.workstream && (
+                        <span>{getRelativeTime(item.posted_at)}</span>
+                        {item.workstream && (
                           <>
                             <span className="text-gray-300">•</span>
                             <span
                               className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium"
                               style={{
-                                backgroundColor: `${update.workstream.color}20`,
-                                color: update.workstream.color,
+                                backgroundColor: `${item.workstream.color}20`,
+                                color: item.workstream.color,
                               }}
                             >
-                              {getWorkstreamDisplayName(update.workstream, workstreams)}
+                              {getWorkstreamDisplayName(item.workstream, workstreams)}
                             </span>
+                          </>
+                        )}
+                        {item.type === 'threat' && item.current_risk && (
+                          <>
+                            <span className="text-gray-300">•</span>
+                            <RiskBadge risk={item.current_risk} />
                           </>
                         )}
                       </div>
@@ -689,7 +716,7 @@ export default function DashboardPage() {
 
         {/* Main Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Recent Activity */}
+          {/* Recently Updated Actions */}
           <Card>
             <CardHeader
               actions={
@@ -700,64 +727,49 @@ export default function DashboardPage() {
             >
               <CardTitle className="flex items-center gap-2">
                 <ArrowPathIcon className="w-5 h-5 text-gray-400" />
-                Recent Activity
+                Recently Updated Actions
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {filteredRecentActivity.length === 0 ? (
+              {filteredRecentlyUpdated.length === 0 ? (
                 <EmptyState
                   icon={<ArrowPathIcon className="w-6 h-6" />}
                   title="No recent activity"
-                  description="No actions or threats have been updated recently."
+                  description="No actions have been updated recently."
                 />
               ) : (
                 <div className="space-y-3">
-                  {filteredRecentActivity.map((item) => (
+                  {filteredRecentlyUpdated.map((action) => (
                     <Link
-                      key={`${item.type}-${item.id}`}
-                      href={item.type === 'action' ? `/actions/${item.id}` : `/threats/${item.id}`}
+                      key={action.id}
+                      href={`/actions/${action.id}`}
                       className="group block p-3 rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            {item.type === 'threat' && (
-                              <ExclamationTriangleIcon className="w-4 h-4 text-amber-500 flex-shrink-0" />
-                            )}
-                            <h4 className="text-sm font-medium text-gray-900 truncate">{item.title}</h4>
-                            {item.type === 'action' && item.priority && (
-                              <PriorityBadge priority={item.priority} />
-                            )}
-                            {item.type === 'threat' && item.current_risk && (
-                              <RiskBadge risk={item.current_risk} />
-                            )}
+                            <h4 className="text-sm font-medium text-gray-900 truncate">{action.title}</h4>
+                            <PriorityBadge priority={action.priority} />
                           </div>
                           <div className="flex items-center gap-2 mt-1">
-                            {item.workstream && (
+                            {action.workstream && (
                               <span
                                 className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
                                 style={{
-                                  backgroundColor: `${item.workstream.color}20`,
-                                  color: item.workstream.color,
+                                  backgroundColor: `${action.workstream.color}20`,
+                                  color: action.workstream.color,
                                 }}
                               >
-                                {getWorkstreamDisplayName(item.workstream, workstreams)}
+                                {getWorkstreamDisplayName(action.workstream, workstreams)}
                               </span>
                             )}
-                            {item.type === 'action' && item.status && (
-                              <StatusBadge status={item.status} />
-                            )}
-                            {item.type === 'threat' && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
-                                Closed
-                              </span>
-                            )}
+                            <StatusBadge status={action.status} />
                           </div>
                         </div>
                         <div className="flex items-start gap-2">
-                          {canAdmin && item.type === 'action' && item.audit_id && (
+                          {canAdmin && action.audit_id && (
                             <button
-                              onClick={(e) => handleHideFromRecent(e, item)}
+                              onClick={(e) => handleHideFromRecent(e, action)}
                               className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-all"
                               title="Hide from recent updates"
                             >
@@ -765,13 +777,13 @@ export default function DashboardPage() {
                             </button>
                           )}
                           <div className="flex flex-col items-end gap-1">
-                            {item.type === 'action' && item.owner && (
-                              <Avatar src={item.owner.avatar_url} name={item.owner.full_name} size="xs" />
+                            {action.owner && (
+                              <Avatar src={action.owner.avatar_url} name={action.owner.full_name} size="xs" />
                             )}
                             <span className="text-xs text-gray-500">
-                              {item.last_change && <span className="font-medium text-gray-600">{item.last_change}</span>}
-                              {item.last_change && ' · '}
-                              {getRelativeTime(item.effective_date)}
+                              {action.last_change && <span className="font-medium text-gray-600">{action.last_change}</span>}
+                              {action.last_change && ' · '}
+                              {getRelativeTime(action.effective_date || action.updated_at)}
                             </span>
                           </div>
                         </div>
