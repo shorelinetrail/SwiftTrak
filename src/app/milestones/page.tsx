@@ -162,6 +162,7 @@ export default function MilestonesPage() {
                 <MilestoneCard
                   key={milestone.id}
                   milestone={milestone}
+                  workstreams={workstreams}
                   onToggleComplete={canEdit ? () => handleToggleComplete(milestone) : undefined}
                   canEdit={canEdit}
                 />
@@ -179,6 +180,7 @@ export default function MilestonesPage() {
                 <MilestoneCard
                   key={milestone.id}
                   milestone={milestone}
+                  workstreams={workstreams}
                   onToggleComplete={canEdit ? () => handleToggleComplete(milestone) : undefined}
                   canEdit={canEdit}
                 />
@@ -205,10 +207,12 @@ export default function MilestonesPage() {
 
 function MilestoneCard({
   milestone,
+  workstreams,
   onToggleComplete,
   canEdit,
 }: {
   milestone: MilestoneWithRelations;
+  workstreams: Workstream[];
   onToggleComplete?: () => void;
   canEdit?: boolean;
 }) {

@@ -399,3 +399,34 @@ export interface ThreatActionLink {
   action?: Action;
   creator?: User;
 }
+
+export type UpdateSourceType = 'manual' | 'milestone_completed' | 'action_completed';
+
+export interface Update {
+  id: string;
+  content: string;
+  workstream_id?: string;
+  posted_at: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  is_pinned: boolean;
+  source_type?: UpdateSourceType;
+  source_id?: string;
+  // Joined fields
+  workstream?: Workstream;
+  creator?: User;
+}
+
+export interface SystemSetting {
+  id: string;
+  key: string;
+  value: Record<string, unknown>;
+  updated_by?: string;
+  updated_at: string;
+}
+
+export interface UpdatesConfig {
+  auto_log_completed_milestones: boolean;
+  auto_log_completed_actions: boolean;
+}

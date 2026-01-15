@@ -23,8 +23,9 @@ import {
   SwatchIcon,
   LinkIcon,
   ClipboardDocumentIcon,
+  Cog6ToothIcon,
 } from '@heroicons/react/24/outline';
-import type { User, Workstream, StakeholderLink, UserRole, UserStatus } from '@/types/database';
+import type { User, Workstream, StakeholderLink, UserRole, UserStatus, UpdatesConfig } from '@/types/database';
 
 export default function AdminPage() {
   const router = useRouter();
@@ -34,6 +35,10 @@ export default function AdminPage() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [stakeholderLinks, setStakeholderLinks] = useState<StakeholderLink[]>([]);
+  const [updatesConfig, setUpdatesConfig] = useState<UpdatesConfig>({
+    auto_log_completed_milestones: true,
+    auto_log_completed_actions: false,
+  });
   const [activeTab, setActiveTab] = useState('users');
 
   // Modal states
@@ -104,10 +109,11 @@ export default function AdminPage() {
         setCurrentUser(profile as User);
 
         // Step 4: Fetch admin data
-        const [usersResult, workstreamsResult, linksResult] = await Promise.all([
+        const [usersResult, workstreamsResult, linksResult, settingsResult] = await Promise.all([
           supabase.from('users').select('*').order('full_name'),
           supabase.from('workstreams').select('*').order('order_index'),
           supabase.from('stakeholder_links').select('*').order('created_at', { ascending: false }),
+          supabase.from('system_settings').select('*').eq('key', 'updates_config').single(),
         ]);
 
         if (!mounted) return;
@@ -115,6 +121,9 @@ export default function AdminPage() {
         if (usersResult.data) setUsers(usersResult.data as User[]);
         if (workstreamsResult.data) setWorkstreams(workstreamsResult.data as Workstream[]);
         if (linksResult.data) setStakeholderLinks(linksResult.data as StakeholderLink[]);
+        if (settingsResult.data?.value) {
+          setUpdatesConfig(settingsResult.data.value as UpdatesConfig);
+        }
 
         setLoading(false);
       } catch (error) {
@@ -137,15 +146,19 @@ export default function AdminPage() {
     const supabase = createClient();
 
     try {
-      const [usersResult, workstreamsResult, linksResult] = await Promise.all([
+      const [usersResult, workstreamsResult, linksResult, settingsResult] = await Promise.all([
         supabase.from('users').select('*').order('full_name'),
         supabase.from('workstreams').select('*').order('order_index'),
         supabase.from('stakeholder_links').select('*').order('created_at', { ascending: false }),
+        supabase.from('system_settings').select('*').eq('key', 'updates_config').single(),
       ]);
 
       if (usersResult.data) setUsers(usersResult.data as User[]);
       if (workstreamsResult.data) setWorkstreams(workstreamsResult.data as Workstream[]);
       if (linksResult.data) setStakeholderLinks(linksResult.data as StakeholderLink[]);
+      if (settingsResult.data?.value) {
+        setUpdatesConfig(settingsResult.data.value as UpdatesConfig);
+      }
     } catch (error) {
       console.error('[AdminPage] fetchData error:', error);
       toast.error('Failed to refresh data');
@@ -310,10 +323,32 @@ export default function AdminPage() {
     toast.success('Copied to clipboard');
   };
 
+  const handleUpdateUpdatesConfig = async (config: UpdatesConfig) => {
+    const supabase = createClient();
+
+    const { error } = await supabase
+      .from('system_settings')
+      .upsert({
+        key: 'updates_config',
+        value: config,
+        updated_by: currentUser?.id,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'key' });
+
+    if (error) {
+      toast.error('Failed to update settings');
+      console.error('[AdminPage] Failed to update settings:', error);
+    } else {
+      setUpdatesConfig(config);
+      toast.success('Settings updated');
+    }
+  };
+
   const tabs = [
     { id: 'users', label: 'Users', count: users.length },
     { id: 'workstreams', label: 'Workstreams', count: workstreams.length },
     { id: 'stakeholder', label: 'Stakeholder Links', count: stakeholderLinks.length },
+    { id: 'settings', label: 'Settings' },
   ];
 
   if (loading) {
@@ -521,6 +556,60 @@ export default function AdminPage() {
                     No stakeholder links created yet.
                   </p>
                 )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Settings Tab */}
+        {activeTab === 'settings' && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Cog6ToothIcon className="w-5 h-5 text-gray-400" />
+                Updates & Activity Settings
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-gray-500 mb-6">
+                Configure automatic logging of activity to the Updates feed.
+              </p>
+              <div className="space-y-4">
+                <label className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <p className="font-medium text-gray-900">Auto-log completed milestones</p>
+                    <p className="text-sm text-gray-500">
+                      Automatically post to Updates when a milestone is marked as completed
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={updatesConfig.auto_log_completed_milestones}
+                    onChange={(e) => handleUpdateUpdatesConfig({
+                      ...updatesConfig,
+                      auto_log_completed_milestones: e.target.checked,
+                    })}
+                    className="h-5 w-5 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <p className="font-medium text-gray-900">Auto-log completed actions</p>
+                    <p className="text-sm text-gray-500">
+                      Automatically post to Updates when an action is marked as complete
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={updatesConfig.auto_log_completed_actions}
+                    onChange={(e) => handleUpdateUpdatesConfig({
+                      ...updatesConfig,
+                      auto_log_completed_actions: e.target.checked,
+                    })}
+                    className="h-5 w-5 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                  />
+                </label>
               </div>
             </CardContent>
           </Card>

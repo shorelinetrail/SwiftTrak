@@ -29,7 +29,13 @@ import {
   BoltIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
-import type { Action, Threat, TechnicalQuery, Milestone, Workstream, User } from '@/types/database';
+import type { Action, Threat, TechnicalQuery, Milestone, Workstream, User, Update } from '@/types/database';
+import { MegaphoneIcon } from '@heroicons/react/24/outline';
+
+type UpdateWithRelations = Update & {
+  workstream?: Workstream;
+  creator?: User;
+};
 
 interface DashboardStats {
   totalActions: number;
@@ -52,12 +58,11 @@ export default function DashboardPage() {
   const [allQueries, setAllQueries] = useState<{ id: string; responded_at: string | null }[]>([]);
   const [allMilestones, setAllMilestones] = useState<{ id: string; target_date: string; status: string; workstream_id: string | null }[]>([]);
   const [myActions, setMyActions] = useState<(Action & { owner?: User; workstream?: Workstream })[]>([]);
-  const [overdueActions, setOverdueActions] = useState<(Action & { owner?: User; workstream?: Workstream })[]>([]);
-  const [highPriorityActions, setHighPriorityActions] = useState<(Action & { owner?: User; workstream?: Workstream })[]>([]);
   const [recentlyUpdated, setRecentlyUpdated] = useState<(Action & { owner?: User; workstream?: Workstream })[]>([]);
   const [recentThreats, setRecentThreats] = useState<(Threat & { workstream?: Workstream })[]>([]);
   const [pendingQueries, setPendingQueries] = useState<(TechnicalQuery & { assignee?: User })[]>([]);
   const [upcomingMilestones, setUpcomingMilestones] = useState<(Milestone & { workstream?: Workstream })[]>([]);
+  const [recentUpdates, setRecentUpdates] = useState<UpdateWithRelations[]>([]);
 
   // Workstream filter options with hierarchy
   const workstreamOptions = useMemo(() =>
@@ -103,20 +108,6 @@ export default function DashboardPage() {
       ? myActions
       : myActions.filter(a => a.workstream_id === selectedWorkstream),
     [myActions, selectedWorkstream]
-  );
-
-  const filteredOverdueActions = useMemo(() =>
-    selectedWorkstream === 'all'
-      ? overdueActions
-      : overdueActions.filter(a => a.workstream_id === selectedWorkstream),
-    [overdueActions, selectedWorkstream]
-  );
-
-  const filteredHighPriorityActions = useMemo(() =>
-    selectedWorkstream === 'all'
-      ? highPriorityActions
-      : highPriorityActions.filter(a => a.workstream_id === selectedWorkstream),
-    [highPriorityActions, selectedWorkstream]
   );
 
   const filteredRecentlyUpdated = useMemo(() =>
@@ -227,25 +218,6 @@ export default function DashboardPage() {
                   .limit(5)
                   .then(r => r.data)
               : Promise.resolve([]),
-            // Overdue Actions
-            supabase
-              .from('actions')
-              .select(actionSelect)
-              .lt('due_date', now.toISOString().split('T')[0])
-              .in('status', ['pending', 'in_progress'])
-              .order('due_date', { ascending: true })
-              .limit(5)
-              .then(r => r.data),
-            // High Priority Actions
-            supabase
-              .from('actions')
-              .select(actionSelect)
-              .in('priority', ['critical', 'high'])
-              .in('status', ['pending', 'in_progress'])
-              .order('priority', { ascending: true })
-              .order('updated_at', { ascending: false })
-              .limit(5)
-              .then(r => r.data),
             // Recently Updated Actions
             supabase
               .from('actions')
@@ -257,7 +229,7 @@ export default function DashboardPage() {
             // Active Threats (status is 'open' or null for open threats)
             supabase
               .from('threats')
-              .select(`*, workstream:workstreams(id, name, color)`)
+              .select(`*, workstream:workstreams(id, name, color, parent_id)`)
               .neq('status', 'closed')
               .order('updated_at', { ascending: false })
               .limit(5)
@@ -265,10 +237,18 @@ export default function DashboardPage() {
             // Upcoming Milestones
             supabase
               .from('milestones')
-              .select(`*, workstream:workstreams(id, name, color)`)
+              .select(`*, workstream:workstreams(id, name, color, parent_id)`)
               .eq('status', 'pending')
               .gte('target_date', now.toISOString())
               .order('target_date', { ascending: true })
+              .limit(5)
+              .then(r => r.data),
+            // Recent Updates
+            supabase
+              .from('updates')
+              .select(`*, workstream:workstreams(id, name, color, parent_id), creator:users!updates_created_by_fkey(id, full_name, avatar_url)`)
+              .order('is_pinned', { ascending: false })
+              .order('posted_at', { ascending: false })
               .limit(5)
               .then(r => r.data),
           ]),
@@ -278,15 +258,9 @@ export default function DashboardPage() {
         if (!mounted) return;
 
         if (detailResult) {
-          const [myActionsData, overdueActionsData, highPriorityActionsData, recentlyUpdatedData, recentThreatsData, upcomingMilestonesData] = detailResult;
+          const [myActionsData, recentlyUpdatedData, recentThreatsData, upcomingMilestonesData, recentUpdatesData] = detailResult;
           if (myActionsData) {
             setMyActions(myActionsData as unknown as (Action & { owner?: User; workstream?: Workstream })[]);
-          }
-          if (overdueActionsData) {
-            setOverdueActions(overdueActionsData as unknown as (Action & { owner?: User; workstream?: Workstream })[]);
-          }
-          if (highPriorityActionsData) {
-            setHighPriorityActions(highPriorityActionsData as unknown as (Action & { owner?: User; workstream?: Workstream })[]);
           }
           if (recentlyUpdatedData) {
             setRecentlyUpdated(recentlyUpdatedData as unknown as (Action & { owner?: User; workstream?: Workstream })[]);
@@ -296,6 +270,9 @@ export default function DashboardPage() {
           }
           if (upcomingMilestonesData) {
             setUpcomingMilestones(upcomingMilestonesData as unknown as (Milestone & { workstream?: Workstream })[]);
+          }
+          if (recentUpdatesData) {
+            setRecentUpdates(recentUpdatesData as unknown as UpdateWithRelations[]);
           }
         }
 
@@ -470,11 +447,73 @@ export default function DashboardPage() {
               Record Decision
             </Button>
           </Link>
+          <Link href="/updates/new">
+            <Button variant="secondary">
+              <MegaphoneIcon className="w-4 h-4 mr-2" />
+              Post Update
+            </Button>
+          </Link>
         </div>
+
+        {/* Updates Ticker */}
+        {recentUpdates.length > 0 && (
+          <Card className="bg-gradient-to-r from-red-50 to-orange-50 border-red-100">
+            <CardHeader
+              actions={
+                <Link href="/updates">
+                  <Button variant="ghost" size="sm">View All Updates</Button>
+                </Link>
+              }
+            >
+              <CardTitle className="flex items-center gap-2">
+                <MegaphoneIcon className="w-5 h-5 text-red-500" />
+                Recent Updates
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {recentUpdates.slice(0, 3).map((update) => (
+                  <div
+                    key={update.id}
+                    className="flex items-start gap-3 p-3 bg-white rounded-lg border border-red-100"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-900">{update.content}</p>
+                      <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
+                        {update.creator && (
+                          <>
+                            <Avatar src={update.creator.avatar_url} name={update.creator.full_name} size="xs" />
+                            <span>{update.creator.full_name}</span>
+                            <span className="text-gray-300">•</span>
+                          </>
+                        )}
+                        <span>{getRelativeTime(update.posted_at)}</span>
+                        {update.workstream && (
+                          <>
+                            <span className="text-gray-300">•</span>
+                            <span
+                              className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium"
+                              style={{
+                                backgroundColor: `${update.workstream.color}20`,
+                                color: update.workstream.color,
+                              }}
+                            >
+                              {getWorkstreamDisplayName(update.workstream, workstreams)}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Main Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Recently Updated */}
+          {/* Recently Updated Actions */}
           <Card>
             <CardHeader
               actions={
@@ -485,7 +524,7 @@ export default function DashboardPage() {
             >
               <CardTitle className="flex items-center gap-2">
                 <ArrowPathIcon className="w-5 h-5 text-gray-400" />
-                Recently Updated
+                Recently Updated Actions
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -551,7 +590,7 @@ export default function DashboardPage() {
             >
               <CardTitle className="flex items-center gap-2">
                 <UserIcon className="w-5 h-5 text-gray-400" />
-                Assigned to Me
+                Actions Assigned to Me
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -601,139 +640,6 @@ export default function DashboardPage() {
                             {getDaysUntil(action.due_date) === 0 ? 'Due today' : isOverdue(action.due_date) ? 'Overdue' : `Due ${getDaysUntil(action.due_date)}d`}
                           </span>
                         )}
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Overdue Actions */}
-          <Card>
-            <CardHeader
-              actions={
-                <Link href="/actions?status=overdue">
-                  <Button variant="ghost" size="sm">View All</Button>
-                </Link>
-              }
-            >
-              <CardTitle className="flex items-center gap-2">
-                <ClockIcon className="w-5 h-5 text-orange-500" />
-                Overdue
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {filteredOverdueActions.length === 0 ? (
-                <EmptyState
-                  icon={<ClockIcon className="w-6 h-6" />}
-                  title="No overdue actions"
-                  description="All actions are on track."
-                />
-              ) : (
-                <div className="space-y-3">
-                  {filteredOverdueActions.map((action) => (
-                    <Link
-                      key={action.id}
-                      href={`/actions/${action.id}`}
-                      className="block p-3 rounded-lg border border-orange-200 bg-orange-50/50 hover:border-orange-300 hover:shadow-sm transition-all"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <h4 className="text-sm font-medium text-gray-900 truncate">{action.title}</h4>
-                            <PriorityBadge priority={action.priority} />
-                          </div>
-                          <div className="flex items-center gap-2 mt-1">
-                            {action.workstream && (
-                              <span
-                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                                style={{
-                                  backgroundColor: `${action.workstream.color}20`,
-                                  color: action.workstream.color,
-                                }}
-                              >
-                                {getWorkstreamDisplayName(action.workstream, workstreams)}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex flex-col items-end gap-1">
-                          {action.owner && (
-                            <Avatar src={action.owner.avatar_url} name={action.owner.full_name} size="xs" />
-                          )}
-                          <span className={`text-xs font-medium ${getDaysUntil(action.due_date!) === 0 ? 'text-amber-600' : 'text-red-600'}`}>
-                            {getDaysUntil(action.due_date!) === 0 ? 'Due today' : `${Math.abs(getDaysUntil(action.due_date!))}d overdue`}
-                          </span>
-                        </div>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* High Priority Actions */}
-          <Card>
-            <CardHeader
-              actions={
-                <Link href="/actions?priority=critical,high">
-                  <Button variant="ghost" size="sm">View All</Button>
-                </Link>
-              }
-            >
-              <CardTitle className="flex items-center gap-2">
-                <BoltIcon className="w-5 h-5 text-red-500" />
-                High Priority
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {filteredHighPriorityActions.length === 0 ? (
-                <EmptyState
-                  icon={<BoltIcon className="w-6 h-6" />}
-                  title="No high priority actions"
-                  description="No critical or high priority actions."
-                />
-              ) : (
-                <div className="space-y-3">
-                  {filteredHighPriorityActions.map((action) => (
-                    <Link
-                      key={action.id}
-                      href={`/actions/${action.id}`}
-                      className="block p-3 rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <h4 className="text-sm font-medium text-gray-900 truncate">{action.title}</h4>
-                            <PriorityBadge priority={action.priority} />
-                          </div>
-                          <div className="flex items-center gap-2 mt-1">
-                            {action.workstream && (
-                              <span
-                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                                style={{
-                                  backgroundColor: `${action.workstream.color}20`,
-                                  color: action.workstream.color,
-                                }}
-                              >
-                                {getWorkstreamDisplayName(action.workstream, workstreams)}
-                              </span>
-                            )}
-                            <StatusBadge status={action.status} />
-                          </div>
-                        </div>
-                        <div className="flex flex-col items-end gap-1">
-                          {action.owner && (
-                            <Avatar src={action.owner.avatar_url} name={action.owner.full_name} size="xs" />
-                          )}
-                          {action.due_date && (
-                            <span className={`text-xs ${isOverdue(action.due_date) ? 'text-red-600 font-medium' : getDaysUntil(action.due_date) === 0 ? 'text-amber-600 font-medium' : 'text-gray-500'}`}>
-                              {getDaysUntil(action.due_date) === 0 ? 'Due today' : isOverdue(action.due_date) ? 'Overdue' : `Due ${getDaysUntil(action.due_date)}d`}
-                            </span>
-                          )}
-                        </div>
                       </div>
                     </Link>
                   ))}

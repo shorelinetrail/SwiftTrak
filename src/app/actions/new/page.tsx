@@ -76,6 +76,22 @@ export default function NewActionPage() {
       return;
     }
 
+    // System user ID for bulk imports
+    const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000';
+
+    // Determine who created this action
+    // If using import fields (created_at, date closed, initial comment, or created_by_override), use override or System
+    const isImport = formData.created_at || formData.completed_at || formData.initial_comment.trim() || formData.created_by_override;
+    const createdBy = isImport
+      ? (formData.created_by_override || SYSTEM_USER_ID)
+      : user?.id;
+
+    // Check that we have a valid creator
+    if (!createdBy) {
+      toast.error('Unable to determine action creator. Please refresh and try again.');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -84,16 +100,6 @@ export default function NewActionPage() {
       // Determine status based on completion date
       const isCompleted = !!formData.completed_at;
       const status = isCompleted ? 'complete' : 'pending';
-
-      // System user ID for bulk imports
-      const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000';
-
-      // Determine who created this action
-      // If using import fields (created_at, date closed, initial comment, or created_by_override), use override or System
-      const isImport = formData.created_at || formData.completed_at || formData.initial_comment.trim() || formData.created_by_override;
-      const createdBy = isImport
-        ? (formData.created_by_override || SYSTEM_USER_ID)
-        : user?.id;
 
       // Build insert data
       const insertData: Record<string, unknown> = {
