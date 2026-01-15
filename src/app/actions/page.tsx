@@ -10,6 +10,7 @@ import { Header } from '@/components/layout/header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, MultiSelect } from '@/components/ui/select';
+import { WorkstreamSelect, getWorkstreamFilterIds } from '@/components/ui/workstream-select';
 import { StatusBadge, PriorityBadge } from '@/components/ui/badge';
 import { Avatar } from '@/components/ui/avatar';
 import { Tabs } from '@/components/ui/tabs';
@@ -71,9 +72,9 @@ function ActionsPageContent() {
   // Search
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Filters (arrays for multi-select)
+  // Filters (arrays for multi-select, string for workstream)
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
-  const [workstreamFilter, setWorkstreamFilter] = useState<string[]>([]);
+  const [workstreamFilter, setWorkstreamFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState('all');
 
@@ -125,8 +126,10 @@ function ActionsPageContent() {
       filtered = filtered.filter(a => statusFilter.includes(a.status));
     }
 
-    if (workstreamFilter.length > 0) {
-      filtered = filtered.filter(a => a.workstream_id && workstreamFilter.includes(a.workstream_id));
+    // Filter by workstream (supports parent+children selection)
+    const workstreamIds = getWorkstreamFilterIds(workstreamFilter, workstreams);
+    if (workstreamIds) {
+      filtered = filtered.filter(a => a.workstream_id && workstreamIds.includes(a.workstream_id));
     }
 
     if (priorityFilter.length > 0) {
@@ -220,12 +223,13 @@ function ActionsPageContent() {
   const handleExport = () => {
     const params = new URLSearchParams();
     if (statusFilter.length > 0) params.set('status', statusFilter.join(','));
-    if (workstreamFilter.length > 0) params.set('workstream', workstreamFilter.join(','));
+    const wsIds = getWorkstreamFilterIds(workstreamFilter, workstreams);
+    if (wsIds) params.set('workstream', wsIds.join(','));
     if (priorityFilter.length > 0) params.set('priority', priorityFilter.join(','));
     window.location.href = `/api/export/actions?${params.toString()}`;
   };
 
-  const hasActiveFilters = searchQuery.trim() || statusFilter.length > 0 || priorityFilter.length > 0 || workstreamFilter.length > 0;
+  const hasActiveFilters = searchQuery.trim() || statusFilter.length > 0 || priorityFilter.length > 0 || workstreamFilter !== 'all';
 
   const handleSort = (column: SortColumn) => {
     if (sortColumn === column) {
@@ -624,11 +628,10 @@ function ActionsPageContent() {
                 placeholder="All Priorities"
                 className="w-40"
               />
-              <MultiSelect
-                options={workstreamOptions}
+              <WorkstreamSelect
+                workstreams={workstreams}
                 value={workstreamFilter}
                 onChange={setWorkstreamFilter}
-                placeholder="All Workstreams"
                 className="w-48"
               />
               {hasActiveFilters && (
@@ -639,7 +642,7 @@ function ActionsPageContent() {
                     setSearchQuery('');
                     setStatusFilter([]);
                     setPriorityFilter([]);
-                    setWorkstreamFilter([]);
+                    setWorkstreamFilter('all');
                   }}
                 >
                   Clear Filters
@@ -941,6 +944,9 @@ function ActionsTable({ actions, sortColumn, sortDirection, onSort }: ActionsTab
         <table className="w-full">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50">
+              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3 w-20">
+                ID
+              </th>
               <SortableHeader column="title" label="Title" />
               <SortableHeader column="status" label="Status" />
               <SortableHeader column="priority" label="Priority" />
@@ -964,13 +970,11 @@ function ActionsTable({ actions, sortColumn, sortDirection, onSort }: ActionsTab
                   onClick={() => window.location.href = `/actions/${action.id}`}
                 >
                   <td className="px-4 py-3">
+                    <span className="text-xs font-mono text-gray-500">{action.display_id || '-'}</span>
+                  </td>
+                  <td className="px-4 py-3">
                     <div className="max-w-md">
-                      <div className="flex items-center gap-2">
-                        {action.display_id && (
-                          <span className="text-xs font-mono text-gray-500">{action.display_id}</span>
-                        )}
-                        <p className="text-sm font-medium text-gray-900">{action.title}</p>
-                      </div>
+                      <p className="text-sm font-medium text-gray-900">{action.title}</p>
                       {action.description && (
                         <p className="text-xs text-gray-500 mt-0.5">{action.description}</p>
                       )}

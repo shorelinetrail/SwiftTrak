@@ -370,11 +370,6 @@ export default function DashboardPage() {
                 className="w-48"
               />
             </div>
-            <Link href="/executive">
-              <Button variant="outline" size="sm">
-                Executive View
-              </Button>
-            </Link>
           </div>
         }
       />
@@ -602,8 +597,8 @@ export default function DashboardPage() {
                           </div>
                         </div>
                         {action.due_date && (
-                          <span className={`text-xs ${isOverdue(action.due_date) ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
-                            {isOverdue(action.due_date) ? 'Overdue' : `Due ${getDaysUntil(action.due_date)}d`}
+                          <span className={`text-xs ${isOverdue(action.due_date) ? 'text-red-600 font-medium' : getDaysUntil(action.due_date) === 0 ? 'text-amber-600 font-medium' : 'text-gray-500'}`}>
+                            {getDaysUntil(action.due_date) === 0 ? 'Due today' : isOverdue(action.due_date) ? 'Overdue' : `Due ${getDaysUntil(action.due_date)}d`}
                           </span>
                         )}
                       </div>
@@ -667,8 +662,8 @@ export default function DashboardPage() {
                           {action.owner && (
                             <Avatar src={action.owner.avatar_url} name={action.owner.full_name} size="xs" />
                           )}
-                          <span className="text-xs text-red-600 font-medium">
-                            {Math.abs(getDaysUntil(action.due_date!))}d overdue
+                          <span className={`text-xs font-medium ${getDaysUntil(action.due_date!) === 0 ? 'text-amber-600' : 'text-red-600'}`}>
+                            {getDaysUntil(action.due_date!) === 0 ? 'Due today' : `${Math.abs(getDaysUntil(action.due_date!))}d overdue`}
                           </span>
                         </div>
                       </div>
@@ -734,8 +729,8 @@ export default function DashboardPage() {
                             <Avatar src={action.owner.avatar_url} name={action.owner.full_name} size="xs" />
                           )}
                           {action.due_date && (
-                            <span className={`text-xs ${isOverdue(action.due_date) ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
-                              {isOverdue(action.due_date) ? 'Overdue' : `Due ${getDaysUntil(action.due_date)}d`}
+                            <span className={`text-xs ${isOverdue(action.due_date) ? 'text-red-600 font-medium' : getDaysUntil(action.due_date) === 0 ? 'text-amber-600 font-medium' : 'text-gray-500'}`}>
+                              {getDaysUntil(action.due_date) === 0 ? 'Due today' : isOverdue(action.due_date) ? 'Overdue' : `Due ${getDaysUntil(action.due_date)}d`}
                             </span>
                           )}
                         </div>

@@ -9,6 +9,7 @@ import { Header } from '@/components/layout/header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
+import { WorkstreamSelect, getWorkstreamFilterIds } from '@/components/ui/workstream-select';
 import { RiskBadge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -108,8 +109,10 @@ export default function ThreatsPage() {
       filtered = filtered.filter(t => t.status === statusFilter);
     }
 
-    if (workstreamFilter !== 'all') {
-      filtered = filtered.filter(t => t.workstream_id === workstreamFilter);
+    // Filter by workstream (supports parent+children selection)
+    const workstreamIds = getWorkstreamFilterIds(workstreamFilter, workstreams);
+    if (workstreamIds) {
+      filtered = filtered.filter(t => t.workstream_id && workstreamIds.includes(t.workstream_id));
     }
 
     if (riskFilter !== 'all') {
@@ -129,7 +132,7 @@ export default function ThreatsPage() {
     }
 
     setFilteredThreats(filtered);
-  }, [threats, workstreamFilter, riskFilter, statusFilter, sortBy]);
+  }, [threats, workstreamFilter, riskFilter, statusFilter, sortBy, workstreams]);
 
   // useRealtime({
   //   table: 'threats',
@@ -297,8 +300,8 @@ export default function ThreatsPage() {
                 onChange={setRiskFilter}
                 className="w-40"
               />
-              <Select
-                options={workstreamOptions}
+              <WorkstreamSelect
+                workstreams={workstreams}
                 value={workstreamFilter}
                 onChange={setWorkstreamFilter}
                 className="w-48"
@@ -419,6 +422,9 @@ function ThreatsTable({ threats }: { threats: ThreatWithRelations[] }) {
         <table className="w-full">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50">
+              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3 w-20">
+                ID
+              </th>
               <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
                 Title
               </th>
@@ -456,13 +462,11 @@ function ThreatsTable({ threats }: { threats: ThreatWithRelations[] }) {
                   onClick={() => window.location.href = `/threats/${threat.id}`}
                 >
                   <td className="px-4 py-3">
+                    <span className="text-xs font-mono text-gray-500">{threat.display_id || '-'}</span>
+                  </td>
+                  <td className="px-4 py-3">
                     <div className="max-w-md">
-                      <div className="flex items-center gap-2">
-                        {threat.display_id && (
-                          <span className="text-xs font-mono text-gray-500">{threat.display_id}</span>
-                        )}
-                        <p className="text-sm font-medium text-gray-900">{threat.title}</p>
-                      </div>
+                      <p className="text-sm font-medium text-gray-900">{threat.title}</p>
                       {threat.description && (
                         <p className="text-xs text-gray-500 line-clamp-2 mt-0.5">{threat.description}</p>
                       )}

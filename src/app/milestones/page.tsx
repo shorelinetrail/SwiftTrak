@@ -277,9 +277,9 @@ function MilestoneCard({
               {!isCompleted && (
                 <p className={cn(
                   'text-xs',
-                  isPast ? 'text-red-500' : 'text-gray-500'
+                  isPast ? 'text-red-500' : daysUntil === 0 ? 'text-amber-600' : 'text-gray-500'
                 )}>
-                  {isPast ? `${Math.abs(daysUntil)} days overdue` : `${daysUntil} days`}
+                  {daysUntil === 0 ? 'Due today' : isPast ? `${Math.abs(daysUntil)} days overdue` : `${daysUntil} days`}
                 </p>
               )}
               {isCompleted && milestone.completed_at && (
