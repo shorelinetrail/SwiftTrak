@@ -187,6 +187,12 @@ function ActionsPageContent() {
     });
 
     setFilteredActions(filtered);
+
+    // Store filtered action IDs in sessionStorage for navigation in detail page
+    if (typeof window !== 'undefined') {
+      const filteredIds = filtered.map(a => a.id);
+      sessionStorage.setItem('actionNavIds', JSON.stringify(filteredIds));
+    }
   }, [actions, searchQuery, statusFilter, workstreamFilter, priorityFilter, activeTab, user, sortColumn, sortDirection]);
 
   // Real-time updates disabled for stability

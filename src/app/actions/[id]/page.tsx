@@ -189,9 +189,27 @@ export default function ActionDetailPage() {
     fetchAction();
   }, [fetchAction]);
 
-  // Fetch all action IDs for navigation
+  // Get action IDs for navigation - use sessionStorage if available (preserves filter from list)
   useEffect(() => {
-    const fetchActionIds = async () => {
+    const getActionIds = async () => {
+      // First try to get filtered IDs from sessionStorage (set by actions list page)
+      if (typeof window !== 'undefined') {
+        const storedIds = sessionStorage.getItem('actionNavIds');
+        if (storedIds) {
+          try {
+            const ids = JSON.parse(storedIds) as string[];
+            if (ids.length > 0 && ids.includes(actionId)) {
+              setAllActionIds(ids);
+              setCurrentIndex(ids.indexOf(actionId));
+              return;
+            }
+          } catch {
+            // Invalid JSON, fall through to fetch all
+          }
+        }
+      }
+
+      // Fallback: fetch all action IDs if no stored filter or current action not in filter
       const supabase = createClient();
       const { data } = await supabase
         .from('actions')
@@ -204,7 +222,7 @@ export default function ActionDetailPage() {
         setCurrentIndex(ids.indexOf(actionId));
       }
     };
-    fetchActionIds();
+    getActionIds();
   }, [actionId]);
 
   const goToPrevious = () => {
