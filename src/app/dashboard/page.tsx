@@ -266,15 +266,21 @@ export default function DashboardPage() {
             const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
 
             // Calculate effective date for each action:
-            // - For completed actions, use completed_at if set
+            // - For completed actions, use completed_at (exclude if no completed_at or if it's old)
             // - For new actions (created recently in system), use created_at
             // - For other actions, use updated_at
+            // Key: Completed actions that are edited after completion should NOT show up
             const actionsWithEffectiveDate = (recentlyUpdatedData as (Action & { owner?: User; workstream?: Workstream })[])
               .map(action => {
-                let effectiveDate: string;
-                if (action.status === 'complete' && action.completed_at) {
-                  // Completed actions use their completion date
-                  effectiveDate = action.completed_at;
+                let effectiveDate: string | undefined = undefined;
+
+                if (action.status === 'complete') {
+                  // Completed actions: only use completed_at, not updated_at
+                  // This prevents edited-after-completion actions from appearing
+                  if (action.completed_at) {
+                    effectiveDate = action.completed_at;
+                  }
+                  // If no completed_at, don't include (effectiveDate stays undefined)
                 } else if (new Date(action.updated_at).getTime() - new Date(action.created_at).getTime() < 60000) {
                   // If updated_at is within 1 minute of created_at, this is a new action - use created_at
                   effectiveDate = action.created_at;
@@ -284,10 +290,11 @@ export default function DashboardPage() {
                 }
                 return { ...action, effective_date: effectiveDate };
               })
-              // Filter to only actions with effective date in last 7 days
-              .filter(action => new Date(action.effective_date).getTime() >= sevenDaysAgo)
+              // Filter out actions with no effective date or with effective date older than 7 days
+              .filter((action): action is typeof action & { effective_date: string } =>
+                !!action.effective_date && new Date(action.effective_date).getTime() >= sevenDaysAgo)
               // Sort by effective date descending
-              .sort((a, b) => new Date(b.effective_date).getTime() - new Date(a.effective_date).getTime())
+              .sort((a, b) => new Date(b.effective_date!).getTime() - new Date(a.effective_date!).getTime())
               // Take top 5
               .slice(0, 5);
 
