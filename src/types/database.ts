@@ -86,6 +86,7 @@ export interface ActionAudit {
   old_value?: string;
   new_value?: string;
   created_at: string;
+  hide_from_recent?: boolean;
   // Joined fields
   user?: User;
 }

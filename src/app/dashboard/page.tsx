@@ -299,12 +299,14 @@ export default function DashboardPage() {
               .slice(0, 5);
 
             // Fetch latest audit entry for each action to show what changed
+            // Filter out entries marked as hidden from recent
             const actionIds = actionsWithEffectiveDate.map(a => a.id);
             if (actionIds.length > 0) {
               const { data: auditData } = await supabase
                 .from('action_audit')
-                .select('action_id, change_type, old_value, new_value, created_at')
+                .select('action_id, change_type, old_value, new_value, created_at, hide_from_recent')
                 .in('action_id', actionIds)
+                .eq('hide_from_recent', false)
                 .order('created_at', { ascending: false });
 
               // Get the most recent audit entry per action

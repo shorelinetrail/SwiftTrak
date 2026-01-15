@@ -29,6 +29,8 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   ExclamationTriangleIcon,
+  EyeIcon,
+  EyeSlashIcon,
 } from '@heroicons/react/24/outline';
 import { RiskBadge } from '@/components/ui/badge';
 import type { Action, ActionUpdate, ActionAudit, Workstream, User, Attachment, ActionStatus, Priority, Threat } from '@/types/database';
@@ -396,6 +398,28 @@ export default function ActionDetailPage() {
     } catch (error) {
       console.error('Error updating created date:', error);
       toast.error('Failed to update created date');
+    }
+  };
+
+  const handleToggleHideFromRecent = async (auditId: string, currentValue: boolean) => {
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('action_audit')
+        .update({ hide_from_recent: !currentValue })
+        .eq('id', auditId);
+
+      if (error) throw error;
+
+      // Update local state
+      setAuditLog(prev => prev.map(entry =>
+        entry.id === auditId ? { ...entry, hide_from_recent: !currentValue } : entry
+      ));
+
+      toast.success(!currentValue ? 'Hidden from recent updates' : 'Shown in recent updates');
+    } catch (error) {
+      console.error('Error toggling hide from recent:', error);
+      toast.error('Failed to update');
     }
   };
 
@@ -1062,16 +1086,39 @@ export default function ActionDetailPage() {
               ) : (
                 <div className="space-y-4">
                   {auditLog.map((entry) => (
-                    <div key={entry.id} className="relative pl-4 border-l-2 border-gray-200">
+                    <div key={entry.id} className={cn(
+                      "relative pl-4 border-l-2 border-gray-200 group",
+                      entry.hide_from_recent && "opacity-50"
+                    )}>
                       <div className="absolute -left-1.5 top-0 w-3 h-3 rounded-full bg-gray-300" />
-                      <p className="text-sm text-gray-900">
-                        <span className="font-medium">{entry.user?.full_name || 'System'}</span>
-                        {' '}
-                        {formatAuditChange(entry)}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {getRelativeTime(entry.change_type === 'created' ? action.created_at : entry.created_at)}
-                      </p>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <p className="text-sm text-gray-900">
+                            <span className="font-medium">{entry.user?.full_name || 'System'}</span>
+                            {' '}
+                            {formatAuditChange(entry)}
+                            {entry.hide_from_recent && (
+                              <span className="ml-2 text-xs text-gray-400">(hidden from recent)</span>
+                            )}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {getRelativeTime(entry.change_type === 'created' ? action.created_at : entry.created_at)}
+                          </p>
+                        </div>
+                        {canAdmin && (
+                          <button
+                            onClick={() => handleToggleHideFromRecent(entry.id, entry.hide_from_recent || false)}
+                            className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-gray-600 transition-opacity"
+                            title={entry.hide_from_recent ? 'Show in recent updates' : 'Hide from recent updates'}
+                          >
+                            {entry.hide_from_recent ? (
+                              <EyeIcon className="w-4 h-4" />
+                            ) : (
+                              <EyeSlashIcon className="w-4 h-4" />
+                            )}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
