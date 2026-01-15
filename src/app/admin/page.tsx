@@ -113,7 +113,7 @@ export default function AdminPage() {
           supabase.from('users').select('*').order('full_name'),
           supabase.from('workstreams').select('*').order('order_index'),
           supabase.from('stakeholder_links').select('*').order('created_at', { ascending: false }),
-          supabase.from('system_settings').select('*').eq('key', 'updates_config').single(),
+          supabase.from('system_settings').select('*').eq('key', 'updates_config').maybeSingle(),
         ]);
 
         if (!mounted) return;
@@ -121,7 +121,7 @@ export default function AdminPage() {
         if (usersResult.data) setUsers(usersResult.data as User[]);
         if (workstreamsResult.data) setWorkstreams(workstreamsResult.data as Workstream[]);
         if (linksResult.data) setStakeholderLinks(linksResult.data as StakeholderLink[]);
-        if (settingsResult.data?.value) {
+        if (settingsResult.data?.value && !settingsResult.error) {
           setUpdatesConfig(settingsResult.data.value as UpdatesConfig);
         }
 
@@ -150,13 +150,13 @@ export default function AdminPage() {
         supabase.from('users').select('*').order('full_name'),
         supabase.from('workstreams').select('*').order('order_index'),
         supabase.from('stakeholder_links').select('*').order('created_at', { ascending: false }),
-        supabase.from('system_settings').select('*').eq('key', 'updates_config').single(),
+        supabase.from('system_settings').select('*').eq('key', 'updates_config').maybeSingle(),
       ]);
 
       if (usersResult.data) setUsers(usersResult.data as User[]);
       if (workstreamsResult.data) setWorkstreams(workstreamsResult.data as Workstream[]);
       if (linksResult.data) setStakeholderLinks(linksResult.data as StakeholderLink[]);
-      if (settingsResult.data?.value) {
+      if (settingsResult.data?.value && !settingsResult.error) {
         setUpdatesConfig(settingsResult.data.value as UpdatesConfig);
       }
     } catch (error) {

@@ -243,14 +243,14 @@ export default function DashboardPage() {
               .order('target_date', { ascending: true })
               .limit(5)
               .then(r => r.data),
-            // Recent Updates
+            // Recent Updates (gracefully handle if table doesn't exist yet)
             supabase
               .from('updates')
               .select(`*, workstream:workstreams(id, name, color, parent_id), creator:users!updates_created_by_fkey(id, full_name, avatar_url)`)
               .order('is_pinned', { ascending: false })
               .order('posted_at', { ascending: false })
               .limit(5)
-              .then(r => r.data),
+              .then(r => r.error ? [] : (r.data || [])),
           ]),
           new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
         ]);
