@@ -13,6 +13,7 @@ export default function LoginPage() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -33,6 +34,11 @@ export default function LoginPage() {
 
     if (isSignUp && password.length < 6) {
       setErrorMessage('Password must be at least 6 characters');
+      return;
+    }
+
+    if (isSignUp && password !== confirmPassword) {
+      setErrorMessage('Passwords do not match');
       return;
     }
 
@@ -149,6 +155,18 @@ export default function LoginPage() {
               hint={isSignUp ? 'At least 6 characters' : undefined}
             />
 
+            {isSignUp && (
+              <Input
+                label="Confirm Password"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Confirm your password"
+                required
+                error={confirmPassword && password !== confirmPassword ? 'Passwords do not match' : undefined}
+              />
+            )}
+
             <Button type="submit" className="w-full" loading={isLoading}>
               {isSignUp ? 'Create Account' : 'Sign In'}
             </Button>
@@ -159,6 +177,7 @@ export default function LoginPage() {
               onClick={() => {
                 setIsSignUp(!isSignUp);
                 setErrorMessage('');
+                setConfirmPassword('');
               }}
               className="text-sm text-red-600 hover:text-red-700"
             >
