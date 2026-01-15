@@ -4,13 +4,14 @@ import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
+import { useAppStore } from '@/stores/app-store';
 import { Header } from '@/components/layout/header';
 import { Card, CardContent } from '@/components/ui/card';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { StatusBadge, PriorityBadge, RiskBadge } from '@/components/ui/badge';
 import { Tabs } from '@/components/ui/tabs';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDate } from '@/lib/utils';
+import { formatDate, getWorkstreamDisplayName } from '@/lib/utils';
 import {
   MagnifyingGlassIcon,
   ClipboardDocumentListIcon,
@@ -56,6 +57,7 @@ function SearchLoading() {
 
 function SearchPageContent() {
   const searchParams = useSearchParams();
+  const { workstreams } = useAppStore();
   const query = searchParams.get('q') || '';
   const [loading, setLoading] = useState(true);
   const [results, setResults] = useState<SearchResults>({
@@ -195,7 +197,7 @@ function SearchPageContent() {
                                       color: action.workstream.color,
                                     }}
                                   >
-                                    {action.workstream.name}
+                                    {getWorkstreamDisplayName(action.workstream, workstreams)}
                                   </span>
                                 )}
                               </div>
@@ -239,7 +241,7 @@ function SearchPageContent() {
                                       color: decision.workstream.color,
                                     }}
                                   >
-                                    {decision.workstream.name}
+                                    {getWorkstreamDisplayName(decision.workstream, workstreams)}
                                   </span>
                                 )}
                               </div>
@@ -284,7 +286,7 @@ function SearchPageContent() {
                                       color: threat.workstream.color,
                                     }}
                                   >
-                                    {threat.workstream.name}
+                                    {getWorkstreamDisplayName(threat.workstream, workstreams)}
                                   </span>
                                 )}
                               </div>
@@ -332,7 +334,7 @@ function SearchPageContent() {
                                       color: query.workstream.color,
                                     }}
                                   >
-                                    {query.workstream.name}
+                                    {getWorkstreamDisplayName(query.workstream, workstreams)}
                                   </span>
                                 )}
                               </div>
@@ -377,7 +379,7 @@ function SearchPageContent() {
                                       color: milestone.workstream.color,
                                     }}
                                   >
-                                    {milestone.workstream.name}
+                                    {getWorkstreamDisplayName(milestone.workstream, workstreams)}
                                   </span>
                                 )}
                               </div>

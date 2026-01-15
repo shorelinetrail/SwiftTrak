@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDate, getDaysUntil, cn } from '@/lib/utils';
+import { formatDate, getDaysUntil, cn, getWorkstreamDisplayName } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import {
   PlusIcon,
@@ -257,7 +257,7 @@ function MilestoneCard({
                     color: milestone.workstream.color,
                   }}
                 >
-                  {milestone.workstream.name}
+                  {getWorkstreamDisplayName(milestone.workstream, workstreams)}
                 </span>
               )}
             </div>

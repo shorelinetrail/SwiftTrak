@@ -13,7 +13,7 @@ import { WorkstreamSelect, getWorkstreamFilterIds } from '@/components/ui/workst
 import { RiskBadge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDate, cn, buildWorkstreamOptions } from '@/lib/utils';
+import { formatDate, cn, buildWorkstreamOptions, getWorkstreamDisplayName } from '@/lib/utils';
 import {
   PlusIcon,
   FunnelIcon,
@@ -334,18 +334,18 @@ export default function ThreatsPage() {
         ) : viewMode === 'cards' ? (
           <div className="space-y-3">
             {filteredThreats.map((threat) => (
-              <ThreatCard key={threat.id} threat={threat} />
+              <ThreatCard key={threat.id} threat={threat} workstreams={workstreams} />
             ))}
           </div>
         ) : (
-          <ThreatsTable threats={filteredThreats} />
+          <ThreatsTable threats={filteredThreats} workstreams={workstreams} />
         )}
       </div>
     </div>
   );
 }
 
-function ThreatCard({ threat }: { threat: ThreatWithRelations }) {
+function ThreatCard({ threat, workstreams }: { threat: ThreatWithRelations; workstreams: Workstream[] }) {
   const isClosed = threat.status === 'closed';
 
   return (
@@ -385,7 +385,7 @@ function ThreatCard({ threat }: { threat: ThreatWithRelations }) {
                           color: threat.workstream.color,
                         }}
                       >
-                        {threat.workstream.name}
+                        {getWorkstreamDisplayName(threat.workstream, workstreams)}
                       </span>
                     )}
                     {threat.expected_delay && (
@@ -415,7 +415,7 @@ function ThreatCard({ threat }: { threat: ThreatWithRelations }) {
   );
 }
 
-function ThreatsTable({ threats }: { threats: ThreatWithRelations[] }) {
+function ThreatsTable({ threats, workstreams }: { threats: ThreatWithRelations[]; workstreams: Workstream[] }) {
   return (
     <Card>
       <div className="overflow-x-auto">
@@ -499,7 +499,7 @@ function ThreatsTable({ threats }: { threats: ThreatWithRelations[] }) {
                           color: threat.workstream.color,
                         }}
                       >
-                        {threat.workstream.name}
+                        {getWorkstreamDisplayName(threat.workstream, workstreams)}
                       </span>
                     ) : (
                       <span className="text-xs text-gray-400">-</span>

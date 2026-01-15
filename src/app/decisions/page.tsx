@@ -12,7 +12,7 @@ import { Select } from '@/components/ui/select';
 import { Avatar } from '@/components/ui/avatar';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDate, getRelativeTime, buildWorkstreamOptions } from '@/lib/utils';
+import { formatDate, getRelativeTime, buildWorkstreamOptions, getWorkstreamDisplayName } from '@/lib/utils';
 import {
   PlusIcon,
   DocumentTextIcon,
@@ -158,7 +158,7 @@ function DecisionCard({ decision, isFirst }: { decision: DecisionWithRelations; 
                         color: decision.workstream.color,
                       }}
                     >
-                      {decision.workstream.name}
+                      {getWorkstreamDisplayName(decision.workstream, workstreams)}
                     </span>
                   )}
                 </div>

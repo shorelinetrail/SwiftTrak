@@ -13,7 +13,7 @@ import { PriorityBadge, Badge } from '@/components/ui/badge';
 import { Avatar } from '@/components/ui/avatar';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDate, getRelativeTime, cn } from '@/lib/utils';
+import { formatDate, getRelativeTime, cn, getWorkstreamDisplayName } from '@/lib/utils';
 import {
   PlusIcon,
   QuestionMarkCircleIcon,
@@ -29,7 +29,7 @@ type QueryWithRelations = TechnicalQuery & {
 };
 
 export default function QueriesPage() {
-  const { user } = useAppStore();
+  const { user, workstreams } = useAppStore();
   const [loading, setLoading] = useState(true);
   const [queries, setQueries] = useState<QueryWithRelations[]>([]);
   const [activeTab, setActiveTab] = useState('all');
@@ -127,7 +127,7 @@ export default function QueriesPage() {
         ) : (
           <div className="space-y-3">
             {filteredQueries.map((query) => (
-              <QueryCard key={query.id} query={query} />
+              <QueryCard key={query.id} query={query} workstreams={workstreams} />
             ))}
           </div>
         )}
@@ -136,7 +136,7 @@ export default function QueriesPage() {
   );
 }
 
-function QueryCard({ query }: { query: QueryWithRelations }) {
+function QueryCard({ query, workstreams }: { query: QueryWithRelations; workstreams: Workstream[] }) {
   const isResolved = !!query.responded_at;
 
   return (
@@ -190,7 +190,7 @@ function QueryCard({ query }: { query: QueryWithRelations }) {
                         color: query.workstream.color,
                       }}
                     >
-                      {query.workstream.name}
+                      {getWorkstreamDisplayName(query.workstream, workstreams)}
                     </span>
                   )}
                 </div>

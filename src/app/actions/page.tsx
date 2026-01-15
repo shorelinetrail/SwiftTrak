@@ -16,7 +16,7 @@ import { Avatar } from '@/components/ui/avatar';
 import { Tabs } from '@/components/ui/tabs';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDate, isOverdue, getDaysUntil, cn, buildWorkstreamOptions } from '@/lib/utils';
+import { formatDate, isOverdue, getDaysUntil, cn, buildWorkstreamOptions, getWorkstreamDisplayName } from '@/lib/utils';
 import {
   PlusIcon,
   FunnelIcon,
@@ -674,7 +674,7 @@ function ActionsPageContent() {
         ) : viewMode === 'cards' ? (
           <div className="space-y-3">
             {filteredActions.map((action) => (
-              <ActionCard key={action.id} action={action} />
+              <ActionCard key={action.id} action={action} workstreams={workstreams} />
             ))}
           </div>
         ) : (
@@ -683,6 +683,7 @@ function ActionsPageContent() {
             sortColumn={sortColumn}
             sortDirection={sortDirection}
             onSort={handleSort}
+            workstreams={workstreams}
           />
         )}
       </div>
@@ -827,7 +828,7 @@ function ActionsPageContent() {
   );
 }
 
-function ActionCard({ action }: { action: ActionWithRelations }) {
+function ActionCard({ action, workstreams }: { action: ActionWithRelations; workstreams: Workstream[] }) {
   const overdue = action.due_date && isOverdue(action.due_date) && action.status !== 'complete' && action.status !== 'cancelled';
 
   return (
@@ -872,7 +873,7 @@ function ActionCard({ action }: { action: ActionWithRelations }) {
                           color: action.workstream.color,
                         }}
                       >
-                        {action.workstream.name}
+                        {getWorkstreamDisplayName(action.workstream, workstreams)}
                       </span>
                     )}
                     <span>Created {formatDate(action.created_at, { month: 'short', day: 'numeric' })}</span>
@@ -910,9 +911,10 @@ interface ActionsTableProps {
   sortColumn: SortColumn;
   sortDirection: SortDirection;
   onSort: (column: SortColumn) => void;
+  workstreams: Workstream[];
 }
 
-function ActionsTable({ actions, sortColumn, sortDirection, onSort }: ActionsTableProps) {
+function ActionsTable({ actions, sortColumn, sortDirection, onSort, workstreams }: ActionsTableProps) {
   const SortableHeader = ({ column, label }: { column: SortColumn; label: string }) => (
     <th
       className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
@@ -995,7 +997,7 @@ function ActionsTable({ actions, sortColumn, sortDirection, onSort }: ActionsTab
                           color: action.workstream.color,
                         }}
                       >
-                        {action.workstream.name}
+                        {getWorkstreamDisplayName(action.workstream, workstreams)}
                       </span>
                     ) : (
                       <span className="text-xs text-gray-400">-</span>

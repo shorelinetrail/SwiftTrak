@@ -13,7 +13,7 @@ import { StatusBadge, PriorityBadge, RiskBadge } from '@/components/ui/badge';
 import { Avatar } from '@/components/ui/avatar';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDate, isOverdue, getDaysUntil, getRelativeTime, buildWorkstreamOptions } from '@/lib/utils';
+import { formatDate, isOverdue, getDaysUntil, getRelativeTime, buildWorkstreamOptions, getWorkstreamDisplayName } from '@/lib/utils';
 import {
   ClipboardDocumentListIcon,
   ExclamationTriangleIcon,
@@ -518,7 +518,7 @@ export default function DashboardPage() {
                                   color: action.workstream.color,
                                 }}
                               >
-                                {action.workstream.name}
+                                {getWorkstreamDisplayName(action.workstream, workstreams)}
                               </span>
                             )}
                             <StatusBadge status={action.status} />
@@ -590,7 +590,7 @@ export default function DashboardPage() {
                                   color: action.workstream.color,
                                 }}
                               >
-                                {action.workstream.name}
+                                {getWorkstreamDisplayName(action.workstream, workstreams)}
                               </span>
                             )}
                             <StatusBadge status={action.status} />
@@ -653,7 +653,7 @@ export default function DashboardPage() {
                                   color: action.workstream.color,
                                 }}
                               >
-                                {action.workstream.name}
+                                {getWorkstreamDisplayName(action.workstream, workstreams)}
                               </span>
                             )}
                           </div>
@@ -718,7 +718,7 @@ export default function DashboardPage() {
                                   color: action.workstream.color,
                                 }}
                               >
-                                {action.workstream.name}
+                                {getWorkstreamDisplayName(action.workstream, workstreams)}
                               </span>
                             )}
                             <StatusBadge status={action.status} />
@@ -787,7 +787,7 @@ export default function DashboardPage() {
                                   color: threat.workstream.color,
                                 }}
                               >
-                                {threat.workstream.name}
+                                {getWorkstreamDisplayName(threat.workstream, workstreams)}
                               </span>
                             )}
                             <span className="text-xs text-gray-500">
@@ -887,7 +887,7 @@ export default function DashboardPage() {
                                 color: milestone.workstream.color,
                               }}
                             >
-                              {milestone.workstream.name}
+                              {getWorkstreamDisplayName(milestone.workstream, workstreams)}
                             </span>
                           )}
                         </div>
