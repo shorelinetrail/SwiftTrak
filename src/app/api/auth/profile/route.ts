@@ -71,17 +71,41 @@ export async function GET() {
 
     if (profileError) {
       console.error('[API /auth/profile] Profile fetch error:', profileError);
-      // Return default user if profile doesn't exist
-      return NextResponse.json({
-        id: authUser.id,
-        email: authUser.email || '',
-        full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
-        role: 'view',
-        status: 'active',
-        avatar_url: authUser.user_metadata?.avatar_url,
-        created_at: authUser.created_at,
-        updated_at: authUser.created_at,
-      });
+
+      // User doesn't exist in database - create them
+      console.log('[API /auth/profile] Creating new user record for:', authUser.id);
+
+      const { data: newUser, error: createError } = await adminClient
+        .from('users')
+        .insert({
+          id: authUser.id,
+          email: authUser.email?.toLowerCase() || '',
+          full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
+          role: 'view',
+          status: 'active',
+          auth_linked: true,
+          avatar_url: authUser.user_metadata?.avatar_url,
+        })
+        .select()
+        .single();
+
+      if (createError) {
+        console.error('[API /auth/profile] Failed to create user:', createError);
+        // Return default user object as fallback
+        return NextResponse.json({
+          id: authUser.id,
+          email: authUser.email || '',
+          full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
+          role: 'view',
+          status: 'active',
+          avatar_url: authUser.user_metadata?.avatar_url,
+          created_at: authUser.created_at,
+          updated_at: authUser.created_at,
+        });
+      }
+
+      console.log('[API /auth/profile] User created successfully:', newUser.id);
+      return NextResponse.json(newUser);
     }
 
     return NextResponse.json(profile);
