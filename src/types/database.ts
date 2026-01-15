@@ -1,6 +1,6 @@
 export type UserRole = 'admin' | 'edit' | 'view';
 export type UserStatus = 'active' | 'pending';
-export type ActionStatus = 'pending' | 'in_progress' | 'complete' | 'cancelled';
+export type ActionStatus = 'pending' | 'in_progress' | 'on_hold' | 'complete' | 'cancelled';
 export type ThreatStatus = 'open' | 'closed';
 export type Priority = 'critical' | 'high' | 'medium' | 'low';
 export type RiskLevel = 'low' | 'medium' | 'high';

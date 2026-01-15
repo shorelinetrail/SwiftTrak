@@ -39,7 +39,7 @@ export function Badge({ children, variant = 'default', size = 'sm', className }:
 }
 
 interface StatusBadgeProps {
-  status: 'pending' | 'in_progress' | 'complete' | 'completed' | 'cancelled' | 'missed';
+  status: 'pending' | 'in_progress' | 'on_hold' | 'complete' | 'completed' | 'cancelled' | 'missed';
   className?: string;
 }
 
@@ -47,6 +47,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
   const statusConfig = {
     pending: { label: 'Pending', variant: 'default' as const },
     in_progress: { label: 'In Progress', variant: 'info' as const },
+    on_hold: { label: 'On Hold', variant: 'warning' as const },
     complete: { label: 'Complete', variant: 'success' as const },
     completed: { label: 'Completed', variant: 'success' as const },
     cancelled: { label: 'Cancelled', variant: 'danger' as const },

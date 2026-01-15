@@ -495,6 +495,7 @@ export default function ActionDetailPage() {
   const statusOptions = [
     { value: 'pending', label: 'Pending' },
     { value: 'in_progress', label: 'In Progress' },
+    { value: 'on_hold', label: 'On Hold' },
     { value: 'complete', label: 'Complete' },
     { value: 'cancelled', label: 'Cancelled' },
   ];
@@ -968,6 +969,26 @@ export default function ActionDetailPage() {
                   >
                     <ClockIcon className="w-4 h-4 mr-2" />
                     Start Working
+                  </Button>
+                )}
+                {action.status === 'on_hold' && (
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start"
+                    onClick={() => handleStatusChange('in_progress')}
+                  >
+                    <ClockIcon className="w-4 h-4 mr-2" />
+                    Resume Work
+                  </Button>
+                )}
+                {(action.status === 'pending' || action.status === 'in_progress') && (
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start text-yellow-600 hover:bg-yellow-50"
+                    onClick={() => handleStatusChange('on_hold')}
+                  >
+                    <ClockIcon className="w-4 h-4 mr-2" />
+                    Put On Hold
                   </Button>
                 )}
                 <Button

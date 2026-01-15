@@ -150,7 +150,7 @@ function ActionsPageContent() {
 
     // Apply sorting
     const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
-    const statusOrder = { pending: 0, in_progress: 1, complete: 2, cancelled: 3 };
+    const statusOrder = { pending: 0, in_progress: 1, on_hold: 2, complete: 3, cancelled: 4 };
 
     filtered.sort((a, b) => {
       let comparison = 0;
@@ -213,6 +213,7 @@ function ActionsPageContent() {
   const statusOptions = [
     { value: 'pending', label: 'Pending' },
     { value: 'in_progress', label: 'In Progress' },
+    { value: 'on_hold', label: 'On Hold' },
     { value: 'complete', label: 'Complete' },
     { value: 'cancelled', label: 'Cancelled' },
   ];
@@ -367,7 +368,7 @@ function ActionsPageContent() {
         // Map status
         let status: ActionStatus = 'pending';
         const statusValue = getValue('status')?.toLowerCase().replace(/\s+/g, '_');
-        if (statusValue && ['pending', 'in_progress', 'complete', 'cancelled'].includes(statusValue)) {
+        if (statusValue && ['pending', 'in_progress', 'on_hold', 'complete', 'cancelled'].includes(statusValue)) {
           status = statusValue as ActionStatus;
         }
 
