@@ -34,8 +34,8 @@ export default function LoginPage() {
 
     if (isSignUp) {
       // Password complexity validation
-      if (password.length < 8) {
-        setErrorMessage('Password must be at least 8 characters');
+      if (password.length < 10) {
+        setErrorMessage('Password must be at least 10 characters');
         return;
       }
       if (!/[A-Z]/.test(password)) {
@@ -48,6 +48,10 @@ export default function LoginPage() {
       }
       if (!/[0-9]/.test(password)) {
         setErrorMessage('Password must contain at least one number');
+        return;
+      }
+      if (!/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password)) {
+        setErrorMessage('Password must contain at least one special character');
         return;
       }
     }
@@ -167,7 +171,7 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Enter your password"
               required
-              hint={isSignUp ? 'Min 8 characters with uppercase, lowercase, and number' : undefined}
+              hint={isSignUp ? 'Min 10 characters: uppercase, lowercase, number, and special character' : undefined}
             />
 
             {isSignUp && (
