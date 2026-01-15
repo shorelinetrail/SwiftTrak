@@ -463,12 +463,12 @@ function ActionsPageContent() {
           }
         }
 
-        // Parse due date
+        // Parse due date (UK format DD/MM/YYYY)
         let due_date: string | null = null;
         const dueDateValue = getValue('due_date');
         if (dueDateValue) {
-          const parsed = new Date(dueDateValue);
-          if (!isNaN(parsed.getTime())) {
+          const parsed = parseDateUK(dueDateValue);
+          if (parsed) {
             due_date = parsed.toISOString();
           }
         }
@@ -477,8 +477,8 @@ function ActionsPageContent() {
         let created_at: string | null = null;
         const createdAtValue = getValue('created_at');
         if (createdAtValue) {
-          const parsed = new Date(createdAtValue);
-          if (!isNaN(parsed.getTime())) {
+          const parsed = parseDateUK(createdAtValue);
+          if (parsed) {
             created_at = parsed.toISOString();
           }
         }
@@ -487,8 +487,8 @@ function ActionsPageContent() {
         let completed_at: string | null = null;
         const completedAtValue = getValue('completed_at');
         if (completedAtValue) {
-          const parsed = new Date(completedAtValue);
-          if (!isNaN(parsed.getTime())) {
+          const parsed = parseDateUK(completedAtValue);
+          if (parsed) {
             completed_at = parsed.toISOString();
             // Auto-set status to complete if date closed is provided
             if (status === 'pending') {
@@ -601,6 +601,33 @@ function ActionsPageContent() {
     }
     result.push(current);
     return result;
+  }
+
+  // Parse date string with UK format (DD/MM/YYYY) priority
+  function parseDateUK(dateStr: string): Date | null {
+    if (!dateStr) return null;
+
+    // Try UK format DD/MM/YYYY or DD-MM-YYYY first
+    const ukMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if (ukMatch) {
+      const [, day, month, year] = ukMatch;
+      const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      if (!isNaN(date.getTime())) return date;
+    }
+
+    // Try ISO format YYYY-MM-DD
+    const isoMatch = dateStr.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+    if (isoMatch) {
+      const [, year, month, day] = isoMatch;
+      const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      if (!isNaN(date.getTime())) return date;
+    }
+
+    // Fallback to native Date parsing (handles "Jan 15, 2026" etc)
+    const parsed = new Date(dateStr);
+    if (!isNaN(parsed.getTime())) return parsed;
+
+    return null;
   }
 
   if (loading) {
