@@ -107,7 +107,7 @@ export default function NewUpdatePage() {
   });
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen">
       <Header
         title="Post Update"
         breadcrumbs={[
@@ -116,7 +116,7 @@ export default function NewUpdatePage() {
         ]}
       />
 
-      <div className="p-6 max-w-2xl mx-auto">
+      <div className="p-6 max-w-2xl">
         <form onSubmit={handleSubmit}>
           <Card>
             <CardContent className="p-6 space-y-6">
