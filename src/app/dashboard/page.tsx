@@ -426,7 +426,7 @@ export default function DashboardPage() {
           const { data: completedMilestonesData } = await supabase
             .from('milestones')
             .select(`*, workstream:workstreams(id, name, color, parent_id)`)
-            .eq('status', 'complete')
+            .eq('status', 'completed')
             .gte('updated_at', new Date(sevenDaysAgo).toISOString())
             .order('updated_at', { ascending: false })
             .limit(5);
