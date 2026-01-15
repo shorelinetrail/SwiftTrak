@@ -542,11 +542,11 @@ function ActionsPageContent() {
         } else {
           results.success++;
 
-          // If this is a historical import, hide the audit entry from recent updates
+          // If this is a historical import, set the audit entry date to match
           if (created_at && newAction) {
             await supabase
               .from('action_audit')
-              .update({ hide_from_recent: true })
+              .update({ created_at })
               .eq('action_id', newAction.id)
               .eq('change_type', 'created');
           }

@@ -131,11 +131,11 @@ export default function NewActionPage() {
 
       if (error) throw error;
 
-      // If this is a historical import, hide the audit entry from recent updates
+      // If this is a historical import, set the audit entry date to match
       if (formData.created_at && data) {
         await supabase
           .from('action_audit')
-          .update({ hide_from_recent: true })
+          .update({ created_at: new Date(formData.created_at).toISOString() })
           .eq('action_id', data.id)
           .eq('change_type', 'created');
       }
