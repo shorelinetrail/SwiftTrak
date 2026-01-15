@@ -287,19 +287,25 @@ export default function AdminPage() {
   const handleDeleteUser = async (userId: string, userName: string) => {
     if (!confirm(`Are you sure you want to delete ${userName}? This cannot be undone.`)) return;
 
-    const supabase = createClient();
+    try {
+      const response = await fetch('/api/auth/delete-user', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
 
-    const { error } = await supabase
-      .from('users')
-      .delete()
-      .eq('id', userId);
+      const result = await response.json();
 
-    if (error) {
+      if (!response.ok) {
+        console.error('[AdminPage] Failed to delete user:', result.error);
+        toast.error(result.error || 'Failed to delete user');
+      } else {
+        toast.success(`${userName} has been deleted`);
+        fetchData();
+      }
+    } catch (error) {
       console.error('[AdminPage] Failed to delete user:', error);
-      toast.error(`Failed to delete user: ${error.message}`);
-    } else {
-      toast.success(`${userName} has been deleted`);
-      fetchData();
+      toast.error('Failed to delete user');
     }
   };
 
