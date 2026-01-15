@@ -17,13 +17,31 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Validate inputs
+    if (!email.trim() || !password.trim()) {
+      toast.error('Please enter email and password');
+      return;
+    }
+
+    if (isSignUp && !fullName.trim()) {
+      toast.error('Please enter your full name');
+      return;
+    }
+
+    if (isSignUp && password.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
       const supabase = createClient();
 
       if (isSignUp) {
-        const { error } = await supabase.auth.signUp({
+        console.log('[Auth] Attempting signup for:', email);
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -33,10 +51,20 @@ export default function LoginPage() {
           },
         });
 
+        console.log('[Auth] Signup result:', { data, error });
+
         if (error) throw error;
 
-        toast.success('Account created! Please check your email to verify your account.');
+        // Check if email confirmation is required
+        if (data.user && !data.session) {
+          toast.success('Account created! Please check your email to verify your account.');
+        } else if (data.session) {
+          toast.success('Account created successfully!');
+          router.push('/dashboard');
+          router.refresh();
+        }
       } else {
+        console.log('[Auth] Attempting signin for:', email);
         const { error } = await supabase.auth.signInWithPassword({
           email,
           password,
@@ -48,6 +76,7 @@ export default function LoginPage() {
         router.refresh();
       }
     } catch (error: unknown) {
+      console.error('[Auth] Error:', error);
       const errorMessage = error instanceof Error ? error.message : 'An error occurred';
       toast.error(errorMessage);
     } finally {
