@@ -413,12 +413,15 @@ export default function ActionDetailPage() {
         updateData.completion_comment = completionComment || undefined;
       }
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('actions')
         .update(updateData)
-        .eq('id', actionId);
+        .eq('id', actionId)
+        .select()
+        .single();
 
       if (error) throw error;
+      if (!data) throw new Error('Update failed - no data returned');
 
       toast.success(`Status updated to ${newStatus.replace('_', ' ')}`);
       setCompleteModalOpen(false);
@@ -435,7 +438,7 @@ export default function ActionDetailPage() {
     try {
       const supabase = createClient();
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('actions')
         .update({
           title: editForm.title,
@@ -444,10 +447,14 @@ export default function ActionDetailPage() {
           owner_id: editForm.owner_id,
           priority: editForm.priority,
           due_date: editForm.due_date,
+          status: editForm.status,
         })
-        .eq('id', actionId);
+        .eq('id', actionId)
+        .select()
+        .single();
 
       if (error) throw error;
+      if (!data) throw new Error('Update failed - no data returned');
 
       toast.success('Action updated');
       setEditModalOpen(false);
