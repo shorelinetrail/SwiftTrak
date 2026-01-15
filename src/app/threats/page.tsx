@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
 // import { useRealtime } from '@/hooks/use-realtime';
@@ -31,6 +32,15 @@ type ThreatWithRelations = Threat & {
 };
 
 export default function ThreatsPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-screen"><LoadingSpinner size="lg" /></div>}>
+      <ThreatsPageContent />
+    </Suspense>
+  );
+}
+
+function ThreatsPageContent() {
+  const searchParams = useSearchParams();
   const { workstreams, setWorkstreams } = useAppStore();
   const [loading, setLoading] = useState(true);
   const [threats, setThreats] = useState<ThreatWithRelations[]>([]);
@@ -43,6 +53,17 @@ export default function ThreatsPage() {
   const [riskFilter, setRiskFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('open');
   const [sortBy, setSortBy] = useState<string>('risk');
+
+  // Apply URL params on mount
+  useEffect(() => {
+    const urlRisk = searchParams.get('risk');
+    const urlWorkstream = searchParams.get('workstream');
+    const urlStatus = searchParams.get('status');
+
+    if (urlRisk) setRiskFilter(urlRisk);
+    if (urlWorkstream) setWorkstreamFilter(urlWorkstream);
+    if (urlStatus) setStatusFilter(urlStatus);
+  }, [searchParams]);
 
   // Ensure workstreams are loaded
   useEffect(() => {

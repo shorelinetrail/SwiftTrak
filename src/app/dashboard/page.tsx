@@ -40,7 +40,7 @@ type UpdateWithRelations = Update & {
 interface DashboardStats {
   totalActions: number;
   completedActions: number;
-  overdueActions: number;
+  openActions: number;
   criticalActions: number;
   totalThreats: number;
   highRiskThreats: number;
@@ -93,7 +93,7 @@ export default function DashboardPage() {
     return {
       totalActions: filteredActions.length,
       completedActions: filteredActions.filter(a => a.status === 'complete').length,
-      overdueActions: filteredActions.filter(a => a.due_date && new Date(a.due_date) < now && a.status !== 'complete' && a.status !== 'cancelled').length,
+      openActions: filteredActions.filter(a => a.status === 'pending' || a.status === 'in_progress' || a.status === 'on_hold').length,
       criticalActions: filteredActions.filter(a => (a.priority === 'critical' || a.priority === 'high') && a.status !== 'complete' && a.status !== 'cancelled').length,
       totalThreats: filteredThreats.length,
       highRiskThreats: filteredThreats.filter(t => t.current_risk === 'high').length,
@@ -422,32 +422,16 @@ export default function DashboardPage() {
             </Card>
           </Link>
 
-          <Link href={`/actions?status=overdue${selectedWorkstream !== 'all' ? `&workstream=${selectedWorkstream}` : ''}`}>
-            <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white border-0 cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all">
+          <Link href={`/actions?status=pending,in_progress,on_hold${selectedWorkstream !== 'all' ? `&workstream=${selectedWorkstream}` : ''}`}>
+            <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white border-0 cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all">
               <CardContent className="pt-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-orange-100 text-sm font-medium">Overdue Actions</p>
-                    <p className="text-3xl font-bold mt-1">{stats?.overdueActions || 0}</p>
+                    <p className="text-blue-100 text-sm font-medium">Open Actions</p>
+                    <p className="text-3xl font-bold mt-1">{stats?.openActions || 0}</p>
                   </div>
                   <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
-                    <ClockIcon className="w-6 h-6" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
-
-          <Link href={`/threats?risk=high${selectedWorkstream !== 'all' ? `&workstream=${selectedWorkstream}` : ''}`}>
-            <Card className="bg-gradient-to-br from-amber-500 to-amber-600 text-white border-0 cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all">
-              <CardContent className="pt-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-amber-100 text-sm font-medium">High Risk Threats</p>
-                    <p className="text-3xl font-bold mt-1">{stats?.highRiskThreats || 0}</p>
-                  </div>
-                  <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
-                    <ExclamationTriangleIcon className="w-6 h-6" />
+                    <ClipboardDocumentListIcon className="w-6 h-6" />
                   </div>
                 </div>
               </CardContent>
@@ -466,6 +450,22 @@ export default function DashboardPage() {
                   </div>
                   <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
                     <CheckCircleIcon className="w-6 h-6" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+
+          <Link href={`/threats?risk=high${selectedWorkstream !== 'all' ? `&workstream=${selectedWorkstream}` : ''}`}>
+            <Card className="bg-gradient-to-br from-amber-500 to-amber-600 text-white border-0 cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all">
+              <CardContent className="pt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-amber-100 text-sm font-medium">High Risk Threats</p>
+                    <p className="text-3xl font-bold mt-1">{stats?.highRiskThreats || 0}</p>
+                  </div>
+                  <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
+                    <ExclamationTriangleIcon className="w-6 h-6" />
                   </div>
                 </div>
               </CardContent>
