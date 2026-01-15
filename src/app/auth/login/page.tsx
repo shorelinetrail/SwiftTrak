@@ -49,7 +49,15 @@ export default function LoginPage() {
           body: JSON.stringify({ email, password, full_name: fullName }),
         });
 
-        const result = await response.json();
+        // Handle potential empty or non-JSON responses
+        const text = await response.text();
+        let result;
+        try {
+          result = text ? JSON.parse(text) : {};
+        } catch {
+          console.error('Failed to parse signup response:', text);
+          throw new Error('Server error - please try again');
+        }
 
         if (!response.ok) {
           throw new Error(result.error || 'Failed to create account');
