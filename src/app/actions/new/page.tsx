@@ -110,13 +110,17 @@ export default function NewActionPage() {
         priority: formData.priority || null,
         due_date: formData.due_date || null,
         status,
-        completed_at: formData.completed_at || null,
         created_by: createdBy,
       };
 
       // Add custom created_at for historical imports
       if (formData.created_at) {
         insertData.created_at = new Date(formData.created_at).toISOString();
+      }
+
+      // Add completed_at for imported closed actions
+      if (formData.completed_at) {
+        insertData.completed_at = new Date(formData.completed_at).toISOString();
       }
 
       const { data, error } = await supabase
@@ -129,20 +133,27 @@ export default function NewActionPage() {
 
       // If there's an initial comment (legacy import), create an action_update
       if (formData.initial_comment.trim() && data) {
-        await supabase
+        const { error: commentError } = await supabase
           .from('action_updates')
           .insert({
             action_id: data.id,
             user_id: createdBy, // Use same user as action creator for legacy comments
             content: formData.initial_comment.trim(),
           });
+
+        if (commentError) {
+          console.error('Error creating legacy comment:', commentError);
+          // Don't fail the whole operation, just warn
+          toast.error('Action created but legacy comment failed to save');
+        }
       }
 
       toast.success('Action created successfully');
       router.push(`/actions/${data.id}`);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error creating action:', error);
-      toast.error('Failed to create action');
+      const message = error instanceof Error ? error.message : 'Failed to create action';
+      toast.error(message);
     } finally {
       setLoading(false);
     }
