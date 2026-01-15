@@ -96,12 +96,13 @@ export function PriorityBadge({ priority, className }: PriorityBadgeProps) {
 }
 
 interface RiskBadgeProps {
-  risk: 'low' | 'medium' | 'high';
+  risk: 'none' | 'low' | 'medium' | 'high';
   className?: string;
 }
 
 export function RiskBadge({ risk, className }: RiskBadgeProps) {
   const riskConfig = {
+    none: { label: 'None', className: 'bg-gray-100 text-gray-800 border border-gray-300' },
     low: { label: 'Low', className: 'bg-green-100 text-green-800 border border-green-300' },
     medium: { label: 'Medium', className: 'bg-yellow-100 text-yellow-800 border border-yellow-300' },
     high: { label: 'High', className: 'bg-red-100 text-red-800 border border-red-300' },

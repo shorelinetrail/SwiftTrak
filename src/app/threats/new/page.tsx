@@ -123,6 +123,7 @@ export default function NewThreatPage() {
 
   const mitigatedRiskOptions = [
     { value: '', label: 'Not yet determined' },
+    { value: 'none', label: 'None' },
     ...riskOptions,
   ];
 

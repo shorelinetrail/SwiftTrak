@@ -248,7 +248,7 @@ export default function ThreatDetailPage() {
     }
   };
 
-  const handleCloseThreat = async (mitigatedRisk: RiskLevel, actualDelay?: string) => {
+  const handleCloseThreat = async (mitigatedRisk: RiskLevel | 'none', actualDelay?: string) => {
     try {
       const supabase = createClient();
 
@@ -872,9 +872,9 @@ export default function ThreatDetailPage() {
             />
             <Select
               label="Mitigated Risk"
-              options={[{ value: '', label: 'TBD' }, ...riskOptions]}
+              options={[{ value: '', label: 'TBD' }, { value: 'none', label: 'None' }, ...riskOptions]}
               value={editForm.mitigated_risk || ''}
-              onChange={(value) => setEditForm({ ...editForm, mitigated_risk: value as RiskLevel })}
+              onChange={(value) => setEditForm({ ...editForm, mitigated_risk: value as RiskLevel | 'none' })}
             />
           </div>
           <Input
@@ -1021,13 +1021,14 @@ function CloseTheatModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onConfirm: (mitigatedRisk: RiskLevel, actualDelay?: string) => void;
+  onConfirm: (mitigatedRisk: RiskLevel | 'none', actualDelay?: string) => void;
   expectedDelay?: string;
 }) {
-  const [mitigatedRisk, setMitigatedRisk] = useState<RiskLevel>('low');
+  const [mitigatedRisk, setMitigatedRisk] = useState<RiskLevel | 'none'>('low');
   const [actualDelay, setActualDelay] = useState('');
 
   const riskOptions = [
+    { value: 'none', label: 'None' },
     { value: 'low', label: 'Low' },
     { value: 'medium', label: 'Medium' },
     { value: 'high', label: 'High' },
@@ -1043,7 +1044,7 @@ function CloseTheatModal({
           label="Mitigated Risk Level"
           options={riskOptions}
           value={mitigatedRisk}
-          onChange={(value) => setMitigatedRisk(value as RiskLevel)}
+          onChange={(value) => setMitigatedRisk(value as RiskLevel | 'none')}
         />
         <Input
           label="Actual Delay"

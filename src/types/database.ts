@@ -4,6 +4,7 @@ export type ActionStatus = 'pending' | 'in_progress' | 'on_hold' | 'complete' | 
 export type ThreatStatus = 'open' | 'closed';
 export type Priority = 'critical' | 'high' | 'medium' | 'low';
 export type RiskLevel = 'low' | 'medium' | 'high';
+export type MitigatedRiskLevel = RiskLevel | 'none';
 export type QueryPriority = 'urgent' | 'high' | 'medium' | 'low';
 
 export interface User {
@@ -101,7 +102,7 @@ export interface Threat {
   unmitigated_risk: RiskLevel;
   current_risk: RiskLevel;
   solution?: string;
-  mitigated_risk?: RiskLevel;
+  mitigated_risk?: MitigatedRiskLevel;
   status: ThreatStatus;
   created_at: string;
   updated_at: string;
