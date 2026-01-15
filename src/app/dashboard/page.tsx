@@ -58,7 +58,7 @@ export default function DashboardPage() {
   const [allQueries, setAllQueries] = useState<{ id: string; responded_at: string | null }[]>([]);
   const [allMilestones, setAllMilestones] = useState<{ id: string; target_date: string; status: string; workstream_id: string | null }[]>([]);
   const [myActions, setMyActions] = useState<(Action & { owner?: User; workstream?: Workstream })[]>([]);
-  const [recentlyUpdated, setRecentlyUpdated] = useState<(Action & { owner?: User; workstream?: Workstream; last_change?: string })[]>([]);
+  const [recentlyUpdated, setRecentlyUpdated] = useState<(Action & { owner?: User; workstream?: Workstream; last_change?: string; effective_date?: string })[]>([]);
   const [recentThreats, setRecentThreats] = useState<(Threat & { workstream?: Workstream })[]>([]);
   const [pendingQueries, setPendingQueries] = useState<(TechnicalQuery & { assignee?: User })[]>([]);
   const [upcomingMilestones, setUpcomingMilestones] = useState<(Milestone & { workstream?: Workstream })[]>([]);
@@ -218,13 +218,13 @@ export default function DashboardPage() {
                   .limit(5)
                   .then(r => r.data)
               : Promise.resolve([]),
-            // Recently Updated Actions - actions updated in the last 7 days
+            // Recently Updated Actions - fetch recent actions, will filter by effective date
             supabase
               .from('actions')
               .select(actionSelect)
-              .gte('updated_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+              .gte('updated_at', new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString())
               .order('updated_at', { ascending: false })
-              .limit(5)
+              .limit(20)
               .then(r => r.data),
             // Active Threats (status is 'open' or null for open threats)
             supabase
@@ -263,8 +263,36 @@ export default function DashboardPage() {
             setMyActions(myActionsData as unknown as (Action & { owner?: User; workstream?: Workstream })[]);
           }
           if (recentlyUpdatedData) {
+            const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+            // Calculate effective date for each action:
+            // - For completed actions, use completed_at if set
+            // - For new actions (created recently in system), use created_at
+            // - For other actions, use updated_at
+            const actionsWithEffectiveDate = (recentlyUpdatedData as (Action & { owner?: User; workstream?: Workstream })[])
+              .map(action => {
+                let effectiveDate: string;
+                if (action.status === 'complete' && action.completed_at) {
+                  // Completed actions use their completion date
+                  effectiveDate = action.completed_at;
+                } else if (new Date(action.updated_at).getTime() - new Date(action.created_at).getTime() < 60000) {
+                  // If updated_at is within 1 minute of created_at, this is a new action - use created_at
+                  effectiveDate = action.created_at;
+                } else {
+                  // Otherwise use updated_at
+                  effectiveDate = action.updated_at;
+                }
+                return { ...action, effective_date: effectiveDate };
+              })
+              // Filter to only actions with effective date in last 7 days
+              .filter(action => new Date(action.effective_date).getTime() >= sevenDaysAgo)
+              // Sort by effective date descending
+              .sort((a, b) => new Date(b.effective_date).getTime() - new Date(a.effective_date).getTime())
+              // Take top 5
+              .slice(0, 5);
+
             // Fetch latest audit entry for each action to show what changed
-            const actionIds = (recentlyUpdatedData as { id: string }[]).map(a => a.id);
+            const actionIds = actionsWithEffectiveDate.map(a => a.id);
             if (actionIds.length > 0) {
               const { data: auditData } = await supabase
                 .from('action_audit')
@@ -283,7 +311,7 @@ export default function DashboardPage() {
               }
 
               // Attach change description to actions
-              const actionsWithChanges = (recentlyUpdatedData as (Action & { owner?: User; workstream?: Workstream })[]).map(action => {
+              const actionsWithChanges = actionsWithEffectiveDate.map(action => {
                 const audit = latestAuditByAction.get(action.id);
                 let last_change = '';
                 if (audit) {
@@ -622,7 +650,7 @@ export default function DashboardPage() {
                           <span className="text-xs text-gray-500">
                             {action.last_change && <span className="font-medium text-gray-600">{action.last_change}</span>}
                             {action.last_change && ' · '}
-                            {getRelativeTime(action.updated_at)}
+                            {getRelativeTime(action.effective_date || action.updated_at)}
                           </span>
                         </div>
                       </div>
