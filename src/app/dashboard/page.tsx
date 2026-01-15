@@ -304,15 +304,29 @@ export default function DashboardPage() {
               .slice(0, 5);
 
             // Fetch latest audit entry for each action to show what changed
-            // Filter out entries marked as hidden from recent
+            // Filter out entries marked as hidden from recent (if column exists)
             const actionIds = actionsWithEffectiveDate.map(a => a.id);
             if (actionIds.length > 0) {
-              const { data: auditData } = await supabase
+              // Try with hide_from_recent filter first, fallback to without if column doesn't exist
+              let auditData: { id: string; action_id: string; change_type: string; old_value?: string; new_value?: string; created_at: string }[] | null = null;
+              const { data: auditWithFilter, error: filterError } = await supabase
                 .from('action_audit')
                 .select('id, action_id, change_type, old_value, new_value, created_at, hide_from_recent')
                 .in('action_id', actionIds)
                 .eq('hide_from_recent', false)
                 .order('created_at', { ascending: false });
+
+              if (filterError) {
+                // Column might not exist, try without the filter
+                const { data: auditWithoutFilter } = await supabase
+                  .from('action_audit')
+                  .select('id, action_id, change_type, old_value, new_value, created_at')
+                  .in('action_id', actionIds)
+                  .order('created_at', { ascending: false });
+                auditData = auditWithoutFilter;
+              } else {
+                auditData = auditWithFilter;
+              }
 
               // Get the most recent audit entry per action
               const latestAuditByAction = new Map<string, { id: string; change_type: string; old_value?: string; new_value?: string }>();
