@@ -46,6 +46,7 @@ export default function AdminPage() {
   const [workstreamModalOpen, setWorkstreamModalOpen] = useState(false);
   const [stakeholderLinkModalOpen, setStakeholderLinkModalOpen] = useState(false);
   const [selectedWorkstream, setSelectedWorkstream] = useState<Workstream | null>(null);
+  const [invitingUserId, setInvitingUserId] = useState<string | null>(null);
 
   // Direct auth check and data fetch - bypasses complex hook chain
   useEffect(() => {
@@ -246,6 +247,41 @@ export default function AdminPage() {
     }
   };
 
+  const handleSendInviteToExistingUser = async (user: User) => {
+    setInvitingUserId(user.id);
+    try {
+      const response = await fetch('/api/auth/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: user.email,
+          full_name: user.full_name,
+          role: user.role,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        toast.error(result.error || 'Failed to send invite');
+        return;
+      }
+
+      if (result.emailSent) {
+        toast.success(`Invite sent to ${user.email}`);
+      } else {
+        toast.success(result.message || 'User updated but invite could not be sent.');
+      }
+
+      fetchData();
+    } catch (error) {
+      console.error('[AdminPage] Failed to send invite:', error);
+      toast.error('Failed to send invite');
+    } finally {
+      setInvitingUserId(null);
+    }
+  };
+
   const handleCreateWorkstream = async (data: Partial<Workstream>) => {
     console.log('[AdminPage] handleCreateWorkstream called with:', data);
     const supabase = createClient();
@@ -438,16 +474,28 @@ export default function AdminPage() {
                         <p className="text-sm text-gray-500">{user.email}</p>
                       </div>
                     </div>
-                    <Select
-                      options={[
-                        { value: 'view', label: 'View Only' },
-                        { value: 'edit', label: 'Can Edit' },
-                        { value: 'admin', label: 'Admin' },
-                      ]}
-                      value={user.role}
-                      onChange={(value) => handleUpdateUserRole(user.id, value as UserRole)}
-                      className="w-32"
-                    />
+                    <div className="flex items-center gap-2">
+                      {user.status === 'pending' && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => handleSendInviteToExistingUser(user)}
+                          disabled={invitingUserId === user.id}
+                        >
+                          {invitingUserId === user.id ? 'Sending...' : 'Send Invite'}
+                        </Button>
+                      )}
+                      <Select
+                        options={[
+                          { value: 'view', label: 'View Only' },
+                          { value: 'edit', label: 'Can Edit' },
+                          { value: 'admin', label: 'Admin' },
+                        ]}
+                        value={user.role}
+                        onChange={(value) => handleUpdateUserRole(user.id, value as UserRole)}
+                        className="w-32"
+                      />
+                    </div>
                   </div>
                 ))}
                 {users.length === 0 && (
