@@ -72,6 +72,7 @@ export default function ActionDetailPage() {
   const [newUpdate, setNewUpdate] = useState('');
   const [submittingUpdate, setSubmittingUpdate] = useState(false);
   const [completionComment, setCompletionComment] = useState('');
+  const [completionDate, setCompletionDate] = useState('');
   const [editForm, setEditForm] = useState<Partial<Action>>({});
 
   // Admin import comment form
@@ -339,7 +340,10 @@ export default function ActionDetailPage() {
       const updateData: Partial<Action> = { status: newStatus };
 
       if (newStatus === 'complete') {
-        updateData.completed_at = new Date().toISOString();
+        // Use custom date if provided (admin feature), otherwise use now
+        updateData.completed_at = completionDate
+          ? new Date(completionDate).toISOString()
+          : new Date().toISOString();
         updateData.completion_comment = completionComment || undefined;
       }
 
@@ -352,6 +356,8 @@ export default function ActionDetailPage() {
 
       toast.success(`Status updated to ${newStatus.replace('_', ' ')}`);
       setCompleteModalOpen(false);
+      setCompletionDate('');
+      setCompletionComment('');
       fetchAction();
     } catch (error) {
       console.error('Error updating status:', error);
@@ -1025,21 +1031,44 @@ export default function ActionDetailPage() {
       {/* Complete Modal */}
       <Modal
         open={completeModalOpen}
-        onClose={() => setCompleteModalOpen(false)}
+        onClose={() => {
+          setCompleteModalOpen(false);
+          setCompletionDate('');
+          setCompletionComment('');
+        }}
         title="Complete Action"
       >
         <p className="text-gray-600 mb-4">
           Mark this action as complete. You can optionally add a completion note.
         </p>
-        <Textarea
-          label="Completion Note (Optional)"
-          value={completionComment}
-          onChange={(e) => setCompletionComment(e.target.value)}
-          placeholder="Add any final notes..."
-          rows={3}
-        />
+        <div className="space-y-4">
+          <Textarea
+            label="Completion Note (Optional)"
+            value={completionComment}
+            onChange={(e) => setCompletionComment(e.target.value)}
+            placeholder="Add any final notes..."
+            rows={3}
+          />
+          {canAdmin && (
+            <div>
+              <Input
+                type="date"
+                label="Completion Date (Admin)"
+                value={completionDate}
+                onChange={(e) => setCompletionDate(e.target.value)}
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Leave blank to use today&apos;s date
+              </p>
+            </div>
+          )}
+        </div>
         <div className="flex justify-end gap-3 mt-6">
-          <Button variant="outline" onClick={() => setCompleteModalOpen(false)}>
+          <Button variant="outline" onClick={() => {
+            setCompleteModalOpen(false);
+            setCompletionDate('');
+            setCompletionComment('');
+          }}>
             Cancel
           </Button>
           <Button onClick={() => handleStatusChange('complete')}>
