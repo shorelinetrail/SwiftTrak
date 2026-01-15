@@ -5,6 +5,12 @@ import { UserRole } from '@/types/database';
 
 export async function POST(request: NextRequest) {
   try {
+    // Check for service role key
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.error('SUPABASE_SERVICE_ROLE_KEY is not configured');
+      return NextResponse.json({ error: 'Server configuration error: Service role key missing' }, { status: 500 });
+    }
+
     // Verify the requesting user is an admin
     const supabase = await createClient();
     const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -64,6 +70,7 @@ export async function POST(request: NextRequest) {
           full_name,
           role,
           invited_by: authUser.id,
+          invited_at: new Date().toISOString(),
         })
         .eq('id', existingPendingUser.id);
     } else {
@@ -75,12 +82,13 @@ export async function POST(request: NextRequest) {
         role,
         status: 'pending',
         invited_by: authUser.id,
+        invited_at: new Date().toISOString(),
         auth_linked: false,
       });
     }
 
     // Send the invite email using Supabase Auth
-    const { error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
+    const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
       redirectTo: `${process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin}/auth/callback`,
       data: {
         full_name,
@@ -89,14 +97,17 @@ export async function POST(request: NextRequest) {
     });
 
     if (inviteError) {
-      console.error('Failed to send invite:', inviteError);
-      // Still return success if user was created - they can sign up manually
+      console.error('Failed to send invite:', inviteError.message, inviteError);
+      // Return more detailed error info
       return NextResponse.json({
         success: true,
-        message: 'User created but invite email could not be sent. They can sign up manually.',
+        message: `User created but invite email failed: ${inviteError.message}. Check Supabase SMTP configuration.`,
         emailSent: false,
+        error: inviteError.message,
       });
     }
+
+    console.log('Invite sent successfully to:', email, 'User ID:', inviteData?.user?.id);
 
     return NextResponse.json({
       success: true,
@@ -105,6 +116,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Invite error:', error);
-    return NextResponse.json({ error: 'Failed to send invite' }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json({ error: `Failed to send invite: ${errorMessage}` }, { status: 500 });
   }
 }

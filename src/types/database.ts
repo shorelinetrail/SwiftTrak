@@ -14,6 +14,7 @@ export interface User {
   role: UserRole;
   status: UserStatus;
   invited_by?: string;
+  invited_at?: string;
   auth_linked?: boolean;
   created_at: string;
   updated_at: string;

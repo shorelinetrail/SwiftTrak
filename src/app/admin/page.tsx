@@ -235,11 +235,12 @@ export default function AdminPage() {
 
       if (result.emailSent) {
         toast.success('Invite sent! They will receive an email to set up their account.');
+        setCreateUserModalOpen(false);
       } else {
-        toast.success(result.message || 'User created but invite could not be sent.');
+        // Email failed - show as error with details
+        toast.error(result.message || 'User created but invite email failed. Check SMTP configuration.');
       }
 
-      setCreateUserModalOpen(false);
       fetchData();
     } catch (error) {
       console.error('[AdminPage] Failed to invite user:', error);
@@ -270,7 +271,8 @@ export default function AdminPage() {
       if (result.emailSent) {
         toast.success(`Invite sent to ${user.email}`);
       } else {
-        toast.success(result.message || 'User updated but invite could not be sent.');
+        // Email failed - show as error with details
+        toast.error(result.message || 'Invite email could not be sent. Check SMTP configuration.');
       }
 
       fetchData();
@@ -279,6 +281,25 @@ export default function AdminPage() {
       toast.error('Failed to send invite');
     } finally {
       setInvitingUserId(null);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string, userName: string) => {
+    if (!confirm(`Are you sure you want to delete ${userName}? This cannot be undone.`)) return;
+
+    const supabase = createClient();
+
+    const { error } = await supabase
+      .from('users')
+      .delete()
+      .eq('id', userId);
+
+    if (error) {
+      console.error('[AdminPage] Failed to delete user:', error);
+      toast.error(`Failed to delete user: ${error.message}`);
+    } else {
+      toast.success(`${userName} has been deleted`);
+      fetchData();
     }
   };
 
@@ -470,6 +491,9 @@ export default function AdminPage() {
                           {user.status === 'pending' && (
                             <Badge variant="warning" size="sm">Pending</Badge>
                           )}
+                          {user.id === currentUser?.id && (
+                            <Badge variant="default" size="sm">You</Badge>
+                          )}
                         </div>
                         <p className="text-sm text-gray-500">{user.email}</p>
                       </div>
@@ -482,7 +506,7 @@ export default function AdminPage() {
                           onClick={() => handleSendInviteToExistingUser(user)}
                           disabled={invitingUserId === user.id}
                         >
-                          {invitingUserId === user.id ? 'Sending...' : 'Send Invite'}
+                          {invitingUserId === user.id ? 'Sending...' : user.invited_at ? 'Resend Invite' : 'Send Invite'}
                         </Button>
                       )}
                       <Select
@@ -495,6 +519,16 @@ export default function AdminPage() {
                         onChange={(value) => handleUpdateUserRole(user.id, value as UserRole)}
                         className="w-32"
                       />
+                      {user.id !== currentUser?.id && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDeleteUser(user.id, user.full_name)}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          Delete
+                        </Button>
+                      )}
                     </div>
                   </div>
                 ))}
