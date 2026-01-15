@@ -385,9 +385,13 @@ export default function DashboardPage() {
           // Combine updates and closed threats for the Recent Updates section
           const updateItems: RecentUpdateItem[] = [];
 
-          // Add regular updates
+          // Add regular updates (skip milestone/threat completion updates as those are fetched separately)
           if (recentUpdatesData) {
             for (const update of recentUpdatesData as UpdateWithRelations[]) {
+              // Skip system-generated updates for milestones and threats
+              if (update.content.startsWith('Milestone complete:') || update.content.startsWith('Threat closed:')) {
+                continue;
+              }
               updateItems.push({
                 type: 'update',
                 id: update.id,
