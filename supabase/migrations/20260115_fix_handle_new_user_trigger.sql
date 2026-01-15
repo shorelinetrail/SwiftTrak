@@ -1,7 +1,7 @@
 -- Fix handle_new_user trigger to properly handle pending user linking
 -- The previous version tried to UPDATE the primary key which can fail
 -- if there are foreign key references to the old user ID.
--- This version deletes the old record and creates a new one.
+-- This version updates all foreign key references and then replaces the user record.
 
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
@@ -14,6 +14,28 @@ BEGIN
     WHERE email = NEW.email AND status = 'pending';
 
     IF pending_user.id IS NOT NULL THEN
+        -- Update all foreign key references from the pending user ID to the new auth user ID
+        UPDATE actions SET owner_id = NEW.id WHERE owner_id = pending_user.id;
+        UPDATE actions SET created_by = NEW.id WHERE created_by = pending_user.id;
+        UPDATE threats SET created_by = NEW.id WHERE created_by = pending_user.id;
+        UPDATE decisions SET created_by = NEW.id WHERE created_by = pending_user.id;
+        UPDATE decisions SET decision_maker = NEW.id WHERE decision_maker = pending_user.id;
+        UPDATE milestones SET created_by = NEW.id WHERE created_by = pending_user.id;
+        UPDATE technical_queries SET submitted_by = NEW.id WHERE submitted_by = pending_user.id;
+        UPDATE technical_queries SET assigned_to = NEW.id WHERE assigned_to = pending_user.id;
+        UPDATE action_updates SET user_id = NEW.id WHERE user_id = pending_user.id;
+        UPDATE threat_updates SET user_id = NEW.id WHERE user_id = pending_user.id;
+        UPDATE updates SET posted_by = NEW.id WHERE posted_by = pending_user.id;
+
+        -- Update audit tables
+        UPDATE action_audit SET changed_by = NEW.id WHERE changed_by = pending_user.id;
+        UPDATE threat_audit SET changed_by = NEW.id WHERE changed_by = pending_user.id;
+        UPDATE decision_audit SET changed_by = NEW.id WHERE changed_by = pending_user.id;
+        UPDATE milestone_audit SET changed_by = NEW.id WHERE changed_by = pending_user.id;
+
+        -- Update invited_by references
+        UPDATE users SET invited_by = NEW.id WHERE invited_by = pending_user.id;
+
         -- Delete the pending user record
         DELETE FROM users WHERE id = pending_user.id;
 

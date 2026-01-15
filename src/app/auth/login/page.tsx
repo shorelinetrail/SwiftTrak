@@ -32,9 +32,24 @@ export default function LoginPage() {
       return;
     }
 
-    if (isSignUp && password.length < 6) {
-      setErrorMessage('Password must be at least 6 characters');
-      return;
+    if (isSignUp) {
+      // Password complexity validation
+      if (password.length < 8) {
+        setErrorMessage('Password must be at least 8 characters');
+        return;
+      }
+      if (!/[A-Z]/.test(password)) {
+        setErrorMessage('Password must contain at least one uppercase letter');
+        return;
+      }
+      if (!/[a-z]/.test(password)) {
+        setErrorMessage('Password must contain at least one lowercase letter');
+        return;
+      }
+      if (!/[0-9]/.test(password)) {
+        setErrorMessage('Password must contain at least one number');
+        return;
+      }
     }
 
     if (isSignUp && password !== confirmPassword) {
@@ -152,7 +167,7 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Enter your password"
               required
-              hint={isSignUp ? 'At least 6 characters' : undefined}
+              hint={isSignUp ? 'Min 8 characters with uppercase, lowercase, and number' : undefined}
             />
 
             {isSignUp && (
