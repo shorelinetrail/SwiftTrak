@@ -389,7 +389,8 @@ export default function DashboardPage() {
           if (recentUpdatesData) {
             for (const update of recentUpdatesData as UpdateWithRelations[]) {
               // Skip system-generated updates for milestones and threats
-              if (update.content.startsWith('Milestone complete:') || update.content.startsWith('Threat closed:')) {
+              const lowerContent = update.content.toLowerCase();
+              if (lowerContent.startsWith('milestone complete') || lowerContent.startsWith('threat closed')) {
                 continue;
               }
               updateItems.push({
