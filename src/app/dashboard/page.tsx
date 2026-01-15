@@ -263,7 +263,59 @@ export default function DashboardPage() {
             setMyActions(myActionsData as unknown as (Action & { owner?: User; workstream?: Workstream })[]);
           }
           if (recentlyUpdatedData) {
-            setRecentlyUpdated(recentlyUpdatedData as unknown as (Action & { owner?: User; workstream?: Workstream })[]);
+            // Fetch latest audit entry for each action to show what changed
+            const actionIds = (recentlyUpdatedData as { id: string }[]).map(a => a.id);
+            if (actionIds.length > 0) {
+              const { data: auditData } = await supabase
+                .from('action_audit')
+                .select('action_id, change_type, old_value, new_value, created_at')
+                .in('action_id', actionIds)
+                .order('created_at', { ascending: false });
+
+              // Get the most recent audit entry per action
+              const latestAuditByAction = new Map<string, { change_type: string; old_value?: string; new_value?: string }>();
+              if (auditData) {
+                for (const entry of auditData) {
+                  if (!latestAuditByAction.has(entry.action_id)) {
+                    latestAuditByAction.set(entry.action_id, entry);
+                  }
+                }
+              }
+
+              // Attach change description to actions
+              const actionsWithChanges = (recentlyUpdatedData as (Action & { owner?: User; workstream?: Workstream })[]).map(action => {
+                const audit = latestAuditByAction.get(action.id);
+                let last_change = '';
+                if (audit) {
+                  switch (audit.change_type) {
+                    case 'status_changed':
+                      last_change = audit.new_value === 'complete' ? 'Marked complete' : `Status → ${audit.new_value?.replace('_', ' ')}`;
+                      break;
+                    case 'owner_changed':
+                      last_change = 'Owner changed';
+                      break;
+                    case 'priority_changed':
+                      last_change = `Priority → ${audit.new_value}`;
+                      break;
+                    case 'due_date_changed':
+                      last_change = 'Due date changed';
+                      break;
+                    case 'update_added':
+                      last_change = 'Update posted';
+                      break;
+                    case 'created':
+                      last_change = 'Created';
+                      break;
+                    default:
+                      last_change = 'Updated';
+                  }
+                }
+                return { ...action, last_change };
+              });
+              setRecentlyUpdated(actionsWithChanges);
+            } else {
+              setRecentlyUpdated([]);
+            }
           }
           if (recentThreatsData) {
             setRecentThreats(recentThreatsData as unknown as (Threat & { workstream?: Workstream })[]);
@@ -568,9 +620,9 @@ export default function DashboardPage() {
                             <Avatar src={action.owner.avatar_url} name={action.owner.full_name} size="xs" />
                           )}
                           <span className="text-xs text-gray-500">
-                            {action.status === 'complete' && action.completed_at
-                              ? `Completed ${getRelativeTime(action.completed_at)}`
-                              : `Updated ${getRelativeTime(action.updated_at)}`}
+                            {action.last_change && <span className="font-medium text-gray-600">{action.last_change}</span>}
+                            {action.last_change && ' · '}
+                            {getRelativeTime(action.updated_at)}
                           </span>
                         </div>
                       </div>
