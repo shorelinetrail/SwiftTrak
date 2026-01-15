@@ -43,7 +43,7 @@ type UpdateWithRelations = Update & {
 };
 
 type RecentUpdateItem = {
-  type: 'update' | 'threat';
+  type: 'update' | 'threat' | 'milestone';
   id: string;
   content: string;
   posted_at: string;
@@ -52,6 +52,8 @@ type RecentUpdateItem = {
   // Threat-specific
   threat_title?: string;
   current_risk?: RiskLevel;
+  // Milestone-specific
+  milestone_title?: string;
 };
 
 interface DashboardStats {
@@ -420,6 +422,28 @@ export default function DashboardPage() {
             }
           }
 
+          // Fetch and add recently completed milestones
+          const { data: completedMilestonesData } = await supabase
+            .from('milestones')
+            .select(`*, workstream:workstreams(id, name, color, parent_id)`)
+            .eq('status', 'complete')
+            .gte('updated_at', new Date(sevenDaysAgo).toISOString())
+            .order('updated_at', { ascending: false })
+            .limit(5);
+
+          if (completedMilestonesData) {
+            for (const milestone of completedMilestonesData as (Milestone & { workstream?: Workstream })[]) {
+              updateItems.push({
+                type: 'milestone',
+                id: milestone.id,
+                content: `Milestone complete: ${milestone.title}`,
+                posted_at: milestone.updated_at,
+                workstream: milestone.workstream,
+                milestone_title: milestone.title,
+              });
+            }
+          }
+
           // Sort by posted_at and set
           updateItems.sort((a, b) => new Date(b.posted_at).getTime() - new Date(a.posted_at).getTime());
           setRecentUpdateItems(updateItems);
@@ -665,11 +689,27 @@ export default function DashboardPage() {
                         <CheckCircleIcon className="w-4 h-4 text-green-600" />
                       </div>
                     )}
+                    {item.type === 'milestone' && (
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+                        <CheckCircleIcon className="w-4 h-4 text-green-600" />
+                      </div>
+                    )}
+                    {item.type === 'update' && (
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                        <MegaphoneIcon className="w-4 h-4 text-blue-600" />
+                      </div>
+                    )}
                     <div className="flex-1 min-w-0">
                       {item.type === 'threat' ? (
                         <Link href={`/threats/${item.id}`} className="block hover:underline">
                           <p className="text-sm text-gray-900">
                             <span className="font-medium">Threat closed:</span> {item.threat_title}
+                          </p>
+                        </Link>
+                      ) : item.type === 'milestone' ? (
+                        <Link href={`/milestones/${item.id}`} className="block hover:underline">
+                          <p className="text-sm text-gray-900">
+                            <span className="font-medium">Milestone complete:</span> {item.milestone_title}
                           </p>
                         </Link>
                       ) : (
