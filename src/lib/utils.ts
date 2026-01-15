@@ -12,18 +12,18 @@ export function formatDate(date: string | Date, options?: Intl.DateTimeFormatOpt
     hour: '2-digit',
     minute: '2-digit',
   };
-  return new Date(date).toLocaleDateString('en-US', options || defaultOptions);
+  return new Date(date).toLocaleDateString('en-GB', options || defaultOptions);
 }
 
 export function formatDateShort(date: string | Date): string {
-  return new Date(date).toLocaleDateString('en-US', {
+  return new Date(date).toLocaleDateString('en-GB', {
     month: 'short',
     day: 'numeric',
   });
 }
 
 export function formatTime(date: string | Date): string {
-  return new Date(date).toLocaleTimeString('en-US', {
+  return new Date(date).toLocaleTimeString('en-GB', {
     hour: '2-digit',
     minute: '2-digit',
   });
