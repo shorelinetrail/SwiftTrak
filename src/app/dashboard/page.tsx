@@ -58,7 +58,7 @@ export default function DashboardPage() {
   const [allQueries, setAllQueries] = useState<{ id: string; responded_at: string | null }[]>([]);
   const [allMilestones, setAllMilestones] = useState<{ id: string; target_date: string; status: string; workstream_id: string | null }[]>([]);
   const [myActions, setMyActions] = useState<(Action & { owner?: User; workstream?: Workstream })[]>([]);
-  const [recentlyUpdated, setRecentlyUpdated] = useState<(Action & { owner?: User; workstream?: Workstream })[]>([]);
+  const [recentlyUpdated, setRecentlyUpdated] = useState<(Action & { owner?: User; workstream?: Workstream; last_change?: string })[]>([]);
   const [recentThreats, setRecentThreats] = useState<(Threat & { workstream?: Workstream })[]>([]);
   const [pendingQueries, setPendingQueries] = useState<(TechnicalQuery & { assignee?: User })[]>([]);
   const [upcomingMilestones, setUpcomingMilestones] = useState<(Milestone & { workstream?: Workstream })[]>([]);
@@ -218,11 +218,11 @@ export default function DashboardPage() {
                   .limit(5)
                   .then(r => r.data)
               : Promise.resolve([]),
-            // Recently Updated Actions (active statuses only)
+            // Recently Updated Actions (including completed in last 7 days)
             supabase
               .from('actions')
               .select(actionSelect)
-              .in('status', ['pending', 'in_progress', 'on_hold'])
+              .or(`status.in.(pending,in_progress,on_hold),and(status.eq.complete,completed_at.gte.${new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()})`)
               .order('updated_at', { ascending: false })
               .limit(5)
               .then(r => r.data),
@@ -568,7 +568,9 @@ export default function DashboardPage() {
                             <Avatar src={action.owner.avatar_url} name={action.owner.full_name} size="xs" />
                           )}
                           <span className="text-xs text-gray-500">
-                            {getRelativeTime(action.updated_at)}
+                            {action.status === 'complete' && action.completed_at
+                              ? `Completed ${getRelativeTime(action.completed_at)}`
+                              : `Updated ${getRelativeTime(action.updated_at)}`}
                           </span>
                         </div>
                       </div>
