@@ -218,11 +218,11 @@ export default function DashboardPage() {
                   .limit(5)
                   .then(r => r.data)
               : Promise.resolve([]),
-            // Recently Updated Actions (including completed in last 7 days)
+            // Recently Updated Actions - actions updated in the last 7 days
             supabase
               .from('actions')
               .select(actionSelect)
-              .or(`status.in.(pending,in_progress,on_hold),and(status.eq.complete,completed_at.gte.${new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()})`)
+              .gte('updated_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
               .order('updated_at', { ascending: false })
               .limit(5)
               .then(r => r.data),
