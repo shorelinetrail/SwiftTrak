@@ -75,6 +75,11 @@ export default function ActionDetailPage() {
   const [completionDate, setCompletionDate] = useState('');
   const [editForm, setEditForm] = useState<Partial<Action>>({});
 
+  // Update editing states
+  const [editingUpdateId, setEditingUpdateId] = useState<string | null>(null);
+  const [editingUpdateContent, setEditingUpdateContent] = useState('');
+  const [deletingUpdateId, setDeletingUpdateId] = useState<string | null>(null);
+
   // Admin import comment form
   const [adminCommentUser, setAdminCommentUser] = useState('');
   const [adminCommentDate, setAdminCommentDate] = useState('');
@@ -273,6 +278,49 @@ export default function ActionDetailPage() {
       toast.error('Failed to add update');
     } finally {
       setSubmittingUpdate(false);
+    }
+  };
+
+  const handleEditUpdate = async (updateId: string) => {
+    if (!editingUpdateContent.trim()) return;
+
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase
+        .from('action_updates')
+        .update({ content: editingUpdateContent.trim() })
+        .eq('id', updateId);
+
+      if (error) throw error;
+
+      toast.success('Update edited');
+      setEditingUpdateId(null);
+      setEditingUpdateContent('');
+      fetchAction();
+    } catch (error) {
+      console.error('Error editing update:', error);
+      toast.error('Failed to edit update');
+    }
+  };
+
+  const handleDeleteUpdate = async (updateId: string) => {
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase
+        .from('action_updates')
+        .delete()
+        .eq('id', updateId);
+
+      if (error) throw error;
+
+      toast.success('Update deleted');
+      setDeletingUpdateId(null);
+      fetchAction();
+    } catch (error) {
+      console.error('Error deleting update:', error);
+      toast.error('Failed to delete update');
     }
   };
 
@@ -745,20 +793,90 @@ export default function ActionDetailPage() {
                         size="sm"
                       />
                       <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-900">
-                            {update.user?.full_name || 'Unknown'}
-                          </span>
-                          {!update.is_legacy_import && (
-                            <span className="text-xs text-gray-500">
-                              {getRelativeTime(update.created_at)}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-gray-900">
+                              {update.user?.full_name || 'Unknown'}
                             </span>
+                            {!update.is_legacy_import && (
+                              <span className="text-xs text-gray-500">
+                                {getRelativeTime(update.created_at)}
+                              </span>
+                            )}
+                          </div>
+                          {canEdit && (update.user_id === user?.id || canAdmin) && (
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => {
+                                  setEditingUpdateId(update.id);
+                                  setEditingUpdateContent(update.content);
+                                }}
+                                className="p-1 text-gray-400 hover:text-gray-600 rounded"
+                                title="Edit"
+                              >
+                                <PencilIcon className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => setDeletingUpdateId(update.id)}
+                                className="p-1 text-gray-400 hover:text-red-600 rounded"
+                                title="Delete"
+                              >
+                                <TrashIcon className="w-4 h-4" />
+                              </button>
+                            </div>
                           )}
                         </div>
-                        <p className="text-sm text-gray-700 mt-1">{update.content}</p>
+                        {editingUpdateId === update.id ? (
+                          <div className="mt-2">
+                            <Textarea
+                              value={editingUpdateContent}
+                              onChange={(e) => setEditingUpdateContent(e.target.value)}
+                              rows={2}
+                            />
+                            <div className="flex justify-end gap-2 mt-2">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setEditingUpdateId(null);
+                                  setEditingUpdateContent('');
+                                }}
+                              >
+                                Cancel
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => handleEditUpdate(update.id)}
+                              >
+                                Save
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-700 mt-1">{update.content}</p>
+                        )}
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* Delete Update Confirmation */}
+              {deletingUpdateId && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center">
+                  <div className="fixed inset-0 bg-black/50" onClick={() => setDeletingUpdateId(null)} />
+                  <div className="relative bg-white rounded-xl shadow-xl max-w-sm w-full mx-4 p-6">
+                    <h3 className="text-lg font-semibold mb-2">Delete Update</h3>
+                    <p className="text-gray-600 mb-4">Are you sure you want to delete this update?</p>
+                    <div className="flex justify-end gap-3">
+                      <Button variant="outline" onClick={() => setDeletingUpdateId(null)}>
+                        Cancel
+                      </Button>
+                      <Button variant="danger" onClick={() => handleDeleteUpdate(deletingUpdateId)}>
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               )}
 

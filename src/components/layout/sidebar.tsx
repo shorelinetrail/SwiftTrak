@@ -7,6 +7,7 @@ import { useAppStore } from '@/stores/app-store';
 import {
   HomeIcon,
   ClipboardDocumentListIcon,
+  MegaphoneIcon,
   ExclamationTriangleIcon,
   QuestionMarkCircleIcon,
   DocumentTextIcon,
@@ -23,6 +24,7 @@ import { Avatar } from '../ui/avatar';
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
+  { name: 'Updates', href: '/updates', icon: MegaphoneIcon },
   { name: 'Actions', href: '/actions', icon: ClipboardDocumentListIcon },
   { name: 'Threats', href: '/threats', icon: ExclamationTriangleIcon },
   { name: 'Technical Queries', href: '/queries', icon: QuestionMarkCircleIcon },
