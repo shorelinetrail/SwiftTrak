@@ -434,3 +434,8 @@ export interface UpdatesConfig {
   auto_log_completed_milestones: boolean;
   auto_log_completed_actions: boolean;
 }
+
+export interface FeatureConfig {
+  gantt_chart_enabled: boolean;
+  technical_queries_enabled: boolean;
+}

@@ -24,12 +24,13 @@ import {
   LinkIcon,
   ClipboardDocumentIcon,
   Cog6ToothIcon,
+  MegaphoneIcon,
 } from '@heroicons/react/24/outline';
-import type { User, Workstream, StakeholderLink, UserRole, UserStatus, UpdatesConfig } from '@/types/database';
+import type { User, Workstream, StakeholderLink, UserRole, UserStatus, UpdatesConfig, FeatureConfig } from '@/types/database';
 
 export default function AdminPage() {
   const router = useRouter();
-  const { workstreams, setWorkstreams } = useAppStore();
+  const { workstreams, setWorkstreams, setFeatureConfig } = useAppStore();
 
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -38,6 +39,10 @@ export default function AdminPage() {
   const [updatesConfig, setUpdatesConfig] = useState<UpdatesConfig>({
     auto_log_completed_milestones: true,
     auto_log_completed_actions: false,
+  });
+  const [featureConfig, setFeatureConfigState] = useState<FeatureConfig>({
+    gantt_chart_enabled: true,
+    technical_queries_enabled: true,
   });
   const [activeTab, setActiveTab] = useState('users');
 
@@ -110,11 +115,12 @@ export default function AdminPage() {
         setCurrentUser(profile as User);
 
         // Step 4: Fetch admin data
-        const [usersResult, workstreamsResult, linksResult, settingsResult] = await Promise.all([
+        const [usersResult, workstreamsResult, linksResult, settingsResult, featureResult] = await Promise.all([
           supabase.from('users').select('*').order('full_name'),
           supabase.from('workstreams').select('*').order('order_index'),
           supabase.from('stakeholder_links').select('*').order('created_at', { ascending: false }),
           supabase.from('system_settings').select('*').eq('key', 'updates_config').maybeSingle(),
+          supabase.from('system_settings').select('*').eq('key', 'feature_config').maybeSingle(),
         ]);
 
         if (!mounted) return;
@@ -124,6 +130,9 @@ export default function AdminPage() {
         if (linksResult.data) setStakeholderLinks(linksResult.data as StakeholderLink[]);
         if (settingsResult.data?.value && !settingsResult.error) {
           setUpdatesConfig(settingsResult.data.value as UpdatesConfig);
+        }
+        if (featureResult.data?.value && !featureResult.error) {
+          setFeatureConfigState(featureResult.data.value as FeatureConfig);
         }
 
         setLoading(false);
@@ -147,11 +156,12 @@ export default function AdminPage() {
     const supabase = createClient();
 
     try {
-      const [usersResult, workstreamsResult, linksResult, settingsResult] = await Promise.all([
+      const [usersResult, workstreamsResult, linksResult, settingsResult, featureResult] = await Promise.all([
         supabase.from('users').select('*').order('full_name'),
         supabase.from('workstreams').select('*').order('order_index'),
         supabase.from('stakeholder_links').select('*').order('created_at', { ascending: false }),
         supabase.from('system_settings').select('*').eq('key', 'updates_config').maybeSingle(),
+        supabase.from('system_settings').select('*').eq('key', 'feature_config').maybeSingle(),
       ]);
 
       if (usersResult.data) setUsers(usersResult.data as User[]);
@@ -159,6 +169,9 @@ export default function AdminPage() {
       if (linksResult.data) setStakeholderLinks(linksResult.data as StakeholderLink[]);
       if (settingsResult.data?.value && !settingsResult.error) {
         setUpdatesConfig(settingsResult.data.value as UpdatesConfig);
+      }
+      if (featureResult.data?.value && !featureResult.error) {
+        setFeatureConfigState(featureResult.data.value as FeatureConfig);
       }
     } catch (error) {
       console.error('[AdminPage] fetchData error:', error);
@@ -436,6 +449,28 @@ export default function AdminPage() {
     }
   };
 
+  const handleUpdateFeatureConfig = async (config: FeatureConfig) => {
+    const supabase = createClient();
+
+    const { error } = await supabase
+      .from('system_settings')
+      .upsert({
+        key: 'feature_config',
+        value: config,
+        updated_by: currentUser?.id,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'key' });
+
+    if (error) {
+      toast.error('Failed to update feature settings');
+      console.error('[AdminPage] Failed to update feature settings:', error);
+    } else {
+      setFeatureConfigState(config);
+      setFeatureConfig(config); // Update global store
+      toast.success('Feature settings updated');
+    }
+  };
+
   const tabs = [
     { id: 'users', label: 'Users', count: users.length },
     { id: 'workstreams', label: 'Workstreams', count: workstreams.length },
@@ -680,56 +715,111 @@ export default function AdminPage() {
 
         {/* Settings Tab */}
         {activeTab === 'settings' && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Cog6ToothIcon className="w-5 h-5 text-gray-400" />
-                Updates & Activity Settings
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-gray-500 mb-6">
-                Configure automatic logging of activity to the Updates feed.
-              </p>
-              <div className="space-y-4">
-                <label className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                  <div>
-                    <p className="font-medium text-gray-900">Auto-log completed milestones</p>
-                    <p className="text-sm text-gray-500">
-                      Automatically post to Updates when a milestone is marked as completed
-                    </p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={updatesConfig.auto_log_completed_milestones}
-                    onChange={(e) => handleUpdateUpdatesConfig({
-                      ...updatesConfig,
-                      auto_log_completed_milestones: e.target.checked,
-                    })}
-                    className="h-5 w-5 rounded border-gray-300 text-red-600 focus:ring-red-500"
-                  />
-                </label>
+          <div className="space-y-6">
+            {/* Feature Toggles */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Cog6ToothIcon className="w-5 h-5 text-gray-400" />
+                  Feature Settings
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-gray-500 mb-6">
+                  Enable or disable optional features for your team.
+                </p>
+                <div className="space-y-4">
+                  <label className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="font-medium text-gray-900">Gantt Chart</p>
+                      <p className="text-sm text-gray-500">
+                        Show Gantt chart for visual project timeline and milestone tracking
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={featureConfig.gantt_chart_enabled}
+                      onChange={(e) => handleUpdateFeatureConfig({
+                        ...featureConfig,
+                        gantt_chart_enabled: e.target.checked,
+                      })}
+                      className="h-5 w-5 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                    />
+                  </label>
 
-                <label className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                  <div>
-                    <p className="font-medium text-gray-900">Auto-log completed actions</p>
-                    <p className="text-sm text-gray-500">
-                      Automatically post to Updates when an action is marked as complete
-                    </p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={updatesConfig.auto_log_completed_actions}
-                    onChange={(e) => handleUpdateUpdatesConfig({
-                      ...updatesConfig,
-                      auto_log_completed_actions: e.target.checked,
-                    })}
-                    className="h-5 w-5 rounded border-gray-300 text-red-600 focus:ring-red-500"
-                  />
-                </label>
-              </div>
-            </CardContent>
-          </Card>
+                  <label className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="font-medium text-gray-900">Technical Queries</p>
+                      <p className="text-sm text-gray-500">
+                        Enable technical query tracking and assignment system
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={featureConfig.technical_queries_enabled}
+                      onChange={(e) => handleUpdateFeatureConfig({
+                        ...featureConfig,
+                        technical_queries_enabled: e.target.checked,
+                      })}
+                      className="h-5 w-5 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                    />
+                  </label>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Updates & Activity Settings */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <MegaphoneIcon className="w-5 h-5 text-gray-400" />
+                  Updates & Activity Settings
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-gray-500 mb-6">
+                  Configure automatic logging of activity to the Updates feed.
+                </p>
+                <div className="space-y-4">
+                  <label className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="font-medium text-gray-900">Auto-log completed milestones</p>
+                      <p className="text-sm text-gray-500">
+                        Automatically post to Updates when a milestone is marked as completed
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={updatesConfig.auto_log_completed_milestones}
+                      onChange={(e) => handleUpdateUpdatesConfig({
+                        ...updatesConfig,
+                        auto_log_completed_milestones: e.target.checked,
+                      })}
+                      className="h-5 w-5 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="font-medium text-gray-900">Auto-log completed actions</p>
+                      <p className="text-sm text-gray-500">
+                        Automatically post to Updates when an action is marked as complete
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={updatesConfig.auto_log_completed_actions}
+                      onChange={(e) => handleUpdateUpdatesConfig({
+                        ...updatesConfig,
+                        auto_log_completed_actions: e.target.checked,
+                      })}
+                      className="h-5 w-5 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                    />
+                  </label>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         )}
       </div>
 

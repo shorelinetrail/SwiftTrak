@@ -27,11 +27,11 @@ const navigation = [
   { name: 'Updates', href: '/updates', icon: MegaphoneIcon },
   { name: 'Actions', href: '/actions', icon: ClipboardDocumentListIcon },
   { name: 'Threats', href: '/threats', icon: ExclamationTriangleIcon },
-  { name: 'Technical Queries', href: '/queries', icon: QuestionMarkCircleIcon },
+  { name: 'Technical Queries', href: '/queries', icon: QuestionMarkCircleIcon, featureKey: 'technical_queries_enabled' as const },
   { name: 'Decisions', href: '/decisions', icon: DocumentTextIcon },
   { name: 'Milestones', href: '/milestones', icon: FlagIcon },
   { name: 'Vendors', href: '/vendors', icon: BuildingOfficeIcon },
-  { name: 'Gantt Chart', href: '/gantt', icon: ChartBarIcon },
+  { name: 'Gantt Chart', href: '/gantt', icon: ChartBarIcon, featureKey: 'gantt_chart_enabled' as const },
 ];
 
 const editNavigation = [
@@ -44,10 +44,16 @@ const adminNavigation = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { user, sidebarOpen, setSidebarOpen, unreadCount } = useAppStore();
+  const { user, sidebarOpen, setSidebarOpen, unreadCount, featureConfig } = useAppStore();
 
   const isAdmin = user?.role === 'admin';
   const canEdit = user?.role === 'admin' || user?.role === 'edit';
+
+  // Filter navigation items based on feature config
+  const filteredNavigation = navigation.filter(item => {
+    if (!item.featureKey) return true;
+    return featureConfig[item.featureKey];
+  });
 
   return (
     <aside
@@ -82,7 +88,7 @@ export function Sidebar() {
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-4">
           <ul className="space-y-1 px-3">
-            {navigation.map((item) => {
+            {filteredNavigation.map((item) => {
               const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
               return (
                 <li key={item.name}>

@@ -7,10 +7,11 @@ import { AuthProvider, useAuth } from '@/providers/auth-provider';
 import { useAppStore } from '@/stores/app-store';
 import { createClient } from '@/lib/supabase/client';
 import { LoadingSpinner } from '@/components/ui/loading';
-import type { Workstream, Notification } from '@/types/database';
+import type { Workstream, Notification, FeatureConfig } from '@/types/database';
 
 // Module-level state to track workstream fetch across all MainLayout instances
 let workstreamsFetchInProgress = false;
+let featureConfigFetchInProgress = false;
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -18,7 +19,7 @@ interface MainLayoutProps {
 
 function MainLayoutContent({ children }: MainLayoutProps) {
   const { user, loading } = useAuth();
-  const { workstreams, setWorkstreams, setNotifications, sidebarOpen } = useAppStore();
+  const { workstreams, setWorkstreams, setNotifications, sidebarOpen, featureConfig, setFeatureConfig } = useAppStore();
   const lastUserIdRef = useRef<string | null>(null);
 
   console.log('[MainLayoutContent] Render - user:', !!user, 'loading:', loading, 'workstreams:', workstreams.length);
@@ -61,6 +62,35 @@ function MainLayoutContent({ children }: MainLayoutProps) {
       mounted = false;
     };
   }, [workstreams.length, setWorkstreams]);
+
+  // Fetch feature config once globally
+  useEffect(() => {
+    if (featureConfigFetchInProgress) return;
+    featureConfigFetchInProgress = true;
+    let mounted = true;
+
+    const fetchFeatureConfig = async () => {
+      const supabase = createClient();
+      try {
+        const result = await Promise.race([
+          supabase.from('system_settings').select('*').eq('key', 'feature_config').maybeSingle(),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+        ]);
+
+        if (mounted && result?.data?.value) {
+          setFeatureConfig(result.data.value as FeatureConfig);
+        }
+      } catch (error) {
+        console.error('[MainLayout] Error fetching feature config:', error);
+      }
+    };
+
+    fetchFeatureConfig();
+
+    return () => {
+      mounted = false;
+    };
+  }, [setFeatureConfig]);
 
   // Fetch notifications when user changes - with timeout protection
   useEffect(() => {
