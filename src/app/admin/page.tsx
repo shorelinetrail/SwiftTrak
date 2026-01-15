@@ -217,6 +217,35 @@ export default function AdminPage() {
     }
   };
 
+  const handleInviteUser = async (data: { email: string; full_name: string; role: UserRole }) => {
+    try {
+      const response = await fetch('/api/auth/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        toast.error(result.error || 'Failed to send invite');
+        return;
+      }
+
+      if (result.emailSent) {
+        toast.success('Invite sent! They will receive an email to set up their account.');
+      } else {
+        toast.success(result.message || 'User created but invite could not be sent.');
+      }
+
+      setCreateUserModalOpen(false);
+      fetchData();
+    } catch (error) {
+      console.error('[AdminPage] Failed to invite user:', error);
+      toast.error('Failed to send invite');
+    }
+  };
+
   const handleCreateWorkstream = async (data: Partial<Workstream>) => {
     console.log('[AdminPage] handleCreateWorkstream called with:', data);
     const supabase = createClient();
@@ -646,6 +675,7 @@ export default function AdminPage() {
         open={createUserModalOpen}
         onClose={() => setCreateUserModalOpen(false)}
         onSave={handleCreatePendingUser}
+        onInvite={handleInviteUser}
       />
     </div>
   );
@@ -814,28 +844,49 @@ function CreateUserModal({
   open,
   onClose,
   onSave,
+  onInvite,
 }: {
   open: boolean;
   onClose: () => void;
   onSave: (data: { email: string; full_name: string; role: UserRole }) => void;
+  onInvite: (data: { email: string; full_name: string; role: UserRole }) => Promise<void>;
 }) {
   const [formData, setFormData] = useState({
     email: '',
     full_name: '',
     role: 'view' as UserRole,
   });
+  const [sendInvite, setSendInvite] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open) {
       setFormData({ email: '', full_name: '', role: 'view' });
+      setSendInvite(true);
+      setSaving(false);
     }
   }, [open]);
+
+  const handleSubmit = async () => {
+    if (!formData.email.trim() || !formData.full_name.trim()) return;
+
+    setSaving(true);
+    try {
+      if (sendInvite) {
+        await onInvite(formData);
+      } else {
+        onSave(formData);
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <Modal open={open} onClose={onClose} title="Add User">
       <div className="space-y-4">
         <p className="text-sm text-gray-500">
-          Create a user before they sign up. When they register with this email, they&apos;ll automatically inherit the role you set here.
+          Add a new user and optionally send them an invite email to set up their account.
         </p>
         <Input
           label="Email"
@@ -862,19 +913,27 @@ function CreateUserModal({
           value={formData.role}
           onChange={(value) => setFormData({ ...formData, role: value as UserRole })}
         />
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={sendInvite}
+            onChange={(e) => setSendInvite(e.target.checked)}
+            className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+          />
+          <span className="text-sm text-gray-700">Send invite email</span>
+        </label>
+        {!sendInvite && (
+          <p className="text-xs text-gray-500 ml-6">
+            User will be created but won&apos;t receive an email. They can sign up manually with this email.
+          </p>
+        )}
       </div>
       <div className="flex justify-end gap-3 mt-6">
         <Button variant="outline" onClick={onClose}>
           Cancel
         </Button>
-        <Button
-          onClick={() => {
-            if (formData.email.trim() && formData.full_name.trim()) {
-              onSave(formData);
-            }
-          }}
-        >
-          Add User
+        <Button onClick={handleSubmit} loading={saving}>
+          {sendInvite ? 'Send Invite' : 'Add User'}
         </Button>
       </div>
     </Modal>
