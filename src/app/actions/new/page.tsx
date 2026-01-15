@@ -131,6 +131,15 @@ export default function NewActionPage() {
 
       if (error) throw error;
 
+      // If this is a historical import, hide the audit entry from recent updates
+      if (formData.created_at && data) {
+        await supabase
+          .from('action_audit')
+          .update({ hide_from_recent: true })
+          .eq('action_id', data.id)
+          .eq('change_type', 'created');
+      }
+
       // If there's an initial comment (legacy import), create an action_update
       if (formData.initial_comment.trim() && data) {
         const { error: commentError } = await supabase
