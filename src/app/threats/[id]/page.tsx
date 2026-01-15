@@ -590,7 +590,7 @@ export default function ThreatDetailPage() {
               {threat.description && (
                 <div className="mb-6">
                   <h3 className="text-sm font-medium text-gray-500 mb-2">Description</h3>
-                  <p className="text-sm text-gray-700">{threat.description}</p>
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap">{threat.description}</p>
                 </div>
               )}
 
@@ -598,7 +598,7 @@ export default function ThreatDetailPage() {
               {threat.solution && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
                   <h4 className="text-sm font-medium text-green-800 mb-1">Solution</h4>
-                  <p className="text-sm text-green-700">{threat.solution}</p>
+                  <p className="text-sm text-green-700 whitespace-pre-wrap">{threat.solution}</p>
                 </div>
               )}
 
@@ -693,7 +693,7 @@ export default function ThreatDetailPage() {
                             {getRelativeTime(update.created_at)}
                           </span>
                         </div>
-                        <p className="text-sm text-gray-700 mt-1">{update.content}</p>
+                        <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap">{update.content}</p>
                       </div>
                     </div>
                   ))}

@@ -478,7 +478,7 @@ export default function DashboardPage() {
                     className="flex items-start gap-3 p-3 bg-white rounded-lg border border-red-100"
                   >
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-900">{update.content}</p>
+                      <p className="text-sm text-gray-900 whitespace-pre-wrap">{update.content}</p>
                       <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
                         {update.creator && (
                           <>

@@ -676,7 +676,7 @@ export default function ActionDetailPage() {
               {action.description && (
                 <div className="mb-6">
                   <h3 className="text-sm font-medium text-gray-500 mb-2">Description</h3>
-                  <div className="prose prose-sm max-w-none text-gray-700">
+                  <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap">
                     {action.description}
                   </div>
                 </div>
@@ -860,7 +860,7 @@ export default function ActionDetailPage() {
                             </div>
                           </div>
                         ) : (
-                          <p className="text-sm text-gray-700 mt-1">{update.content}</p>
+                          <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap">{update.content}</p>
                         )}
                       </div>
                     </div>

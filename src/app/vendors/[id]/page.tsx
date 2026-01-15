@@ -633,7 +633,7 @@ export default function VendorDetailPage() {
               {vendor.notes && (
                 <div>
                   <h3 className="text-sm font-medium text-gray-500 mb-2">Notes</h3>
-                  <p className="text-sm text-gray-700">{vendor.notes}</p>
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap">{vendor.notes}</p>
                 </div>
               )}
             </CardContent>
