@@ -256,6 +256,7 @@ export function WorkstreamSelect({
                                 'block truncate',
                                 isChildSelected && 'font-medium'
                               )}>
+                                <span className="text-gray-400">{parent.name} / </span>
                                 {child.name}
                               </span>
                               {isChildSelected && (
