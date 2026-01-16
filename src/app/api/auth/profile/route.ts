@@ -52,82 +52,56 @@ export async function GET() {
         }));
         console.log('[API /auth/profile] Will update references from', pendingUser.id, 'to', authUser.id);
 
-        // Update all references to the pending user ID BEFORE deleting
-        // This ensures actions, queries, etc. remain assigned to the user
         const pendingUserId = pendingUser.id;
         const newUserId = authUser.id;
 
-        // Update all foreign key references from pending user to new auth user
-        // Run updates in parallel for efficiency
-        const updateResults = await Promise.allSettled([
-          // Actions
-          adminClient.from('actions').update({ owner_id: newUserId }).eq('owner_id', pendingUserId),
-          adminClient.from('actions').update({ created_by: newUserId }).eq('created_by', pendingUserId),
+        // STEP 1: Query all items owned by the pending user BEFORE deleting
+        // We need to store these IDs because ON DELETE SET NULL will wipe the references
+        console.log('[API /auth/profile] Step 1: Querying items owned by pending user...');
 
-          // Technical queries
-          adminClient.from('technical_queries').update({ submitted_by: newUserId }).eq('submitted_by', pendingUserId),
-          adminClient.from('technical_queries').update({ assigned_to: newUserId }).eq('assigned_to', pendingUserId),
-
-          // Updates table (column is created_by, not user_id)
-          adminClient.from('updates').update({ created_by: newUserId }).eq('created_by', pendingUserId),
-
-          // Action updates
-          adminClient.from('action_updates').update({ user_id: newUserId }).eq('user_id', pendingUserId),
-
-          // Threat updates
-          adminClient.from('threat_updates').update({ user_id: newUserId }).eq('user_id', pendingUserId),
-
-          // Threats
-          adminClient.from('threats').update({ created_by: newUserId }).eq('created_by', pendingUserId),
-
-          // Decisions (has both created_by and made_by)
-          adminClient.from('decisions').update({ created_by: newUserId }).eq('created_by', pendingUserId),
-          adminClient.from('decisions').update({ made_by: newUserId }).eq('made_by', pendingUserId),
-
-          // Milestones
-          adminClient.from('milestones').update({ created_by: newUserId }).eq('created_by', pendingUserId),
-
-          // Audit tables
-          adminClient.from('action_audit').update({ user_id: newUserId }).eq('user_id', pendingUserId),
-          adminClient.from('threat_audit').update({ user_id: newUserId }).eq('user_id', pendingUserId),
-          adminClient.from('decision_audit').update({ user_id: newUserId }).eq('user_id', pendingUserId),
-          adminClient.from('milestone_audit').update({ user_id: newUserId }).eq('user_id', pendingUserId),
-
-          // Notifications
-          adminClient.from('notifications').update({ user_id: newUserId }).eq('user_id', pendingUserId),
-
-          // Update any users invited by the pending user
-          adminClient.from('users').update({ invited_by: newUserId }).eq('invited_by', pendingUserId),
+        const [
+          ownedActions,
+          createdActions,
+          submittedQueries,
+          assignedQueries,
+          createdUpdates,
+          actionUpdates,
+          threatUpdates,
+          createdThreats,
+          madeByDecisions,
+          createdMilestones,
+          actionAudits,
+          threatAudits,
+          decisionAudits,
+          milestoneAudits,
+          userNotifications,
+          invitedUsers,
+        ] = await Promise.all([
+          adminClient.from('actions').select('id').eq('owner_id', pendingUserId),
+          adminClient.from('actions').select('id').eq('created_by', pendingUserId),
+          adminClient.from('technical_queries').select('id').eq('submitted_by', pendingUserId),
+          adminClient.from('technical_queries').select('id').eq('assigned_to', pendingUserId),
+          adminClient.from('updates').select('id').eq('created_by', pendingUserId),
+          adminClient.from('action_updates').select('id').eq('user_id', pendingUserId),
+          adminClient.from('threat_updates').select('id').eq('user_id', pendingUserId),
+          adminClient.from('threats').select('id').eq('created_by', pendingUserId),
+          adminClient.from('decisions').select('id').eq('made_by', pendingUserId),
+          adminClient.from('milestones').select('id').eq('created_by', pendingUserId),
+          adminClient.from('action_audit').select('id').eq('user_id', pendingUserId),
+          adminClient.from('threat_audit').select('id').eq('user_id', pendingUserId),
+          adminClient.from('decision_audit').select('id').eq('user_id', pendingUserId),
+          adminClient.from('milestone_audit').select('id').eq('user_id', pendingUserId),
+          adminClient.from('notifications').select('id').eq('user_id', pendingUserId),
+          adminClient.from('users').select('id').eq('invited_by', pendingUserId),
         ]);
 
-        // Log detailed results for each update
-        const updateNames = [
-          'actions.owner_id', 'actions.created_by',
-          'technical_queries.submitted_by', 'technical_queries.assigned_to',
-          'updates.created_by', 'action_updates.user_id', 'threat_updates.user_id',
-          'threats.created_by', 'decisions.created_by', 'decisions.made_by',
-          'milestones.created_by', 'action_audit.user_id', 'threat_audit.user_id',
-          'decision_audit.user_id', 'milestone_audit.user_id',
-          'notifications.user_id', 'users.invited_by'
-        ];
+        const ownedActionIds = ownedActions.data?.map(a => a.id) || [];
+        const createdActionIds = createdActions.data?.map(a => a.id) || [];
+        console.log('[API /auth/profile] Found', ownedActionIds.length, 'owned actions:', ownedActionIds);
+        console.log('[API /auth/profile] Found', createdActionIds.length, 'created actions');
 
-        console.log('[API /auth/profile] === UPDATE RESULTS ===');
-        updateResults.forEach((result, index) => {
-          const name = updateNames[index] || `update_${index}`;
-          if (result.status === 'rejected') {
-            console.error(`[API /auth/profile] ${name}: REJECTED -`, result.reason);
-          } else if (result.value.error) {
-            console.error(`[API /auth/profile] ${name}: ERROR -`, result.value.error.message);
-          } else {
-            console.log(`[API /auth/profile] ${name}: OK (count: ${result.value.count ?? 'unknown'})`);
-          }
-        });
-
-        const failures = updateResults.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && r.value.error));
-        console.log('[API /auth/profile] Total failures:', failures.length);
-
-        // Now delete the old pending record
-        console.log('[API /auth/profile] Deleting pending user:', pendingUserId);
+        // STEP 2: Delete the pending user (this will SET NULL on FK references)
+        console.log('[API /auth/profile] Step 2: Deleting pending user:', pendingUserId);
         const { error: deleteError } = await adminClient
           .from('users')
           .delete()
@@ -135,12 +109,12 @@ export async function GET() {
 
         if (deleteError) {
           console.error('[API /auth/profile] Failed to delete pending user:', deleteError);
-        } else {
-          console.log('[API /auth/profile] Pending user deleted successfully');
+          return NextResponse.json({ error: 'Failed to link user account' }, { status: 500 });
         }
+        console.log('[API /auth/profile] Pending user deleted successfully');
 
-        // Create new user with correct ID and data from pending user
-        console.log('[API /auth/profile] Creating new user with ID:', newUserId);
+        // STEP 3: Create the new user with auth ID
+        console.log('[API /auth/profile] Step 3: Creating new user with ID:', newUserId);
         const { data: newUser, error: insertError } = await adminClient
           .from('users')
           .insert({
@@ -157,13 +131,130 @@ export async function GET() {
           .select()
           .single();
 
-        if (!insertError && newUser) {
-          console.log('[API /auth/profile] === LINKING COMPLETE ===');
-          console.log('[API /auth/profile] New user created:', newUser.id);
-          return NextResponse.json(newUser);
-        } else {
+        if (insertError) {
           console.error('[API /auth/profile] Failed to create linked user:', insertError);
+          return NextResponse.json({ error: 'Failed to create user account' }, { status: 500 });
         }
+        console.log('[API /auth/profile] New user created:', newUser.id);
+
+        // STEP 4: Update all references using the stored IDs
+        console.log('[API /auth/profile] Step 4: Updating references to new user...');
+
+        const updatePromises = [];
+
+        // Update owned actions
+        if (ownedActionIds.length > 0) {
+          updatePromises.push(
+            adminClient.from('actions').update({ owner_id: newUserId }).in('id', ownedActionIds)
+              .then(r => ({ name: 'actions.owner_id', ...r, count: ownedActionIds.length }))
+          );
+        }
+        if (createdActionIds.length > 0) {
+          updatePromises.push(
+            adminClient.from('actions').update({ created_by: newUserId }).in('id', createdActionIds)
+              .then(r => ({ name: 'actions.created_by', ...r, count: createdActionIds.length }))
+          );
+        }
+        if (submittedQueries.data?.length) {
+          updatePromises.push(
+            adminClient.from('technical_queries').update({ submitted_by: newUserId }).in('id', submittedQueries.data.map(x => x.id))
+              .then(r => ({ name: 'technical_queries.submitted_by', ...r }))
+          );
+        }
+        if (assignedQueries.data?.length) {
+          updatePromises.push(
+            adminClient.from('technical_queries').update({ assigned_to: newUserId }).in('id', assignedQueries.data.map(x => x.id))
+              .then(r => ({ name: 'technical_queries.assigned_to', ...r }))
+          );
+        }
+        if (createdUpdates.data?.length) {
+          updatePromises.push(
+            adminClient.from('updates').update({ created_by: newUserId }).in('id', createdUpdates.data.map(x => x.id))
+              .then(r => ({ name: 'updates.created_by', ...r }))
+          );
+        }
+        if (actionUpdates.data?.length) {
+          updatePromises.push(
+            adminClient.from('action_updates').update({ user_id: newUserId }).in('id', actionUpdates.data.map(x => x.id))
+              .then(r => ({ name: 'action_updates.user_id', ...r }))
+          );
+        }
+        if (threatUpdates.data?.length) {
+          updatePromises.push(
+            adminClient.from('threat_updates').update({ user_id: newUserId }).in('id', threatUpdates.data.map(x => x.id))
+              .then(r => ({ name: 'threat_updates.user_id', ...r }))
+          );
+        }
+        if (createdThreats.data?.length) {
+          updatePromises.push(
+            adminClient.from('threats').update({ created_by: newUserId }).in('id', createdThreats.data.map(x => x.id))
+              .then(r => ({ name: 'threats.created_by', ...r }))
+          );
+        }
+        if (madeByDecisions.data?.length) {
+          updatePromises.push(
+            adminClient.from('decisions').update({ made_by: newUserId }).in('id', madeByDecisions.data.map(x => x.id))
+              .then(r => ({ name: 'decisions.made_by', ...r }))
+          );
+        }
+        if (createdMilestones.data?.length) {
+          updatePromises.push(
+            adminClient.from('milestones').update({ created_by: newUserId }).in('id', createdMilestones.data.map(x => x.id))
+              .then(r => ({ name: 'milestones.created_by', ...r }))
+          );
+        }
+        if (actionAudits.data?.length) {
+          updatePromises.push(
+            adminClient.from('action_audit').update({ user_id: newUserId }).in('id', actionAudits.data.map(x => x.id))
+              .then(r => ({ name: 'action_audit.user_id', ...r }))
+          );
+        }
+        if (threatAudits.data?.length) {
+          updatePromises.push(
+            adminClient.from('threat_audit').update({ user_id: newUserId }).in('id', threatAudits.data.map(x => x.id))
+              .then(r => ({ name: 'threat_audit.user_id', ...r }))
+          );
+        }
+        if (decisionAudits.data?.length) {
+          updatePromises.push(
+            adminClient.from('decision_audit').update({ user_id: newUserId }).in('id', decisionAudits.data.map(x => x.id))
+              .then(r => ({ name: 'decision_audit.user_id', ...r }))
+          );
+        }
+        if (milestoneAudits.data?.length) {
+          updatePromises.push(
+            adminClient.from('milestone_audit').update({ user_id: newUserId }).in('id', milestoneAudits.data.map(x => x.id))
+              .then(r => ({ name: 'milestone_audit.user_id', ...r }))
+          );
+        }
+        if (userNotifications.data?.length) {
+          updatePromises.push(
+            adminClient.from('notifications').update({ user_id: newUserId }).in('id', userNotifications.data.map(x => x.id))
+              .then(r => ({ name: 'notifications.user_id', ...r }))
+          );
+        }
+        if (invitedUsers.data?.length) {
+          updatePromises.push(
+            adminClient.from('users').update({ invited_by: newUserId }).in('id', invitedUsers.data.map(x => x.id))
+              .then(r => ({ name: 'users.invited_by', ...r }))
+          );
+        }
+
+        const updateResults = await Promise.allSettled(updatePromises);
+
+        console.log('[API /auth/profile] === UPDATE RESULTS ===');
+        updateResults.forEach((result) => {
+          if (result.status === 'rejected') {
+            console.error(`[API /auth/profile] Update REJECTED:`, result.reason);
+          } else if (result.value.error) {
+            console.error(`[API /auth/profile] ${result.value.name}: ERROR -`, result.value.error.message);
+          } else {
+            console.log(`[API /auth/profile] ${result.value.name}: OK`);
+          }
+        });
+
+        console.log('[API /auth/profile] === LINKING COMPLETE ===');
+        return NextResponse.json(newUser);
       } else {
         console.log('[API /auth/profile] No pending user found by email');
       }
