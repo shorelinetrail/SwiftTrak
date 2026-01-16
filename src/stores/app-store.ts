@@ -26,6 +26,8 @@ interface AppState {
   // UI State
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
+  mobileMenuOpen: boolean;
+  setMobileMenuOpen: (open: boolean) => void;
 
   // Real-time
   isConnected: boolean;
@@ -71,6 +73,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   // UI State
   sidebarOpen: true,
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
+  mobileMenuOpen: false,
+  setMobileMenuOpen: (mobileMenuOpen) => set({ mobileMenuOpen }),
 
   // Real-time
   isConnected: false,

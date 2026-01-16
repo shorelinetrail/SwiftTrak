@@ -143,8 +143,8 @@ function MainLayoutContent({ children }: MainLayoutProps) {
         />
         <Sidebar />
         <main
-          className={`transition-all duration-300 ${
-            sidebarOpen ? 'ml-64' : 'ml-20'
+          className={`transition-all duration-300 pt-14 lg:pt-0 ${
+            sidebarOpen ? 'lg:ml-64' : 'lg:ml-20'
           }`}
         >
           <div className="flex items-center justify-center h-screen">
@@ -174,8 +174,8 @@ function MainLayoutContent({ children }: MainLayoutProps) {
       />
       <Sidebar />
       <main
-        className={`transition-all duration-300 ${
-          sidebarOpen ? 'ml-64' : 'ml-20'
+        className={`transition-all duration-300 pt-14 lg:pt-0 ${
+          sidebarOpen ? 'lg:ml-64' : 'lg:ml-20'
         }`}
       >
         {children}
