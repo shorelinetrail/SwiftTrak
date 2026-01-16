@@ -9,6 +9,7 @@ export type QueryPriority = 'urgent' | 'high' | 'medium' | 'low';
 
 export interface User {
   id: string;
+  auth_id?: string;  // Links to Supabase auth - NULL for pending users
   email: string;
   full_name: string;
   avatar_url?: string;
