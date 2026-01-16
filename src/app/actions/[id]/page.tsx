@@ -1096,7 +1096,7 @@ export default function ActionDetailPage() {
                           <p className="text-sm text-gray-900">
                             <span className="font-medium">{entry.user?.full_name || 'System'}</span>
                             {' '}
-                            {formatAuditChange(entry)}
+                            {formatAuditChange(entry, users)}
                             {entry.hide_from_recent && (
                               <span className="ml-2 text-xs text-gray-400">(hidden from recent)</span>
                             )}
@@ -1312,7 +1312,7 @@ export default function ActionDetailPage() {
   );
 }
 
-function formatAuditChange(entry: ActionAuditWithUser): string {
+function formatAuditChange(entry: ActionAuditWithUser, users: User[]): string {
   const formatValue = (value: string | null | undefined, type: string) => {
     if (!value || value === 'null') return 'none';
     if (type === 'status') return value.replace('_', ' ');
@@ -1323,6 +1323,11 @@ function formatAuditChange(entry: ActionAuditWithUser): string {
         return value;
       }
     }
+    if (type === 'user') {
+      // Look up user name from UUID
+      const user = users.find(u => u.id === value);
+      return user?.full_name || 'Unassigned';
+    }
     return value;
   };
 
@@ -1332,7 +1337,7 @@ function formatAuditChange(entry: ActionAuditWithUser): string {
     case 'status_changed':
       return `changed status from "${formatValue(entry.old_value, 'status')}" to "${formatValue(entry.new_value, 'status')}"`;
     case 'owner_changed':
-      return `reassigned owner from "${formatValue(entry.old_value, 'text')}" to "${formatValue(entry.new_value, 'text')}"`;
+      return `reassigned owner from "${formatValue(entry.old_value, 'user')}" to "${formatValue(entry.new_value, 'user')}"`;
     case 'priority_changed':
       return `changed priority from "${formatValue(entry.old_value, 'text')}" to "${formatValue(entry.new_value, 'text')}"`;
     case 'due_date_changed':
