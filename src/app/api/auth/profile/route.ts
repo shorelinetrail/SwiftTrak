@@ -253,6 +253,26 @@ export async function GET() {
           }
         });
 
+        // STEP 5: Clean up spurious audit entries created by the owner_id update
+        // The audit trigger fires when we update owner_id, creating misleading "owner changed" entries
+        // These should be removed since the owner didn't actually change - just the user ID was linked
+        if (ownedActionIds.length > 0) {
+          console.log('[API /auth/profile] Step 5: Cleaning up spurious audit entries...');
+          const { error: cleanupError } = await adminClient
+            .from('action_audit')
+            .delete()
+            .in('action_id', ownedActionIds)
+            .eq('change_type', 'owner_changed')
+            .eq('new_value', newUserId)
+            .is('old_value', null);
+
+          if (cleanupError) {
+            console.error('[API /auth/profile] Failed to clean up audit entries:', cleanupError);
+          } else {
+            console.log('[API /auth/profile] Cleaned up spurious audit entries');
+          }
+        }
+
         console.log('[API /auth/profile] === LINKING COMPLETE ===');
         return NextResponse.json(newUser);
       } else {
