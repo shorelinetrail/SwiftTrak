@@ -39,78 +39,55 @@ export async function GET() {
         const pendingUserId = pendingUser.id;
         const newUserId = authUser.id;
 
-        // Update actions owner_id
-        const { error: actionsError } = await adminClient
-          .from('actions')
-          .update({ owner_id: newUserId })
-          .eq('owner_id', pendingUserId);
-        if (actionsError) {
-          console.error('[API /auth/profile] Failed to update actions:', actionsError);
+        // Update all foreign key references from pending user to new auth user
+        // Run updates in parallel for efficiency
+        const updateResults = await Promise.allSettled([
+          // Actions
+          adminClient.from('actions').update({ owner_id: newUserId }).eq('owner_id', pendingUserId),
+          adminClient.from('actions').update({ created_by: newUserId }).eq('created_by', pendingUserId),
+
+          // Technical queries
+          adminClient.from('technical_queries').update({ submitted_by: newUserId }).eq('submitted_by', pendingUserId),
+          adminClient.from('technical_queries').update({ assigned_to: newUserId }).eq('assigned_to', pendingUserId),
+
+          // Updates table (column is created_by, not user_id)
+          adminClient.from('updates').update({ created_by: newUserId }).eq('created_by', pendingUserId),
+
+          // Action updates
+          adminClient.from('action_updates').update({ user_id: newUserId }).eq('user_id', pendingUserId),
+
+          // Threat updates
+          adminClient.from('threat_updates').update({ user_id: newUserId }).eq('user_id', pendingUserId),
+
+          // Threats
+          adminClient.from('threats').update({ created_by: newUserId }).eq('created_by', pendingUserId),
+
+          // Decisions (has both created_by and made_by)
+          adminClient.from('decisions').update({ created_by: newUserId }).eq('created_by', pendingUserId),
+          adminClient.from('decisions').update({ made_by: newUserId }).eq('made_by', pendingUserId),
+
+          // Milestones
+          adminClient.from('milestones').update({ created_by: newUserId }).eq('created_by', pendingUserId),
+
+          // Audit tables
+          adminClient.from('action_audit').update({ user_id: newUserId }).eq('user_id', pendingUserId),
+          adminClient.from('threat_audit').update({ user_id: newUserId }).eq('user_id', pendingUserId),
+          adminClient.from('decision_audit').update({ user_id: newUserId }).eq('user_id', pendingUserId),
+          adminClient.from('milestone_audit').update({ user_id: newUserId }).eq('user_id', pendingUserId),
+
+          // Notifications
+          adminClient.from('notifications').update({ user_id: newUserId }).eq('user_id', pendingUserId),
+
+          // Update any users invited by the pending user
+          adminClient.from('users').update({ invited_by: newUserId }).eq('invited_by', pendingUserId),
+        ]);
+
+        // Log any failures
+        const failures = updateResults.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && r.value.error));
+        if (failures.length > 0) {
+          console.error('[API /auth/profile] Some updates failed:', failures);
         } else {
-          console.log('[API /auth/profile] Updated actions owner references');
-        }
-
-        // Update technical_queries assigned_to
-        const { error: queriesError } = await adminClient
-          .from('technical_queries')
-          .update({ assigned_to: newUserId })
-          .eq('assigned_to', pendingUserId);
-        if (queriesError) {
-          console.error('[API /auth/profile] Failed to update technical_queries:', queriesError);
-        }
-
-        // Update action_audit user_id
-        const { error: auditError } = await adminClient
-          .from('action_audit')
-          .update({ user_id: newUserId })
-          .eq('user_id', pendingUserId);
-        if (auditError) {
-          console.error('[API /auth/profile] Failed to update action_audit:', auditError);
-        }
-
-        // Update updates user_id
-        const { error: updatesError } = await adminClient
-          .from('updates')
-          .update({ user_id: newUserId })
-          .eq('user_id', pendingUserId);
-        if (updatesError) {
-          console.error('[API /auth/profile] Failed to update updates:', updatesError);
-        }
-
-        // Update notifications user_id
-        const { error: notificationsError } = await adminClient
-          .from('notifications')
-          .update({ user_id: newUserId })
-          .eq('user_id', pendingUserId);
-        if (notificationsError) {
-          console.error('[API /auth/profile] Failed to update notifications:', notificationsError);
-        }
-
-        // Update decisions created_by
-        const { error: decisionsError } = await adminClient
-          .from('decisions')
-          .update({ created_by: newUserId })
-          .eq('created_by', pendingUserId);
-        if (decisionsError) {
-          console.error('[API /auth/profile] Failed to update decisions:', decisionsError);
-        }
-
-        // Update threats created_by
-        const { error: threatsError } = await adminClient
-          .from('threats')
-          .update({ created_by: newUserId })
-          .eq('created_by', pendingUserId);
-        if (threatsError) {
-          console.error('[API /auth/profile] Failed to update threats:', threatsError);
-        }
-
-        // Update milestones created_by
-        const { error: milestonesError } = await adminClient
-          .from('milestones')
-          .update({ created_by: newUserId })
-          .eq('created_by', pendingUserId);
-        if (milestonesError) {
-          console.error('[API /auth/profile] Failed to update milestones:', milestonesError);
+          console.log('[API /auth/profile] All references updated successfully');
         }
 
         // Now delete the old pending record
