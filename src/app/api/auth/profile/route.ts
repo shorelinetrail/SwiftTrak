@@ -32,12 +32,92 @@ export async function GET() {
 
       if (!pendingError && pendingUser) {
         console.log('[API /auth/profile] Found pending user by email, linking to auth user');
+        console.log('[API /auth/profile] Pending user ID:', pendingUser.id, '-> Auth user ID:', authUser.id);
 
-        // Delete the old pending record and create a new one with the auth user's ID
+        // Update all references to the pending user ID BEFORE deleting
+        // This ensures actions, queries, etc. remain assigned to the user
+        const pendingUserId = pendingUser.id;
+        const newUserId = authUser.id;
+
+        // Update actions owner_id
+        const { error: actionsError } = await adminClient
+          .from('actions')
+          .update({ owner_id: newUserId })
+          .eq('owner_id', pendingUserId);
+        if (actionsError) {
+          console.error('[API /auth/profile] Failed to update actions:', actionsError);
+        } else {
+          console.log('[API /auth/profile] Updated actions owner references');
+        }
+
+        // Update technical_queries assigned_to
+        const { error: queriesError } = await adminClient
+          .from('technical_queries')
+          .update({ assigned_to: newUserId })
+          .eq('assigned_to', pendingUserId);
+        if (queriesError) {
+          console.error('[API /auth/profile] Failed to update technical_queries:', queriesError);
+        }
+
+        // Update action_audit user_id
+        const { error: auditError } = await adminClient
+          .from('action_audit')
+          .update({ user_id: newUserId })
+          .eq('user_id', pendingUserId);
+        if (auditError) {
+          console.error('[API /auth/profile] Failed to update action_audit:', auditError);
+        }
+
+        // Update updates user_id
+        const { error: updatesError } = await adminClient
+          .from('updates')
+          .update({ user_id: newUserId })
+          .eq('user_id', pendingUserId);
+        if (updatesError) {
+          console.error('[API /auth/profile] Failed to update updates:', updatesError);
+        }
+
+        // Update notifications user_id
+        const { error: notificationsError } = await adminClient
+          .from('notifications')
+          .update({ user_id: newUserId })
+          .eq('user_id', pendingUserId);
+        if (notificationsError) {
+          console.error('[API /auth/profile] Failed to update notifications:', notificationsError);
+        }
+
+        // Update decisions created_by
+        const { error: decisionsError } = await adminClient
+          .from('decisions')
+          .update({ created_by: newUserId })
+          .eq('created_by', pendingUserId);
+        if (decisionsError) {
+          console.error('[API /auth/profile] Failed to update decisions:', decisionsError);
+        }
+
+        // Update threats created_by
+        const { error: threatsError } = await adminClient
+          .from('threats')
+          .update({ created_by: newUserId })
+          .eq('created_by', pendingUserId);
+        if (threatsError) {
+          console.error('[API /auth/profile] Failed to update threats:', threatsError);
+        }
+
+        // Update milestones created_by
+        const { error: milestonesError } = await adminClient
+          .from('milestones')
+          .update({ created_by: newUserId })
+          .eq('created_by', pendingUserId);
+        if (milestonesError) {
+          console.error('[API /auth/profile] Failed to update milestones:', milestonesError);
+        }
+
+        // Now delete the old pending record
         const { error: deleteError } = await adminClient
           .from('users')
           .delete()
-          .eq('id', pendingUser.id);
+          .eq('id', pendingUserId);
 
         if (deleteError) {
           console.error('[API /auth/profile] Failed to delete pending user:', deleteError);
@@ -47,7 +127,7 @@ export async function GET() {
         const { data: newUser, error: insertError } = await adminClient
           .from('users')
           .insert({
-            id: authUser.id,
+            id: newUserId,
             email: pendingUser.email,
             full_name: pendingUser.full_name,
             role: pendingUser.role,
