@@ -8,7 +8,11 @@ export async function GET() {
     const supabase = await createClient();
     const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
 
+    console.log('[API /auth/profile] === START PROFILE FETCH ===');
+    console.log('[API /auth/profile] Auth user:', authUser?.id, authUser?.email);
+
     if (authError || !authUser) {
+      console.log('[API /auth/profile] Not authenticated:', authError);
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
@@ -16,23 +20,37 @@ export async function GET() {
     const adminClient = createAdminClient();
 
     // First try to find by ID
+    console.log('[API /auth/profile] Looking up user by auth ID:', authUser.id);
     let { data: profile, error: profileError } = await adminClient
       .from('users')
       .select('*')
       .eq('id', authUser.id)
       .single();
 
+    console.log('[API /auth/profile] Lookup by ID result:', profile ? 'FOUND' : 'NOT FOUND', profileError?.message || '');
+
     // If not found by ID, try to find by email (for pending users who need linking)
     if (profileError && authUser.email) {
+      console.log('[API /auth/profile] User not found by ID, searching by email:', authUser.email.toLowerCase());
+
       const { data: pendingUser, error: pendingError } = await adminClient
         .from('users')
         .select('*')
         .eq('email', authUser.email.toLowerCase())
         .single();
 
+      console.log('[API /auth/profile] Lookup by email result:', pendingUser ? 'FOUND' : 'NOT FOUND', pendingError?.message || '');
+
       if (!pendingError && pendingUser) {
-        console.log('[API /auth/profile] Found pending user by email, linking to auth user');
-        console.log('[API /auth/profile] Pending user ID:', pendingUser.id, '-> Auth user ID:', authUser.id);
+        console.log('[API /auth/profile] === LINKING PENDING USER ===');
+        console.log('[API /auth/profile] Pending user details:', JSON.stringify({
+          id: pendingUser.id,
+          email: pendingUser.email,
+          status: pendingUser.status,
+          auth_linked: pendingUser.auth_linked,
+          full_name: pendingUser.full_name,
+        }));
+        console.log('[API /auth/profile] Will update references from', pendingUser.id, 'to', authUser.id);
 
         // Update all references to the pending user ID BEFORE deleting
         // This ensures actions, queries, etc. remain assigned to the user
@@ -82,15 +100,34 @@ export async function GET() {
           adminClient.from('users').update({ invited_by: newUserId }).eq('invited_by', pendingUserId),
         ]);
 
-        // Log any failures
+        // Log detailed results for each update
+        const updateNames = [
+          'actions.owner_id', 'actions.created_by',
+          'technical_queries.submitted_by', 'technical_queries.assigned_to',
+          'updates.created_by', 'action_updates.user_id', 'threat_updates.user_id',
+          'threats.created_by', 'decisions.created_by', 'decisions.made_by',
+          'milestones.created_by', 'action_audit.user_id', 'threat_audit.user_id',
+          'decision_audit.user_id', 'milestone_audit.user_id',
+          'notifications.user_id', 'users.invited_by'
+        ];
+
+        console.log('[API /auth/profile] === UPDATE RESULTS ===');
+        updateResults.forEach((result, index) => {
+          const name = updateNames[index] || `update_${index}`;
+          if (result.status === 'rejected') {
+            console.error(`[API /auth/profile] ${name}: REJECTED -`, result.reason);
+          } else if (result.value.error) {
+            console.error(`[API /auth/profile] ${name}: ERROR -`, result.value.error.message);
+          } else {
+            console.log(`[API /auth/profile] ${name}: OK (count: ${result.value.count ?? 'unknown'})`);
+          }
+        });
+
         const failures = updateResults.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && r.value.error));
-        if (failures.length > 0) {
-          console.error('[API /auth/profile] Some updates failed:', failures);
-        } else {
-          console.log('[API /auth/profile] All references updated successfully');
-        }
+        console.log('[API /auth/profile] Total failures:', failures.length);
 
         // Now delete the old pending record
+        console.log('[API /auth/profile] Deleting pending user:', pendingUserId);
         const { error: deleteError } = await adminClient
           .from('users')
           .delete()
@@ -98,9 +135,12 @@ export async function GET() {
 
         if (deleteError) {
           console.error('[API /auth/profile] Failed to delete pending user:', deleteError);
+        } else {
+          console.log('[API /auth/profile] Pending user deleted successfully');
         }
 
         // Create new user with correct ID and data from pending user
+        console.log('[API /auth/profile] Creating new user with ID:', newUserId);
         const { data: newUser, error: insertError } = await adminClient
           .from('users')
           .insert({
@@ -118,16 +158,21 @@ export async function GET() {
           .single();
 
         if (!insertError && newUser) {
-          console.log('[API /auth/profile] User linked successfully:', newUser.id);
+          console.log('[API /auth/profile] === LINKING COMPLETE ===');
+          console.log('[API /auth/profile] New user created:', newUser.id);
           return NextResponse.json(newUser);
         } else {
           console.error('[API /auth/profile] Failed to create linked user:', insertError);
         }
+      } else {
+        console.log('[API /auth/profile] No pending user found by email');
       }
+    } else {
+      console.log('[API /auth/profile] User found by ID, no linking needed');
     }
 
     if (profileError) {
-      console.error('[API /auth/profile] Profile fetch error:', profileError);
+      console.log('[API /auth/profile] Profile error exists, creating new user');
 
       // User doesn't exist in database - create them
       console.log('[API /auth/profile] Creating new user record for:', authUser.id);
@@ -165,9 +210,11 @@ export async function GET() {
       return NextResponse.json(newUser);
     }
 
+    console.log('[API /auth/profile] === RETURNING EXISTING PROFILE ===');
+    console.log('[API /auth/profile] User ID:', profile?.id, 'Status:', profile?.status);
     return NextResponse.json(profile);
   } catch (error) {
-    console.error('[API /auth/profile] Error:', error);
+    console.error('[API /auth/profile] === UNCAUGHT ERROR ===', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
