@@ -22,16 +22,25 @@ import {
 } from '@heroicons/react/24/outline';
 import { Avatar } from '../ui/avatar';
 
-const navigation = [
+import type { FeatureConfig } from '@/types/database';
+
+type NavItem = {
+  name: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  featureKey?: keyof FeatureConfig;
+};
+
+const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
   { name: 'Updates', href: '/updates', icon: MegaphoneIcon },
   { name: 'Actions', href: '/actions', icon: ClipboardDocumentListIcon },
   { name: 'Threats', href: '/threats', icon: ExclamationTriangleIcon },
-  { name: 'Technical Queries', href: '/queries', icon: QuestionMarkCircleIcon, featureKey: 'technical_queries_enabled' as const },
+  { name: 'Technical Queries', href: '/queries', icon: QuestionMarkCircleIcon, featureKey: 'technical_queries_enabled' },
   { name: 'Decisions', href: '/decisions', icon: DocumentTextIcon },
   { name: 'Milestones', href: '/milestones', icon: FlagIcon },
   { name: 'Vendors', href: '/vendors', icon: BuildingOfficeIcon },
-  { name: 'Gantt Chart', href: '/gantt', icon: ChartBarIcon, featureKey: 'gantt_chart_enabled' as const },
+  { name: 'Gantt Chart', href: '/gantt', icon: ChartBarIcon, featureKey: 'gantt_chart_enabled' },
 ];
 
 const editNavigation = [
@@ -52,7 +61,8 @@ export function Sidebar() {
   // Filter navigation items based on feature config
   const filteredNavigation = navigation.filter(item => {
     if (!item.featureKey) return true;
-    return featureConfig[item.featureKey];
+    const isEnabled = featureConfig[item.featureKey];
+    return isEnabled === true;
   });
 
   return (
