@@ -129,7 +129,7 @@ export async function GET() {
           .insert({
             id: newUserId,
             email: pendingUser.email,
-            full_name: pendingUser.full_name,
+            full_name: authUser.user_metadata?.full_name || pendingUser.full_name,
             role: pendingUser.role,
             status: 'active',
             auth_linked: true,
