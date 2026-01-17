@@ -14,14 +14,35 @@ export async function GET() {
 
     const adminClient = createAdminClient();
 
-    // First try to find by auth_id (for users who have signed up)
+    // First try to find by auth_id (for users who have signed up with new system)
     let { data: profile, error: profileError } = await adminClient
       .from('users')
       .select('*')
       .eq('auth_id', authUser.id)
       .single();
 
-    // If not found by auth_id, try to find pending user by email
+    // If not found by auth_id, try by id (for existing users where id = auth.id)
+    if (profileError) {
+      const { data: existingUser, error: existingError } = await adminClient
+        .from('users')
+        .select('*')
+        .eq('id', authUser.id)
+        .single();
+
+      if (!existingError && existingUser) {
+        // Found by id - update auth_id if not set
+        if (!existingUser.auth_id) {
+          await adminClient
+            .from('users')
+            .update({ auth_id: authUser.id })
+            .eq('id', authUser.id);
+          existingUser.auth_id = authUser.id;
+        }
+        return NextResponse.json(existingUser);
+      }
+    }
+
+    // If not found by auth_id or id, try to find pending user by email
     if (profileError && authUser.email) {
       const { data: pendingUser, error: pendingError } = await adminClient
         .from('users')
