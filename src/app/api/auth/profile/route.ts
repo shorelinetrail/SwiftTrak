@@ -42,33 +42,32 @@ export async function GET() {
       }
     }
 
-    // If not found by auth_id or id, try to find pending user by email
+    // If not found by auth_id or id, try to find user by email (pending or active)
     if (profileError && authUser.email) {
-      const { data: pendingUser, error: pendingError } = await adminClient
+      const { data: existingByEmail, error: emailError } = await adminClient
         .from('users')
         .select('*')
         .eq('email', authUser.email.toLowerCase())
-        .eq('status', 'pending')
         .single();
 
-      if (!pendingError && pendingUser) {
-        // Link the pending user by setting auth_id - UUID stays the same!
+      if (!emailError && existingByEmail) {
+        // Link this user by setting auth_id - UUID stays the same!
         const { data: linkedUser, error: linkError } = await adminClient
           .from('users')
           .update({
             auth_id: authUser.id,
             status: 'active',
             auth_linked: true,
-            full_name: authUser.user_metadata?.full_name || pendingUser.full_name,
-            avatar_url: pendingUser.avatar_url || authUser.user_metadata?.avatar_url,
+            full_name: authUser.user_metadata?.full_name || existingByEmail.full_name,
+            avatar_url: existingByEmail.avatar_url || authUser.user_metadata?.avatar_url,
             updated_at: new Date().toISOString(),
           })
-          .eq('id', pendingUser.id)
+          .eq('id', existingByEmail.id)
           .select()
           .single();
 
         if (linkError) {
-          console.error('[API /auth/profile] Failed to link pending user:', linkError);
+          console.error('[API /auth/profile] Failed to link user:', linkError);
           return NextResponse.json({ error: 'Failed to link user account' }, { status: 500 });
         }
 
