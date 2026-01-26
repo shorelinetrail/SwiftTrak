@@ -19,6 +19,9 @@ interface PhotoGalleryProps {
   emptyMessage?: string;
   onUploadClick?: () => void;
   canUpload?: boolean;
+  canEdit?: boolean;
+  onDelete?: (photoId: string) => Promise<void>;
+  onCaptionUpdate?: (photoId: string, caption: string) => Promise<void>;
 }
 
 export function PhotoGallery({
@@ -26,6 +29,9 @@ export function PhotoGallery({
   emptyMessage = 'No photos yet',
   onUploadClick,
   canUpload = false,
+  canEdit = false,
+  onDelete,
+  onCaptionUpdate,
 }: PhotoGalleryProps) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
@@ -127,6 +133,9 @@ export function PhotoGallery({
           currentIndex={lightboxIndex}
           onClose={() => setLightboxIndex(null)}
           onNavigate={setLightboxIndex}
+          canEdit={canEdit}
+          onDelete={onDelete}
+          onCaptionUpdate={onCaptionUpdate}
         />
       )}
     </>

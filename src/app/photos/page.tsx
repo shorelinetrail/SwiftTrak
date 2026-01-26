@@ -16,6 +16,7 @@ import {
   PlusIcon,
   FunnelIcon,
 } from '@heroicons/react/24/outline';
+import toast from 'react-hot-toast';
 import type { WorkstreamPhoto, Workstream, User } from '@/types/database';
 
 type PhotoWithRelations = WorkstreamPhoto & {
@@ -72,6 +73,44 @@ export default function PhotosPage() {
   useEffect(() => {
     fetchPhotos();
   }, [fetchPhotos]);
+
+  // Delete handler
+  const handleDelete = async (photoId: string) => {
+    const response = await fetch(`/api/photos?id=${photoId}`, {
+      method: 'DELETE',
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      toast.error(error.error || 'Failed to delete photo');
+      throw new Error(error.error);
+    }
+
+    // Remove from local state
+    setPhotos((prev) => prev.filter((p) => p.id !== photoId));
+    toast.success('Photo deleted');
+  };
+
+  // Caption update handler
+  const handleCaptionUpdate = async (photoId: string, caption: string) => {
+    const response = await fetch('/api/photos', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: photoId, caption }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      toast.error(error.error || 'Failed to update caption');
+      throw new Error(error.error);
+    }
+
+    // Update local state
+    setPhotos((prev) =>
+      prev.map((p) => (p.id === photoId ? { ...p, caption } : p))
+    );
+    toast.success('Caption updated');
+  };
 
   const workstreamOptions = buildWorkstreamOptions(workstreams, {
     allLabel: 'All Workstreams',
@@ -164,6 +203,9 @@ export default function PhotosPage() {
           }
           onUploadClick={() => router.push('/photos/upload')}
           canUpload={canEdit}
+          canEdit={canEdit}
+          onDelete={handleDelete}
+          onCaptionUpdate={handleCaptionUpdate}
         />
       </div>
     </div>
