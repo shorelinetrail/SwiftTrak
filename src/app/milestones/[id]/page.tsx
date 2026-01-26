@@ -51,6 +51,7 @@ export default function EditMilestonePage({ params }: { params: Promise<{ id: st
     workstream_id: '',
     target_date: '',
     status: 'pending' as Milestone['status'],
+    completed_at: '', // For setting completion date (can be in the past)
   });
 
   const fetchMilestone = useCallback(async () => {
@@ -90,6 +91,9 @@ export default function EditMilestonePage({ params }: { params: Promise<{ id: st
       workstream_id: milestoneData.workstream_id || '',
       target_date: new Date(milestoneData.target_date).toISOString().slice(0, 10),
       status: milestoneData.status,
+      completed_at: milestoneData.completed_at
+        ? new Date(milestoneData.completed_at).toISOString().slice(0, 10)
+        : new Date().toISOString().slice(0, 10), // Default to today for new completions
     });
 
     if (auditResult.data) {
@@ -151,10 +155,13 @@ export default function EditMilestonePage({ params }: { params: Promise<{ id: st
         status: formData.status,
       };
 
-      // If status changed to completed, set completed_at
-      if (formData.status === 'completed' && milestone?.status !== 'completed') {
-        updateData.completed_at = new Date().toISOString();
-      } else if (formData.status !== 'completed') {
+      // Handle completed_at based on status
+      if (formData.status === 'completed') {
+        // Use the selected completion date (allows past dates)
+        updateData.completed_at = formData.completed_at
+          ? new Date(formData.completed_at).toISOString()
+          : new Date().toISOString();
+      } else {
         updateData.completed_at = undefined;
       }
 
@@ -299,6 +306,17 @@ export default function EditMilestonePage({ params }: { params: Promise<{ id: st
                 onChange={(value) => setFormData({ ...formData, status: value as Milestone['status'] })}
                 disabled={!canEdit}
               />
+
+              {formData.status === 'completed' && (
+                <Input
+                  label="Completion Date"
+                  type="date"
+                  value={formData.completed_at}
+                  onChange={(e) => setFormData({ ...formData, completed_at: e.target.value })}
+                  disabled={!canEdit}
+                  hint="Set the date this milestone was completed (can be in the past)"
+                />
+              )}
             </CardContent>
 
             <CardFooter className="flex justify-between">
