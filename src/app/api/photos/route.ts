@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,7 +18,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    let query = supabase
+    // Use admin client for queries and signed URL generation
+    const adminClient = createAdminClient();
+
+    let query = adminClient
       .from('workstream_photos')
       .select(`
         *,
@@ -46,15 +50,19 @@ export async function GET(request: NextRequest) {
 
     const photosWithSignedUrls = await Promise.all(
       (data || []).map(async (photo) => {
-        // Generate signed URL for main image
-        const { data: mainUrlData } = await supabase.storage
+        // Generate signed URL for main image using admin client
+        const { data: mainUrlData, error: mainUrlError } = await adminClient.storage
           .from('photos')
           .createSignedUrl(photo.storage_path, SIGNED_URL_EXPIRY);
+
+        if (mainUrlError) {
+          console.error('Error generating signed URL for', photo.storage_path, mainUrlError);
+        }
 
         // Generate signed URL for thumbnail if it exists
         let thumbnailUrl = null;
         if (photo.thumbnail_path) {
-          const { data: thumbUrlData } = await supabase.storage
+          const { data: thumbUrlData } = await adminClient.storage
             .from('photos')
             .createSignedUrl(photo.thumbnail_path, SIGNED_URL_EXPIRY);
           thumbnailUrl = thumbUrlData?.signedUrl || null;
