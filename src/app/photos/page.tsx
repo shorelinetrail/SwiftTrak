@@ -7,7 +7,6 @@ import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
 import { usePermission } from '@/hooks/use-user';
 import { Header } from '@/components/layout/header';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { LoadingSpinner } from '@/components/ui/loading';
@@ -22,6 +21,8 @@ import type { WorkstreamPhoto, Workstream, User } from '@/types/database';
 type PhotoWithRelations = WorkstreamPhoto & {
   workstream?: Workstream;
   uploader?: User;
+  url?: string;
+  thumbnail_url?: string;
 };
 
 export default function PhotosPage() {
@@ -33,9 +34,7 @@ export default function PhotosPage() {
   const [workstreamFilter, setWorkstreamFilter] = useState<string>('all');
 
   const fetchPhotos = useCallback(async () => {
-    const supabase = createClient();
-
-    // Fetch photos
+    // Fetch photos with signed URLs from API
     const url = workstreamFilter === 'all'
       ? '/api/photos'
       : `/api/photos?workstreamId=${workstreamFilter}`;
@@ -81,10 +80,6 @@ export default function PhotosPage() {
       icon: <div className="w-3 h-3 rounded-full" style={{ backgroundColor: ws.color }} />,
     }),
   });
-
-  // Get storage URL
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const storageUrl = supabaseUrl ? `${supabaseUrl}/storage/v1/object/public/photos` : '';
 
   // Get counts per workstream for stats
   const photoCountByWorkstream = photos.reduce((acc, photo) => {
@@ -159,10 +154,9 @@ export default function PhotosPage() {
           </div>
         )}
 
-        {/* Photo gallery */}
+        {/* Photo gallery - signed URLs are embedded in photos data */}
         <PhotoGallery
           photos={photos}
-          storageUrl={storageUrl}
           emptyMessage={
             workstreamFilter === 'all'
               ? 'No photos uploaded yet'

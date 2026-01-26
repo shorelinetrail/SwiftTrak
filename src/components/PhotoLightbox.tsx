@@ -12,8 +12,8 @@ import { formatDate } from '@/lib/utils';
 
 interface Photo {
   id: string;
-  storage_path: string;
-  thumbnail_path?: string;
+  url: string;
+  thumbnail_url?: string;
   original_filename: string;
   taken_at?: string;
   caption?: string;
@@ -25,7 +25,6 @@ interface PhotoLightboxProps {
   currentIndex: number;
   onClose: () => void;
   onNavigate: (index: number) => void;
-  storageUrl: string;
 }
 
 export function PhotoLightbox({
@@ -33,7 +32,6 @@ export function PhotoLightbox({
   currentIndex,
   onClose,
   onNavigate,
-  storageUrl,
 }: PhotoLightboxProps) {
   const [touchStart, setTouchStart] = useState<number | null>(null);
 
@@ -102,8 +100,10 @@ export function PhotoLightbox({
   };
 
   const handleDownload = async () => {
+    if (!currentPhoto.url) return;
+
     try {
-      const response = await fetch(`${storageUrl}/${currentPhoto.storage_path}`);
+      const response = await fetch(currentPhoto.url);
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -115,9 +115,13 @@ export function PhotoLightbox({
       URL.revokeObjectURL(url);
     } catch {
       // Fallback: open in new tab
-      window.open(`${storageUrl}/${currentPhoto.storage_path}`, '_blank');
+      window.open(currentPhoto.url, '_blank');
     }
   };
+
+  if (!currentPhoto.url) {
+    return null;
+  }
 
   return (
     <div
@@ -177,7 +181,7 @@ export function PhotoLightbox({
         onClick={(e) => e.stopPropagation()}
       >
         <Image
-          src={`${storageUrl}/${currentPhoto.storage_path}`}
+          src={currentPhoto.url}
           alt={currentPhoto.original_filename}
           width={1200}
           height={800}

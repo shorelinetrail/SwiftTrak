@@ -5,17 +5,17 @@ import Image from 'next/image';
 import { PhotoLightbox } from './PhotoLightbox';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PhotoIcon } from '@heroicons/react/24/outline';
-import { formatDate } from '@/lib/utils';
 import type { WorkstreamPhoto, Workstream, User } from '@/types/database';
 
 type PhotoWithRelations = WorkstreamPhoto & {
   workstream?: Workstream;
   uploader?: User;
+  url?: string;
+  thumbnail_url?: string;
 };
 
 interface PhotoGalleryProps {
   photos: PhotoWithRelations[];
-  storageUrl: string;
   emptyMessage?: string;
   onUploadClick?: () => void;
   canUpload?: boolean;
@@ -23,7 +23,6 @@ interface PhotoGalleryProps {
 
 export function PhotoGallery({
   photos,
-  storageUrl,
   emptyMessage = 'No photos yet',
   onUploadClick,
   canUpload = false,
@@ -88,6 +87,10 @@ export function PhotoGallery({
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
               {datePhotos.map((photo) => {
                 const flatIndex = flatPhotos.findIndex((p) => p.id === photo.id);
+                const imageUrl = photo.thumbnail_url || photo.url;
+
+                if (!imageUrl) return null;
+
                 return (
                   <button
                     key={photo.id}
@@ -95,7 +98,7 @@ export function PhotoGallery({
                     className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
                   >
                     <Image
-                      src={`${storageUrl}/${photo.thumbnail_path || photo.storage_path}`}
+                      src={imageUrl}
                       alt={photo.original_filename}
                       fill
                       className="object-cover"
@@ -114,8 +117,8 @@ export function PhotoGallery({
         <PhotoLightbox
           photos={flatPhotos.map((p) => ({
             id: p.id,
-            storage_path: p.storage_path,
-            thumbnail_path: p.thumbnail_path,
+            url: p.url || '',
+            thumbnail_url: p.thumbnail_url,
             original_filename: p.original_filename,
             taken_at: p.taken_at,
             caption: p.caption,
@@ -124,7 +127,6 @@ export function PhotoGallery({
           currentIndex={lightboxIndex}
           onClose={() => setLightboxIndex(null)}
           onNavigate={setLightboxIndex}
-          storageUrl={storageUrl}
         />
       )}
     </>

@@ -8,6 +8,15 @@ export async function GET(request: NextRequest) {
 
     const supabase = await createClient();
 
+    // Check if user is authenticated
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
     let query = supabase
       .from('workstream_photos')
       .select(`
@@ -32,7 +41,34 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    return NextResponse.json(data);
+    // Generate signed URLs for each photo (valid for 1 hour)
+    const SIGNED_URL_EXPIRY = 60 * 60; // 1 hour in seconds
+
+    const photosWithSignedUrls = await Promise.all(
+      (data || []).map(async (photo) => {
+        // Generate signed URL for main image
+        const { data: mainUrlData } = await supabase.storage
+          .from('photos')
+          .createSignedUrl(photo.storage_path, SIGNED_URL_EXPIRY);
+
+        // Generate signed URL for thumbnail if it exists
+        let thumbnailUrl = null;
+        if (photo.thumbnail_path) {
+          const { data: thumbUrlData } = await supabase.storage
+            .from('photos')
+            .createSignedUrl(photo.thumbnail_path, SIGNED_URL_EXPIRY);
+          thumbnailUrl = thumbUrlData?.signedUrl || null;
+        }
+
+        return {
+          ...photo,
+          url: mainUrlData?.signedUrl || null,
+          thumbnail_url: thumbnailUrl || mainUrlData?.signedUrl || null,
+        };
+      })
+    );
+
+    return NextResponse.json(photosWithSignedUrls);
   } catch (error) {
     console.error('Photos API error:', error);
     return NextResponse.json(

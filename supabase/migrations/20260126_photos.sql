@@ -54,11 +54,38 @@ CREATE POLICY "Users can delete own photos" ON workstream_photos
 -- Storage bucket setup (run in Supabase dashboard or via CLI)
 -- The photos bucket should be created with:
 -- - Name: 'photos'
--- - Public: true (for easy image serving)
+-- - Public: false (secure access via signed URLs only)
 -- - File size limit: 10MB
 -- - Allowed MIME types: image/jpeg, image/png, image/webp
 
 -- Storage policies (to be applied via Supabase dashboard):
--- 1. Public read access: SELECT for all
+-- 1. Authenticated read: SELECT for authenticated users only
 -- 2. Authenticated upload: INSERT for authenticated users with edit/admin role
 -- 3. Owner/admin delete: DELETE for file owner or admin users
+--
+-- Example storage policies SQL:
+--
+-- Allow authenticated users to read photos:
+-- CREATE POLICY "Authenticated users can read photos"
+-- ON storage.objects FOR SELECT
+-- TO authenticated
+-- USING (bucket_id = 'photos');
+--
+-- Allow edit/admin users to upload:
+-- CREATE POLICY "Edit users can upload photos"
+-- ON storage.objects FOR INSERT
+-- TO authenticated
+-- WITH CHECK (
+--   bucket_id = 'photos' AND
+--   EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role IN ('admin', 'edit'))
+-- );
+--
+-- Allow owner or admin to delete:
+-- CREATE POLICY "Owner or admin can delete photos"
+-- ON storage.objects FOR DELETE
+-- TO authenticated
+-- USING (
+--   bucket_id = 'photos' AND
+--   (auth.uid()::text = (storage.foldername(name))[1] OR
+--    EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'admin'))
+-- );
