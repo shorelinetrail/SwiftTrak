@@ -789,29 +789,100 @@ export default function AdminPage() {
 
         {/* Photos Tab */}
         {activeTab === 'photos' && (
-          <div>
-            <div className="mb-4">
-              <h3 className="text-lg font-medium text-gray-900 flex items-center gap-2">
-                <PhotoIcon className="w-5 h-5 text-gray-400" />
-                Photo Management
-              </h3>
-              <p className="text-sm text-gray-500 mt-1">
-                {photos.length} photo{photos.length !== 1 ? 's' : ''} across all workstreams. Click a photo to view, edit caption, or delete.
-              </p>
-            </div>
-            {photosLoading ? (
-              <div className="flex justify-center py-8">
-                <LoadingSpinner />
-              </div>
-            ) : (
-              <PhotoGallery
-                photos={photos}
-                emptyMessage="No photos uploaded yet"
-                canEdit={true}
-                onDelete={handleDeletePhoto}
-                onCaptionUpdate={handleCaptionUpdate}
-              />
-            )}
+          <div className="space-y-6">
+            {/* Album Management */}
+            <Card>
+              <CardHeader
+                actions={
+                  <Button size="sm" onClick={() => {
+                    setSelectedWorkstream(null);
+                    setWorkstreamModalOpen(true);
+                  }}>
+                    <PlusIcon className="w-4 h-4 mr-2" />
+                    New Album
+                  </Button>
+                }
+              >
+                <CardTitle className="flex items-center gap-2">
+                  <SwatchIcon className="w-5 h-5 text-gray-400" />
+                  Photo Albums
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-gray-500 mb-4">
+                  Albums are based on workstreams. Create, edit, or delete albums to organize photos.
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                  {workstreams.map((ws) => {
+                    const photoCount = photos.filter((p) => p.workstream_id === ws.id).length;
+                    return (
+                      <div
+                        key={ws.id}
+                        className="relative p-3 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors group"
+                      >
+                        <div
+                          className="w-8 h-8 rounded-lg mb-2"
+                          style={{ backgroundColor: ws.color }}
+                        />
+                        <p className="text-sm font-medium text-gray-900 truncate">{ws.name}</p>
+                        <p className="text-xs text-gray-500">{photoCount} photo{photoCount !== 1 ? 's' : ''}</p>
+
+                        {/* Edit/Delete buttons on hover */}
+                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => {
+                              setSelectedWorkstream(ws);
+                              setWorkstreamModalOpen(true);
+                            }}
+                            className="p-1 bg-white rounded shadow hover:bg-gray-50"
+                            title="Edit album"
+                          >
+                            <PencilIcon className="w-3 h-3 text-gray-500" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteWorkstream(ws.id)}
+                            className="p-1 bg-white rounded shadow hover:bg-gray-50"
+                            title="Delete album"
+                          >
+                            <TrashIcon className="w-3 h-3 text-red-500" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {workstreams.length === 0 && (
+                    <p className="col-span-full text-center text-gray-500 py-4">
+                      No albums yet. Create one to start organizing photos.
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Photo Gallery */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <PhotoIcon className="w-5 h-5 text-gray-400" />
+                  All Photos ({photos.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {photosLoading ? (
+                  <div className="flex justify-center py-8">
+                    <LoadingSpinner />
+                  </div>
+                ) : (
+                  <PhotoGallery
+                    photos={photos}
+                    emptyMessage="No photos uploaded yet"
+                    canEdit={true}
+                    onDelete={handleDeletePhoto}
+                    onCaptionUpdate={handleCaptionUpdate}
+                  />
+                )}
+              </CardContent>
+            </Card>
           </div>
         )}
 
