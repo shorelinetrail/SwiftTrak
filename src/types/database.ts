@@ -440,3 +440,22 @@ export interface FeatureConfig {
   gantt_chart_enabled: boolean;
   technical_queries_enabled: boolean;
 }
+
+export interface WorkstreamPhoto {
+  id: string;
+  workstream_id: string;
+  storage_path: string;
+  thumbnail_path?: string;
+  original_filename: string;
+  taken_at?: string;  // EXIF date for sorting
+  caption?: string;
+  file_size?: number;
+  width?: number;
+  height?: number;
+  uploaded_by?: string;
+  created_at: string;
+  updated_at: string;
+  // Joined fields
+  workstream?: Workstream;
+  uploader?: User;
+}
