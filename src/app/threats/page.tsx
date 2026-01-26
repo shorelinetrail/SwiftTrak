@@ -24,6 +24,7 @@ import {
   TableCellsIcon,
   Squares2X2Icon,
 } from '@heroicons/react/24/outline';
+import { usePermission } from '@/hooks/use-user';
 import type { Threat, Workstream, User, RiskLevel, ThreatStatus } from '@/types/database';
 
 type ThreatWithRelations = Threat & {
@@ -42,6 +43,7 @@ export default function ThreatsPage() {
 function ThreatsPageContent() {
   const searchParams = useSearchParams();
   const { workstreams, setWorkstreams } = useAppStore();
+  const { canEdit } = usePermission();
   const [loading, setLoading] = useState(true);
   const [threats, setThreats] = useState<ThreatWithRelations[]>([]);
   const [filteredThreats, setFilteredThreats] = useState<ThreatWithRelations[]>([]);
@@ -226,12 +228,14 @@ function ThreatsPageContent() {
                 <TableCellsIcon className="w-4 h-4" />
               </button>
             </div>
-            <Link href="/threats/new">
-              <Button size="sm">
-                <PlusIcon className="w-4 h-4 mr-2" />
-                Log Threat
-              </Button>
-            </Link>
+            {canEdit && (
+              <Link href="/threats/new">
+                <Button size="sm">
+                  <PlusIcon className="w-4 h-4 mr-2" />
+                  Log Threat
+                </Button>
+              </Link>
+            )}
           </div>
         }
       />
@@ -347,10 +351,10 @@ function ThreatsPageContent() {
             icon={<ExclamationTriangleIcon className="w-6 h-6" />}
             title="No threats found"
             description="No threats match your current filters."
-            action={{
+            action={canEdit ? {
               label: 'Log Threat',
               onClick: () => window.location.href = '/threats/new',
-            }}
+            } : undefined}
           />
         ) : viewMode === 'cards' ? (
           <div className="space-y-3">

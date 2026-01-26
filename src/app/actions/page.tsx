@@ -33,6 +33,7 @@ import {
   MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
+import { usePermission } from '@/hooks/use-user';
 import type { Action, Workstream, User, ActionStatus, Priority } from '@/types/database';
 
 type ActionWithRelations = Action & {
@@ -56,6 +57,7 @@ function ActionsPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { workstreams, user } = useAppStore();
+  const { canEdit } = usePermission();
   const [loading, setLoading] = useState(true);
   const [actions, setActions] = useState<ActionWithRelations[]>([]);
   const [filteredActions, setFilteredActions] = useState<ActionWithRelations[]>([]);
@@ -679,20 +681,24 @@ function ActionsPageContent() {
               </button>
             </div>
 
-            <Button variant="outline" size="sm" onClick={() => setShowUploadModal(true)}>
-              <ArrowUpTrayIcon className="w-4 h-4 mr-2" />
-              Import
-            </Button>
+            {canEdit && (
+              <Button variant="outline" size="sm" onClick={() => setShowUploadModal(true)}>
+                <ArrowUpTrayIcon className="w-4 h-4 mr-2" />
+                Import
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={handleExport}>
               <ArrowDownTrayIcon className="w-4 h-4 mr-2" />
               Export
             </Button>
-            <Link href="/actions/new">
-              <Button size="sm">
-                <PlusIcon className="w-4 h-4 mr-2" />
-                New Action
-              </Button>
-            </Link>
+            {canEdit && (
+              <Link href="/actions/new">
+                <Button size="sm">
+                  <PlusIcon className="w-4 h-4 mr-2" />
+                  New Action
+                </Button>
+              </Link>
+            )}
           </div>
         }
       />
@@ -770,7 +776,7 @@ function ActionsPageContent() {
                 : 'Create your first action to get started.'
             }
             action={
-              !hasActiveFilters
+              !hasActiveFilters && canEdit
                 ? {
                     label: 'Create Action',
                     onClick: () => window.location.href = '/actions/new',

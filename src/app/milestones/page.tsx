@@ -106,12 +106,14 @@ export default function MilestonesPage() {
         title="Key Milestones"
         subtitle={`${pendingMilestones.length} pending, ${completedMilestones.length} completed`}
         actions={
-          <Link href="/milestones/new">
-            <Button size="sm">
-              <PlusIcon className="w-4 h-4 mr-2" />
-              Add Milestone
-            </Button>
-          </Link>
+          canEdit && (
+            <Link href="/milestones/new">
+              <Button size="sm">
+                <PlusIcon className="w-4 h-4 mr-2" />
+                Add Milestone
+              </Button>
+            </Link>
+          )
         }
       />
 

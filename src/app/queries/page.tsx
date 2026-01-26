@@ -20,6 +20,7 @@ import {
   CheckCircleIcon,
   ClockIcon,
 } from '@heroicons/react/24/outline';
+import { usePermission } from '@/hooks/use-user';
 import type { TechnicalQuery, Workstream, User, QueryPriority } from '@/types/database';
 
 type QueryWithRelations = TechnicalQuery & {
@@ -30,6 +31,7 @@ type QueryWithRelations = TechnicalQuery & {
 
 export default function QueriesPage() {
   const { user, workstreams } = useAppStore();
+  const { canEdit } = usePermission();
   const [loading, setLoading] = useState(true);
   const [queries, setQueries] = useState<QueryWithRelations[]>([]);
   const [activeTab, setActiveTab] = useState('all');
@@ -98,12 +100,14 @@ export default function QueriesPage() {
         title="Technical Queries"
         subtitle={`${filteredQueries.length} quer${filteredQueries.length !== 1 ? 'ies' : 'y'}`}
         actions={
-          <Link href="/queries/new">
-            <Button size="sm">
-              <PlusIcon className="w-4 h-4 mr-2" />
-              Submit Query
-            </Button>
-          </Link>
+          canEdit && (
+            <Link href="/queries/new">
+              <Button size="sm">
+                <PlusIcon className="w-4 h-4 mr-2" />
+                Submit Query
+              </Button>
+            </Link>
+          )
         }
       />
 

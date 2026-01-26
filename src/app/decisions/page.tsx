@@ -18,6 +18,7 @@ import {
   DocumentTextIcon,
   FunnelIcon,
 } from '@heroicons/react/24/outline';
+import { usePermission } from '@/hooks/use-user';
 import type { Decision, Workstream, User } from '@/types/database';
 
 type DecisionWithRelations = Decision & {
@@ -27,6 +28,7 @@ type DecisionWithRelations = Decision & {
 
 export default function DecisionsPage() {
   const { workstreams } = useAppStore();
+  const { canEdit } = usePermission();
   const [loading, setLoading] = useState(true);
   const [decisions, setDecisions] = useState<DecisionWithRelations[]>([]);
   const [workstreamFilter, setWorkstreamFilter] = useState<string>('all');
@@ -83,12 +85,14 @@ export default function DecisionsPage() {
         title="Decision Log"
         subtitle={`${filteredDecisions.length} decision${filteredDecisions.length !== 1 ? 's' : ''} recorded`}
         actions={
-          <Link href="/decisions/new">
-            <Button size="sm">
-              <PlusIcon className="w-4 h-4 mr-2" />
-              Record Decision
-            </Button>
-          </Link>
+          canEdit && (
+            <Link href="/decisions/new">
+              <Button size="sm">
+                <PlusIcon className="w-4 h-4 mr-2" />
+                Record Decision
+              </Button>
+            </Link>
+          )
         }
       />
 

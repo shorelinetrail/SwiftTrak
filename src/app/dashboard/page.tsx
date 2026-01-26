@@ -69,7 +69,7 @@ interface DashboardStats {
 
 export default function DashboardPage() {
   const { workstreams, setWorkstreams } = useAppStore();
-  const { canAdmin } = usePermission();
+  const { canEdit, canAdmin } = usePermission();
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [selectedWorkstream, setSelectedWorkstream] = useState<string>('all');
@@ -633,39 +633,41 @@ export default function DashboardPage() {
           </Link>
         </div>
 
-        {/* Quick Actions */}
-        <div className="flex flex-wrap gap-3">
-          <Link href="/actions/new">
-            <Button>
-              <PlusIcon className="w-4 h-4 mr-2" />
-              New Action
-            </Button>
-          </Link>
-          <Link href="/threats/new">
-            <Button variant="secondary">
-              <PlusIcon className="w-4 h-4 mr-2" />
-              Log Threat
-            </Button>
-          </Link>
-          <Link href="/queries/new">
-            <Button variant="secondary">
-              <PlusIcon className="w-4 h-4 mr-2" />
-              Submit Query
-            </Button>
-          </Link>
-          <Link href="/decisions/new">
-            <Button variant="secondary">
-              <PlusIcon className="w-4 h-4 mr-2" />
-              Record Decision
-            </Button>
-          </Link>
-          <Link href="/updates/new">
-            <Button variant="secondary">
-              <MegaphoneIcon className="w-4 h-4 mr-2" />
-              Post Update
-            </Button>
-          </Link>
-        </div>
+        {/* Quick Actions - only show for users who can edit */}
+        {canEdit && (
+          <div className="flex flex-wrap gap-3">
+            <Link href="/actions/new">
+              <Button>
+                <PlusIcon className="w-4 h-4 mr-2" />
+                New Action
+              </Button>
+            </Link>
+            <Link href="/threats/new">
+              <Button variant="secondary">
+                <PlusIcon className="w-4 h-4 mr-2" />
+                Log Threat
+              </Button>
+            </Link>
+            <Link href="/queries/new">
+              <Button variant="secondary">
+                <PlusIcon className="w-4 h-4 mr-2" />
+                Submit Query
+              </Button>
+            </Link>
+            <Link href="/decisions/new">
+              <Button variant="secondary">
+                <PlusIcon className="w-4 h-4 mr-2" />
+                Record Decision
+              </Button>
+            </Link>
+            <Link href="/updates/new">
+              <Button variant="secondary">
+                <MegaphoneIcon className="w-4 h-4 mr-2" />
+                Post Update
+              </Button>
+            </Link>
+          </div>
+        )}
 
         {/* Updates Ticker */}
         {recentUpdateItems.length > 0 && (

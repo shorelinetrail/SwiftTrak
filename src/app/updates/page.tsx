@@ -287,12 +287,14 @@ export default function UpdatesPage() {
                 className="w-48"
               />
             </div>
-            <Link href="/updates/new">
-              <Button>
-                <PlusIcon className="w-4 h-4 mr-2" />
-                Post Update
-              </Button>
-            </Link>
+            {canEdit && (
+              <Link href="/updates/new">
+                <Button>
+                  <PlusIcon className="w-4 h-4 mr-2" />
+                  Post Update
+                </Button>
+              </Link>
+            )}
           </div>
         }
       />
