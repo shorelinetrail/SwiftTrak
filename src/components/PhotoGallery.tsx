@@ -5,11 +5,11 @@ import Image from 'next/image';
 import { PhotoLightbox } from './PhotoLightbox';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PhotoIcon } from '@heroicons/react/24/outline';
-import type { WorkstreamPhoto, Workstream, User } from '@/types/database';
+import type { WorkstreamPhoto } from '@/types/database';
 
-type PhotoWithRelations = WorkstreamPhoto & {
-  workstream?: Workstream;
-  uploader?: User;
+type PhotoWithRelations = Omit<WorkstreamPhoto, 'workstream' | 'uploader'> & {
+  workstream?: { id: string; name: string; color: string };
+  uploader?: { id: string; full_name: string; avatar_url?: string };
   url?: string;
   thumbnail_url?: string;
 };

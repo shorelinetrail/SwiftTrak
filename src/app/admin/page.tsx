@@ -14,6 +14,7 @@ import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Tabs } from '@/components/ui/tabs';
 import { LoadingSpinner } from '@/components/ui/loading';
+import { PhotoGallery } from '@/components/PhotoGallery';
 import toast from 'react-hot-toast';
 import {
   PlusIcon,
@@ -25,6 +26,7 @@ import {
   ClipboardDocumentIcon,
   Cog6ToothIcon,
   MegaphoneIcon,
+  PhotoIcon,
 } from '@heroicons/react/24/outline';
 import type { User, Workstream, StakeholderLink, UserRole, UserStatus, UpdatesConfig, FeatureConfig } from '@/types/database';
 
@@ -45,6 +47,21 @@ export default function AdminPage() {
     technical_queries_enabled: true,
   });
   const [activeTab, setActiveTab] = useState('users');
+  const [photos, setPhotos] = useState<Array<{
+    id: string;
+    workstream_id: string;
+    storage_path: string;
+    original_filename: string;
+    caption?: string;
+    taken_at?: string;
+    created_at: string;
+    updated_at: string;
+    url?: string;
+    thumbnail_url?: string;
+    workstream?: { id: string; name: string; color: string };
+    uploader?: { id: string; full_name: string };
+  }>>([]);
+  const [photosLoading, setPhotosLoading] = useState(false);
 
   // Modal states
   const [createUserModalOpen, setCreateUserModalOpen] = useState(false);
@@ -471,10 +488,67 @@ export default function AdminPage() {
     }
   };
 
+  // Fetch photos when Photos tab is selected
+  const fetchPhotos = useCallback(async () => {
+    setPhotosLoading(true);
+    try {
+      const response = await fetch('/api/photos');
+      if (response.ok) {
+        const data = await response.json();
+        setPhotos(data);
+      }
+    } catch (error) {
+      console.error('Error fetching photos:', error);
+    } finally {
+      setPhotosLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'photos' && photos.length === 0 && !photosLoading) {
+      fetchPhotos();
+    }
+  }, [activeTab, photos.length, photosLoading, fetchPhotos]);
+
+  const handleDeletePhoto = async (photoId: string) => {
+    const response = await fetch(`/api/photos?id=${photoId}`, {
+      method: 'DELETE',
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      toast.error(error.error || 'Failed to delete photo');
+      throw new Error(error.error);
+    }
+
+    setPhotos((prev) => prev.filter((p) => p.id !== photoId));
+    toast.success('Photo deleted');
+  };
+
+  const handleCaptionUpdate = async (photoId: string, caption: string) => {
+    const response = await fetch('/api/photos', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: photoId, caption }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      toast.error(error.error || 'Failed to update caption');
+      throw new Error(error.error);
+    }
+
+    setPhotos((prev) =>
+      prev.map((p) => (p.id === photoId ? { ...p, caption } : p))
+    );
+    toast.success('Caption updated');
+  };
+
   const tabs = [
     { id: 'users', label: 'Users', count: users.length },
     { id: 'workstreams', label: 'Workstreams', count: workstreams.length },
     { id: 'stakeholder', label: 'Stakeholder Links', count: stakeholderLinks.length },
+    { id: 'photos', label: 'Photos', count: photos.length > 0 ? photos.length : undefined },
     { id: 'settings', label: 'Settings' },
   ];
 
@@ -713,6 +787,34 @@ export default function AdminPage() {
           </Card>
         )}
 
+        {/* Photos Tab */}
+        {activeTab === 'photos' && (
+          <div>
+            <div className="mb-4">
+              <h3 className="text-lg font-medium text-gray-900 flex items-center gap-2">
+                <PhotoIcon className="w-5 h-5 text-gray-400" />
+                Photo Management
+              </h3>
+              <p className="text-sm text-gray-500 mt-1">
+                {photos.length} photo{photos.length !== 1 ? 's' : ''} across all workstreams. Click a photo to view, edit caption, or delete.
+              </p>
+            </div>
+            {photosLoading ? (
+              <div className="flex justify-center py-8">
+                <LoadingSpinner />
+              </div>
+            ) : (
+              <PhotoGallery
+                photos={photos}
+                emptyMessage="No photos uploaded yet"
+                canEdit={true}
+                onDelete={handleDeletePhoto}
+                onCaptionUpdate={handleCaptionUpdate}
+              />
+            )}
+          </div>
+        )}
+
         {/* Settings Tab */}
         {activeTab === 'settings' && (
           <div className="space-y-6">
@@ -764,6 +866,7 @@ export default function AdminPage() {
                       className="h-5 w-5 rounded border-gray-300 text-red-600 focus:ring-red-500"
                     />
                   </label>
+
                 </div>
               </CardContent>
             </Card>

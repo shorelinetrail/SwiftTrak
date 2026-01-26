@@ -439,6 +439,7 @@ export interface UpdatesConfig {
 export interface FeatureConfig {
   gantt_chart_enabled: boolean;
   technical_queries_enabled: boolean;
+  photos_admin_only?: boolean;  // If true, only admins can see Photos section
 }
 
 export interface WorkstreamPhoto {
