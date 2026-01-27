@@ -10,6 +10,7 @@ import { Header } from '@/components/layout/header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/badge';
+import { WorkstreamBadgeWithData } from '@/components/ui/workstream-badge';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
 import { formatDate, getDaysUntil, cn, getWorkstreamDisplayName } from '@/lib/utils';
@@ -256,15 +257,12 @@ function MilestoneCard({
                 {milestone.title}
               </h3>
               {milestone.workstream && (
-                <span
-                  className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                  style={{
-                    backgroundColor: `${milestone.workstream.color}20`,
-                    color: milestone.workstream.color,
-                  }}
-                >
-                  {getWorkstreamDisplayName(milestone.workstream, workstreams)}
-                </span>
+                <WorkstreamBadgeWithData
+                  workstream={milestone.workstream}
+                  allWorkstreams={workstreams}
+                  shape="rounded"
+                  showIndicator={false}
+                />
               )}
             </div>
             {milestone.description && (

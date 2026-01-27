@@ -10,6 +10,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { Avatar } from '@/components/ui/avatar';
+import { WorkstreamBadgeWithData } from '@/components/ui/workstream-badge';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
 import { formatDate, getRelativeTime, buildWorkstreamOptions, getWorkstreamDisplayName } from '@/lib/utils';
@@ -155,15 +156,12 @@ function DecisionCard({ decision, isFirst, workstreams }: { decision: DecisionWi
                 <div className="flex items-center gap-2 mb-1">
                   <h3 className="text-base font-medium text-gray-900">{decision.title}</h3>
                   {decision.workstream && (
-                    <span
-                      className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                      style={{
-                        backgroundColor: `${decision.workstream.color}20`,
-                        color: decision.workstream.color,
-                      }}
-                    >
-                      {getWorkstreamDisplayName(decision.workstream, workstreams)}
-                    </span>
+                    <WorkstreamBadgeWithData
+                      workstream={decision.workstream}
+                      allWorkstreams={workstreams}
+                      shape="rounded"
+                      showIndicator={false}
+                    />
                   )}
                 </div>
                 <p className="text-sm text-gray-600 line-clamp-2">{decision.description}</p>

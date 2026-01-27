@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Select, MultiSelect } from '@/components/ui/select';
 import { WorkstreamSelect, getWorkstreamFilterIds } from '@/components/ui/workstream-select';
 import { StatusBadge, PriorityBadge } from '@/components/ui/badge';
+import { WorkstreamBadgeWithData } from '@/components/ui/workstream-badge';
 import { Avatar } from '@/components/ui/avatar';
 import { Tabs } from '@/components/ui/tabs';
 import { LoadingSpinner } from '@/components/ui/loading';
@@ -979,15 +980,12 @@ function ActionCard({ action, workstreams }: { action: ActionWithRelations; work
                   )}
                   <div className="flex items-center gap-3 mt-2 text-sm text-gray-500">
                     {action.workstream && (
-                      <span
-                        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                        style={{
-                          backgroundColor: `${action.workstream.color}20`,
-                          color: action.workstream.color,
-                        }}
-                      >
-                        {getWorkstreamDisplayName(action.workstream, workstreams)}
-                      </span>
+                      <WorkstreamBadgeWithData
+                        workstream={action.workstream}
+                        allWorkstreams={workstreams}
+                        shape="rounded"
+                        showIndicator={false}
+                      />
                     )}
                     <span>Created {formatDate(action.created_at, { month: 'short', day: 'numeric' })}</span>
                   </div>
@@ -1103,15 +1101,12 @@ function ActionsTable({ actions, sortColumn, sortDirection, onSort, workstreams 
                   </td>
                   <td className="px-4 py-3">
                     {action.workstream ? (
-                      <span
-                        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                        style={{
-                          backgroundColor: `${action.workstream.color}20`,
-                          color: action.workstream.color,
-                        }}
-                      >
-                        {getWorkstreamDisplayName(action.workstream, workstreams)}
-                      </span>
+                      <WorkstreamBadgeWithData
+                        workstream={action.workstream}
+                        allWorkstreams={workstreams}
+                        shape="rounded"
+                        showIndicator={false}
+                      />
                     ) : (
                       <span className="text-xs text-gray-400">-</span>
                     )}

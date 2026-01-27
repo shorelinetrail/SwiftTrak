@@ -19,6 +19,10 @@ interface WorkstreamBadgeProps {
   showHierarchy?: boolean;
   /** Size variant */
   size?: 'sm' | 'md';
+  /** Shape variant - 'pill' for rounded-full, 'rounded' for standard rounded corners */
+  shape?: 'pill' | 'rounded';
+  /** Show color indicator dot */
+  showIndicator?: boolean;
   className?: string;
 }
 
@@ -31,6 +35,8 @@ export function WorkstreamBadge({
   parent,
   showHierarchy = true,
   size = 'sm',
+  shape = 'pill',
+  showIndicator = true,
   className,
 }: WorkstreamBadgeProps) {
   const sizes = {
@@ -38,21 +44,28 @@ export function WorkstreamBadge({
     md: 'px-2.5 py-1 text-sm',
   };
 
+  const shapes = {
+    pill: 'rounded-full',
+    rounded: 'rounded',
+  };
+
   const showParent = showHierarchy && parent;
 
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full font-medium',
+        'inline-flex items-center font-medium',
+        showIndicator ? 'gap-1.5' : '',
         sizes[size],
+        shapes[shape],
         className
       )}
       style={{
-        backgroundColor: `${workstream.color}15`,
+        backgroundColor: `${workstream.color}20`,
         color: workstream.color,
       }}
     >
-      <ColorIndicator color={workstream.color} size="xs" />
+      {showIndicator && <ColorIndicator color={workstream.color} size="sm" />}
       {showParent ? (
         <span className="flex items-center gap-1">
           <span className="opacity-70">{parent.name}</span>
@@ -71,6 +84,8 @@ interface WorkstreamBadgeWithDataProps {
   allWorkstreams: Workstream[];
   showHierarchy?: boolean;
   size?: 'sm' | 'md';
+  shape?: 'pill' | 'rounded';
+  showIndicator?: boolean;
   className?: string;
 }
 
@@ -83,6 +98,8 @@ export function WorkstreamBadgeWithData({
   allWorkstreams,
   showHierarchy = true,
   size = 'sm',
+  shape = 'pill',
+  showIndicator = true,
   className,
 }: WorkstreamBadgeWithDataProps) {
   const parent = workstream.parent_id
@@ -95,6 +112,8 @@ export function WorkstreamBadgeWithData({
       parent={parent}
       showHierarchy={showHierarchy}
       size={size}
+      shape={shape}
+      showIndicator={showIndicator}
       className={className}
     />
   );

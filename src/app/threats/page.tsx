@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { WorkstreamSelect, getWorkstreamFilterIds } from '@/components/ui/workstream-select';
 import { RiskBadge } from '@/components/ui/badge';
+import { WorkstreamBadgeWithData } from '@/components/ui/workstream-badge';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
 import { formatDate, cn, buildWorkstreamOptions, getWorkstreamDisplayName } from '@/lib/utils';
@@ -403,15 +404,12 @@ function ThreatCard({ threat, workstreams }: { threat: ThreatWithRelations; work
                   <p className="text-sm text-gray-600 mt-1 line-clamp-2">{threat.description}</p>
                   <div className="flex items-center gap-3 mt-2 text-sm text-gray-500">
                     {threat.workstream && (
-                      <span
-                        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                        style={{
-                          backgroundColor: `${threat.workstream.color}20`,
-                          color: threat.workstream.color,
-                        }}
-                      >
-                        {getWorkstreamDisplayName(threat.workstream, workstreams)}
-                      </span>
+                      <WorkstreamBadgeWithData
+                        workstream={threat.workstream}
+                        allWorkstreams={workstreams}
+                        shape="rounded"
+                        showIndicator={false}
+                      />
                     )}
                     {threat.expected_delay && (
                       <span>Potential delay: {threat.expected_delay}</span>
@@ -517,15 +515,12 @@ function ThreatsTable({ threats, workstreams }: { threats: ThreatWithRelations[]
                   </td>
                   <td className="px-4 py-3">
                     {threat.workstream ? (
-                      <span
-                        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                        style={{
-                          backgroundColor: `${threat.workstream.color}20`,
-                          color: threat.workstream.color,
-                        }}
-                      >
-                        {getWorkstreamDisplayName(threat.workstream, workstreams)}
-                      </span>
+                      <WorkstreamBadgeWithData
+                        workstream={threat.workstream}
+                        allWorkstreams={workstreams}
+                        shape="rounded"
+                        showIndicator={false}
+                      />
                     ) : (
                       <span className="text-xs text-gray-400">-</span>
                     )}

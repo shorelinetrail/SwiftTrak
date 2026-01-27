@@ -10,6 +10,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { StatusBadge, PriorityBadge, RiskBadge } from '@/components/ui/badge';
+import { WorkstreamBadgeWithData } from '@/components/ui/workstream-badge';
 import { Avatar } from '@/components/ui/avatar';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -734,15 +735,12 @@ export default function DashboardPage() {
                         {item.workstream && (
                           <>
                             <span className="text-gray-300">•</span>
-                            <span
-                              className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium"
-                              style={{
-                                backgroundColor: `${item.workstream.color}20`,
-                                color: item.workstream.color,
-                              }}
-                            >
-                              {getWorkstreamDisplayName(item.workstream, workstreams)}
-                            </span>
+                            <WorkstreamBadgeWithData
+                              workstream={item.workstream}
+                              allWorkstreams={workstreams}
+                              shape="rounded"
+                              showIndicator={false}
+                            />
                           </>
                         )}
                         {item.type === 'threat' && item.current_risk && (
@@ -799,15 +797,12 @@ export default function DashboardPage() {
                           </div>
                           <div className="flex items-center gap-2 mt-1">
                             {action.workstream && (
-                              <span
-                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                                style={{
-                                  backgroundColor: `${action.workstream.color}20`,
-                                  color: action.workstream.color,
-                                }}
-                              >
-                                {getWorkstreamDisplayName(action.workstream, workstreams)}
-                              </span>
+                              <WorkstreamBadgeWithData
+                                workstream={action.workstream}
+                                allWorkstreams={workstreams}
+                                shape="rounded"
+                                showIndicator={false}
+                              />
                             )}
                             <StatusBadge status={action.status} />
                           </div>
@@ -884,15 +879,12 @@ export default function DashboardPage() {
                           </div>
                           <div className="flex items-center gap-2 mt-1">
                             {action.workstream && (
-                              <span
-                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                                style={{
-                                  backgroundColor: `${action.workstream.color}20`,
-                                  color: action.workstream.color,
-                                }}
-                              >
-                                {getWorkstreamDisplayName(action.workstream, workstreams)}
-                              </span>
+                              <WorkstreamBadgeWithData
+                                workstream={action.workstream}
+                                allWorkstreams={workstreams}
+                                shape="rounded"
+                                showIndicator={false}
+                              />
                             )}
                             <StatusBadge status={action.status} />
                           </div>
@@ -948,15 +940,12 @@ export default function DashboardPage() {
                           <h4 className="text-sm font-medium text-gray-900 truncate">{threat.title}</h4>
                           <div className="flex items-center gap-2 mt-1">
                             {threat.workstream && (
-                              <span
-                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                                style={{
-                                  backgroundColor: `${threat.workstream.color}20`,
-                                  color: threat.workstream.color,
-                                }}
-                              >
-                                {getWorkstreamDisplayName(threat.workstream, workstreams)}
-                              </span>
+                              <WorkstreamBadgeWithData
+                                workstream={threat.workstream}
+                                allWorkstreams={workstreams}
+                                shape="rounded"
+                                showIndicator={false}
+                              />
                             )}
                             <span className="text-xs text-gray-500">
                               {getRelativeTime(threat.updated_at)}
@@ -1048,15 +1037,13 @@ export default function DashboardPage() {
                         <div className="flex-1 min-w-0">
                           <h4 className="text-sm font-medium text-gray-900 truncate">{milestone.title}</h4>
                           {milestone.workstream && (
-                            <span
-                              className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium mt-1"
-                              style={{
-                                backgroundColor: `${milestone.workstream.color}20`,
-                                color: milestone.workstream.color,
-                              }}
-                            >
-                              {getWorkstreamDisplayName(milestone.workstream, workstreams)}
-                            </span>
+                            <WorkstreamBadgeWithData
+                              workstream={milestone.workstream}
+                              allWorkstreams={workstreams}
+                              shape="rounded"
+                              showIndicator={false}
+                              className="mt-1"
+                            />
                           )}
                         </div>
                         <div className="text-right">

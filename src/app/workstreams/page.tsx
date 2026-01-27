@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { LoadingSpinner } from '@/components/ui/loading';
+import { ColorIndicator } from '@/components/ui/color-indicator';
 import toast from 'react-hot-toast';
 import {
   PlusIcon,
@@ -356,10 +357,7 @@ export default function WorkstreamsPage() {
                             <ChevronDownIcon className={`w-3 h-3 ${isLast ? 'text-gray-300' : 'text-gray-500'}`} />
                           </Button>
                         </div>
-                        <div
-                          className="w-4 h-4 rounded-full"
-                          style={{ backgroundColor: workstream.color }}
-                        />
+                        <ColorIndicator color={workstream.color} size="md" />
                         <div>
                           <p className="font-medium text-gray-900">{workstream.name}</p>
                           {workstream.description && (
@@ -441,10 +439,7 @@ export default function WorkstreamsPage() {
                                     <ChevronDownIcon className={`w-2.5 h-2.5 ${isChildLast ? 'text-gray-300' : 'text-gray-500'}`} />
                                   </Button>
                                 </div>
-                                <div
-                                  className="w-3 h-3 rounded-full"
-                                  style={{ backgroundColor: child.color }}
-                                />
+                                <ColorIndicator color={child.color} size="sm" />
                                 <div>
                                   <p className="text-sm font-medium text-gray-900">{child.name}</p>
                                   {child.description && (
@@ -596,10 +591,7 @@ function WorkstreamModal({
         {parentWorkstream && (
           <div className="flex items-center gap-2 p-2 bg-gray-100 rounded-lg text-sm">
             <span className="text-gray-500">Parent:</span>
-            <div
-              className="w-3 h-3 rounded-full"
-              style={{ backgroundColor: parentWorkstream.color }}
-            />
+            <ColorIndicator color={parentWorkstream.color} size="sm" />
             <span className="font-medium">{parentWorkstream.name}</span>
           </div>
         )}
