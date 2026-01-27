@@ -63,6 +63,11 @@ export default function AdminPage() {
   }>>([]);
   const [photosLoading, setPhotosLoading] = useState(false);
   const [photosFetched, setPhotosFetched] = useState(false);
+  const [selectedPhotoIds, setSelectedPhotoIds] = useState<Set<string>>(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [bulkCaptionModalOpen, setBulkCaptionModalOpen] = useState(false);
+  const [bulkAlbumModalOpen, setBulkAlbumModalOpen] = useState(false);
+  const [bulkOperationLoading, setBulkOperationLoading] = useState(false);
 
   // Modal states
   const [createUserModalOpen, setCreateUserModalOpen] = useState(false);
@@ -546,6 +551,102 @@ export default function AdminPage() {
     toast.success('Caption updated');
   };
 
+  const handleBulkCaptionUpdate = async (caption: string) => {
+    if (selectedPhotoIds.size === 0) return;
+
+    setBulkOperationLoading(true);
+    try {
+      const response = await fetch('/api/photos/bulk', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ids: Array.from(selectedPhotoIds),
+          caption
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        toast.error(error.error || 'Failed to update captions');
+        return;
+      }
+
+      setPhotos((prev) =>
+        prev.map((p) =>
+          selectedPhotoIds.has(p.id) ? { ...p, caption } : p
+        )
+      );
+      toast.success(`Updated caption for ${selectedPhotoIds.size} photo${selectedPhotoIds.size > 1 ? 's' : ''}`);
+      setBulkCaptionModalOpen(false);
+      setSelectedPhotoIds(new Set());
+      setSelectionMode(false);
+    } catch (error) {
+      console.error('Error bulk updating captions:', error);
+      toast.error('Failed to update captions');
+    } finally {
+      setBulkOperationLoading(false);
+    }
+  };
+
+  const handleBulkAlbumUpdate = async (workstreamId: string) => {
+    if (selectedPhotoIds.size === 0) return;
+
+    setBulkOperationLoading(true);
+    try {
+      const response = await fetch('/api/photos/bulk', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ids: Array.from(selectedPhotoIds),
+          workstream_id: workstreamId
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        toast.error(error.error || 'Failed to move photos');
+        return;
+      }
+
+      const targetWorkstream = workstreams.find(w => w.id === workstreamId);
+      setPhotos((prev) =>
+        prev.map((p) =>
+          selectedPhotoIds.has(p.id)
+            ? {
+                ...p,
+                workstream_id: workstreamId,
+                workstream: targetWorkstream
+                  ? { id: targetWorkstream.id, name: targetWorkstream.name, color: targetWorkstream.color }
+                  : p.workstream
+              }
+            : p
+        )
+      );
+      toast.success(`Moved ${selectedPhotoIds.size} photo${selectedPhotoIds.size > 1 ? 's' : ''} to ${targetWorkstream?.name || 'album'}`);
+      setBulkAlbumModalOpen(false);
+      setSelectedPhotoIds(new Set());
+      setSelectionMode(false);
+    } catch (error) {
+      console.error('Error bulk moving photos:', error);
+      toast.error('Failed to move photos');
+    } finally {
+      setBulkOperationLoading(false);
+    }
+  };
+
+  const handleSelectAll = () => {
+    if (selectedPhotoIds.size === photos.length) {
+      setSelectedPhotoIds(new Set());
+    } else {
+      setSelectedPhotoIds(new Set(photos.map(p => p.id)));
+    }
+  };
+
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedPhotoIds(new Set());
+  };
+
   const tabs = [
     { id: 'users', label: 'Users', count: users.length },
     { id: 'workstreams', label: 'Workstreams', count: workstreams.length },
@@ -863,13 +964,65 @@ export default function AdminPage() {
 
             {/* Photo Gallery */}
             <Card>
-              <CardHeader>
+              <CardHeader
+                actions={
+                  photos.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      {selectionMode ? (
+                        <>
+                          <Button size="sm" variant="secondary" onClick={handleSelectAll}>
+                            {selectedPhotoIds.size === photos.length ? 'Deselect All' : 'Select All'}
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={exitSelectionMode}>
+                            Cancel
+                          </Button>
+                        </>
+                      ) : (
+                        <Button size="sm" variant="secondary" onClick={() => setSelectionMode(true)}>
+                          Select
+                        </Button>
+                      )}
+                    </div>
+                  )
+                }
+              >
                 <CardTitle className="flex items-center gap-2">
                   <PhotoIcon className="w-5 h-5 text-gray-400" />
                   All Photos ({photos.length})
+                  {selectionMode && selectedPhotoIds.size > 0 && (
+                    <span className="text-sm font-normal text-gray-500">
+                      — {selectedPhotoIds.size} selected
+                    </span>
+                  )}
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                {/* Bulk Actions Toolbar */}
+                {selectionMode && selectedPhotoIds.size > 0 && (
+                  <div className="flex items-center gap-3 mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <span className="text-sm font-medium text-red-800">
+                      {selectedPhotoIds.size} photo{selectedPhotoIds.size > 1 ? 's' : ''} selected
+                    </span>
+                    <div className="flex-1" />
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setBulkCaptionModalOpen(true)}
+                    >
+                      <PencilIcon className="w-4 h-4 mr-1" />
+                      Set Caption
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setBulkAlbumModalOpen(true)}
+                    >
+                      <SwatchIcon className="w-4 h-4 mr-1" />
+                      Move to Album
+                    </Button>
+                  </div>
+                )}
+
                 {photosLoading ? (
                   <div className="flex justify-center py-8">
                     <LoadingSpinner />
@@ -878,9 +1031,12 @@ export default function AdminPage() {
                   <PhotoGallery
                     photos={photos}
                     emptyMessage="No photos uploaded yet"
-                    canEdit={true}
+                    canEdit={!selectionMode}
                     onDelete={handleDeletePhoto}
                     onCaptionUpdate={handleCaptionUpdate}
+                    selectionMode={selectionMode}
+                    selectedIds={selectedPhotoIds}
+                    onSelectionChange={setSelectedPhotoIds}
                   />
                 )}
               </CardContent>
@@ -1030,6 +1186,25 @@ export default function AdminPage() {
         onClose={() => setCreateUserModalOpen(false)}
         onSave={handleCreatePendingUser}
         onInvite={handleInviteUser}
+      />
+
+      {/* Bulk Caption Modal */}
+      <BulkCaptionModal
+        open={bulkCaptionModalOpen}
+        onClose={() => setBulkCaptionModalOpen(false)}
+        onSave={handleBulkCaptionUpdate}
+        photoCount={selectedPhotoIds.size}
+        loading={bulkOperationLoading}
+      />
+
+      {/* Bulk Album Modal */}
+      <BulkAlbumModal
+        open={bulkAlbumModalOpen}
+        onClose={() => setBulkAlbumModalOpen(false)}
+        onSave={handleBulkAlbumUpdate}
+        workstreams={workstreams}
+        photoCount={selectedPhotoIds.size}
+        loading={bulkOperationLoading}
       />
     </div>
   );
@@ -1288,6 +1463,130 @@ function CreateUserModal({
         </Button>
         <Button onClick={handleSubmit} loading={saving}>
           {sendInvite ? 'Send Invite' : 'Add User'}
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+function BulkCaptionModal({
+  open,
+  onClose,
+  onSave,
+  photoCount,
+  loading,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSave: (caption: string) => void;
+  photoCount: number;
+  loading: boolean;
+}) {
+  const [caption, setCaption] = useState('');
+
+  useEffect(() => {
+    if (!open) {
+      setCaption('');
+    }
+  }, [open]);
+
+  return (
+    <Modal open={open} onClose={onClose} title="Set Caption">
+      <div className="space-y-4">
+        <p className="text-sm text-gray-500">
+          Set the same caption for {photoCount} selected photo{photoCount > 1 ? 's' : ''}.
+        </p>
+        <Textarea
+          label="Caption"
+          value={caption}
+          onChange={(e) => setCaption(e.target.value)}
+          placeholder="Enter caption for selected photos..."
+          rows={3}
+        />
+      </div>
+      <div className="flex justify-end gap-3 mt-6">
+        <Button variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button onClick={() => onSave(caption)} loading={loading}>
+          Apply Caption
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+function BulkAlbumModal({
+  open,
+  onClose,
+  onSave,
+  workstreams,
+  photoCount,
+  loading,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSave: (workstreamId: string) => void;
+  workstreams: Workstream[];
+  photoCount: number;
+  loading: boolean;
+}) {
+  const [selectedAlbum, setSelectedAlbum] = useState('');
+
+  useEffect(() => {
+    if (!open) {
+      setSelectedAlbum('');
+    }
+  }, [open]);
+
+  return (
+    <Modal open={open} onClose={onClose} title="Move to Album">
+      <div className="space-y-4">
+        <p className="text-sm text-gray-500">
+          Move {photoCount} selected photo{photoCount > 1 ? 's' : ''} to a different album.
+        </p>
+        <div className="space-y-2">
+          {workstreams.map((ws) => (
+            <label
+              key={ws.id}
+              className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                selectedAlbum === ws.id
+                  ? 'border-red-500 bg-red-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <input
+                type="radio"
+                name="album"
+                value={ws.id}
+                checked={selectedAlbum === ws.id}
+                onChange={() => setSelectedAlbum(ws.id)}
+                className="text-red-600 focus:ring-red-500"
+              />
+              <div
+                className="w-4 h-4 rounded-full"
+                style={{ backgroundColor: ws.color }}
+              />
+              <span className="text-sm font-medium text-gray-900">{ws.name}</span>
+            </label>
+          ))}
+          {workstreams.length === 0 && (
+            <p className="text-center text-gray-500 py-4">
+              No albums available. Create one first.
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="flex justify-end gap-3 mt-6">
+        <Button variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          onClick={() => onSave(selectedAlbum)}
+          loading={loading}
+          disabled={!selectedAlbum}
+        >
+          Move Photos
         </Button>
       </div>
     </Modal>

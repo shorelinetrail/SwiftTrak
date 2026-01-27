@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Image from 'next/image';
 import { PhotoLightbox } from './PhotoLightbox';
 import { EmptyState } from '@/components/ui/empty-state';
-import { PhotoIcon } from '@heroicons/react/24/outline';
+import { PhotoIcon, CheckIcon } from '@heroicons/react/24/outline';
 import type { WorkstreamPhoto } from '@/types/database';
 
 type PhotoWithRelations = Omit<WorkstreamPhoto, 'workstream' | 'uploader'> & {
@@ -22,6 +22,9 @@ interface PhotoGalleryProps {
   canEdit?: boolean;
   onDelete?: (photoId: string) => Promise<void>;
   onCaptionUpdate?: (photoId: string, caption: string) => Promise<void>;
+  selectionMode?: boolean;
+  selectedIds?: Set<string>;
+  onSelectionChange?: (ids: Set<string>) => void;
 }
 
 export function PhotoGallery({
@@ -32,6 +35,9 @@ export function PhotoGallery({
   canEdit = false,
   onDelete,
   onCaptionUpdate,
+  selectionMode = false,
+  selectedIds = new Set(),
+  onSelectionChange,
 }: PhotoGalleryProps) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
@@ -94,14 +100,31 @@ export function PhotoGallery({
               {datePhotos.map((photo) => {
                 const flatIndex = flatPhotos.findIndex((p) => p.id === photo.id);
                 const imageUrl = photo.thumbnail_url || photo.url;
+                const isSelected = selectedIds.has(photo.id);
 
                 if (!imageUrl) return null;
+
+                const handleClick = () => {
+                  if (selectionMode && onSelectionChange) {
+                    const newSelection = new Set(selectedIds);
+                    if (isSelected) {
+                      newSelection.delete(photo.id);
+                    } else {
+                      newSelection.add(photo.id);
+                    }
+                    onSelectionChange(newSelection);
+                  } else {
+                    setLightboxIndex(flatIndex);
+                  }
+                };
 
                 return (
                   <button
                     key={photo.id}
-                    onClick={() => setLightboxIndex(flatIndex)}
-                    className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                    onClick={handleClick}
+                    className={`relative aspect-square rounded-lg overflow-hidden bg-gray-100 hover:opacity-90 transition-all focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 ${
+                      isSelected ? 'ring-2 ring-red-500 ring-offset-2' : ''
+                    }`}
                   >
                     <Image
                       src={imageUrl}
@@ -110,6 +133,17 @@ export function PhotoGallery({
                       className="object-cover"
                       sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 20vw"
                     />
+                    {selectionMode && (
+                      <div
+                        className={`absolute top-2 left-2 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+                          isSelected
+                            ? 'bg-red-500 border-red-500 text-white'
+                            : 'bg-white/80 border-gray-300'
+                        }`}
+                      >
+                        {isSelected && <CheckIcon className="w-4 h-4" />}
+                      </div>
+                    )}
                   </button>
                 );
               })}
