@@ -62,6 +62,7 @@ export default function AdminPage() {
     uploader?: { id: string; full_name: string };
   }>>([]);
   const [photosLoading, setPhotosLoading] = useState(false);
+  const [photosFetched, setPhotosFetched] = useState(false);
 
   // Modal states
   const [createUserModalOpen, setCreateUserModalOpen] = useState(false);
@@ -501,14 +502,15 @@ export default function AdminPage() {
       console.error('Error fetching photos:', error);
     } finally {
       setPhotosLoading(false);
+      setPhotosFetched(true);
     }
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'photos' && photos.length === 0 && !photosLoading) {
+    if (activeTab === 'photos' && !photosFetched && !photosLoading) {
       fetchPhotos();
     }
-  }, [activeTab, photos.length, photosLoading, fetchPhotos]);
+  }, [activeTab, photosFetched, photosLoading, fetchPhotos]);
 
   const handleDeletePhoto = async (photoId: string) => {
     const response = await fetch(`/api/photos?id=${photoId}`, {
