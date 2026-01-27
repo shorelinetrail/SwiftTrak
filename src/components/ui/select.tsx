@@ -81,7 +81,7 @@ export const Select = forwardRef<HTMLDivElement, SelectProps>(
                   ref={buttonRef}
                   className={cn(
                     'relative w-full cursor-pointer rounded-lg border bg-white py-2 pl-3 pr-10 text-left',
-                    'focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500',
+                    'focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1',
                     disabled && 'bg-gray-50 cursor-not-allowed',
                     error ? 'border-red-500' : 'border-gray-300'
                   )}

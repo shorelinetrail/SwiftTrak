@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { LoadingSpinner } from '@/components/ui/loading';
+import { EmptyState } from '@/components/ui/empty-state';
+import { ColorIndicator } from '@/components/ui/color-indicator';
 import toast from 'react-hot-toast';
 import {
   PlusIcon,
@@ -280,10 +282,7 @@ export default function WorkstreamsPage() {
                     {/* Parent Workstream */}
                     <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                       <div className="flex items-center gap-3">
-                        <div
-                          className="w-4 h-4 rounded-full"
-                          style={{ backgroundColor: workstream.color }}
-                        />
+                        <ColorIndicator color={workstream.color} size="md" />
                         <div>
                           <p className="font-medium text-gray-900">{workstream.name}</p>
                           {workstream.description && (
@@ -340,12 +339,13 @@ export default function WorkstreamsPage() {
                           >
                             <div className="flex items-center gap-3">
                               <ChevronRightIcon className="w-3 h-3 text-gray-400" />
-                              <div
-                                className="w-3 h-3 rounded-full"
-                                style={{ backgroundColor: child.color }}
-                              />
+                              <ColorIndicator color={child.color} size="sm" />
                               <div>
-                                <p className="text-sm font-medium text-gray-900">{child.name}</p>
+                                <p className="text-sm font-medium text-gray-900">
+                                  <span className="text-gray-400">{workstream.name}</span>
+                                  <span className="text-gray-300 mx-1">/</span>
+                                  <span>{child.name}</span>
+                                </p>
                                 {child.description && (
                                   <p className="text-xs text-gray-500">{child.description}</p>
                                 )}
@@ -380,9 +380,18 @@ export default function WorkstreamsPage() {
                 );
               })}
               {workstreams.length === 0 && (
-                <p className="text-center text-gray-500 py-8">
-                  No workstreams configured. Add workstreams to organize your crisis response.
-                </p>
+                <EmptyState
+                  icon={<SwatchIcon className="w-6 h-6" />}
+                  title="No workstreams configured"
+                  description="Add workstreams to organize your crisis response."
+                  action={{
+                    label: 'Add Workstream',
+                    onClick: () => {
+                      setSelectedWorkstream(null);
+                      setWorkstreamModalOpen(true);
+                    },
+                  }}
+                />
               )}
             </div>
           </CardContent>
@@ -494,10 +503,7 @@ function WorkstreamModal({
         {parentWorkstream && (
           <div className="flex items-center gap-2 p-2 bg-gray-100 rounded-lg text-sm">
             <span className="text-gray-500">Parent:</span>
-            <div
-              className="w-3 h-3 rounded-full"
-              style={{ backgroundColor: parentWorkstream.color }}
-            />
+            <ColorIndicator color={parentWorkstream.color} size="sm" />
             <span className="font-medium">{parentWorkstream.name}</span>
           </div>
         )}

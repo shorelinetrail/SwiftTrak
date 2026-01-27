@@ -8,6 +8,8 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { StatusBadge, PriorityBadge, RiskBadge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading';
+import { StatsCard } from '@/components/ui/stats-card';
+import { ColorIndicator } from '@/components/ui/color-indicator';
 import { formatDate, cn } from '@/lib/utils';
 import {
   DocumentArrowDownIcon,
@@ -217,33 +219,37 @@ export default function ExecutiveDashboardPage() {
 
         {/* Key Metrics Grid */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <MetricCard
+          <StatsCard
             title="Critical Actions"
             value={stats?.criticalActions || 0}
             icon={<ExclamationTriangleIcon className="w-6 h-6" />}
+            variant="bordered"
             color="red"
-            trend={stats?.criticalActions ? 'needs attention' : 'clear'}
+            subtitle={stats?.criticalActions ? 'needs attention' : 'clear'}
           />
-          <MetricCard
+          <StatsCard
             title="Overdue Items"
             value={stats?.overdueActions || 0}
             icon={<ClockIcon className="w-6 h-6" />}
+            variant="bordered"
             color="orange"
-            trend={stats?.overdueActions ? 'needs attention' : 'on track'}
+            subtitle={stats?.overdueActions ? 'needs attention' : 'on track'}
           />
-          <MetricCard
+          <StatsCard
             title="High Risk Threats"
             value={stats?.highRiskThreats || 0}
             icon={<XCircleIcon className="w-6 h-6" />}
+            variant="bordered"
             color="red"
-            trend={stats?.highRiskThreats ? 'active' : 'mitigated'}
+            subtitle={stats?.highRiskThreats ? 'active' : 'mitigated'}
           />
-          <MetricCard
+          <StatsCard
             title="Milestones This Week"
             value={upcomingMilestones.length}
             icon={<CheckCircleIcon className="w-6 h-6" />}
+            variant="bordered"
             color="blue"
-            trend={`${stats?.completedMilestones || 0} completed`}
+            subtitle={`${stats?.completedMilestones || 0} completed`}
           />
         </div>
 
@@ -259,15 +265,23 @@ export default function ExecutiveDashboardPage() {
             <div className="space-y-4">
               {workstreamStats.map(({ workstream, totalActions, completedActions, highRiskThreats }) => {
                 const percentage = totalActions > 0 ? Math.round((completedActions / totalActions) * 100) : 0;
+                const parent = workstream.parent_id ? workstreams.find(ws => ws.id === workstream.parent_id) : null;
                 return (
                   <div key={workstream.id} className="space-y-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <div
-                          className="w-3 h-3 rounded-full"
-                          style={{ backgroundColor: workstream.color }}
-                        />
-                        <span className="font-medium text-gray-900">{workstream.name}</span>
+                        <ColorIndicator color={workstream.color} size="sm" />
+                        <span className="font-medium text-gray-900">
+                          {parent ? (
+                            <span className="flex items-center gap-1">
+                              <span className="text-gray-400">{parent.name}</span>
+                              <span className="text-gray-300">/</span>
+                              <span>{workstream.name}</span>
+                            </span>
+                          ) : (
+                            workstream.name
+                          )}
+                        </span>
                         {highRiskThreats > 0 && (
                           <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
                             {highRiskThreats} high risk
@@ -387,38 +401,3 @@ export default function ExecutiveDashboardPage() {
   );
 }
 
-function MetricCard({
-  title,
-  value,
-  icon,
-  color,
-  trend,
-}: {
-  title: string;
-  value: number;
-  icon: React.ReactNode;
-  color: 'red' | 'orange' | 'blue' | 'green';
-  trend: string;
-}) {
-  const colors = {
-    red: 'bg-red-50 border-red-200 text-red-600',
-    orange: 'bg-orange-50 border-orange-200 text-orange-600',
-    blue: 'bg-blue-50 border-blue-200 text-blue-600',
-    green: 'bg-green-50 border-green-200 text-green-600',
-  };
-
-  return (
-    <Card className={cn('border-2', colors[color])}>
-      <CardContent className="pt-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium opacity-80">{title}</p>
-            <p className="text-3xl font-bold mt-1">{value}</p>
-            <p className="text-xs opacity-60 mt-1">{trend}</p>
-          </div>
-          <div className="opacity-40">{icon}</div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}

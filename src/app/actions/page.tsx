@@ -15,6 +15,9 @@ import { Avatar } from '@/components/ui/avatar';
 import { Tabs } from '@/components/ui/tabs';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Modal } from '@/components/ui/modal';
+import { WorkstreamSelect } from '@/components/ui/workstream-select';
+import { WorkstreamBadge } from '@/components/ui/workstream-badge';
 import { formatDate, isOverdue, getDaysUntil, cn } from '@/lib/utils';
 import {
   PlusIcon,
@@ -155,10 +158,11 @@ function ActionsPageContent() {
     { value: 'low', label: 'Low' },
   ];
 
-  const workstreamOptions = [
-    { value: 'all', label: 'All Workstreams' },
-    ...workstreams.map(w => ({ value: w.id, label: w.name })),
-  ];
+  // Helper to get parent workstream for hierarchy display
+  const getParentWorkstream = (parentId: string | null | undefined) => {
+    if (!parentId) return null;
+    return workstreams.find(ws => ws.id === parentId) || null;
+  };
 
   const handleExport = () => {
     window.location.href = `/api/export/actions?status=${statusFilter}&workstream=${workstreamFilter}&priority=${priorityFilter}`;
@@ -449,11 +453,11 @@ function ActionsPageContent() {
                 onChange={setPriorityFilter}
                 className="w-40"
               />
-              <Select
-                options={workstreamOptions}
+              <WorkstreamSelect
+                workstreams={workstreams}
                 value={workstreamFilter}
                 onChange={setWorkstreamFilter}
-                className="w-48"
+                className="w-56"
               />
               {(statusFilter !== 'all' || priorityFilter !== 'all' || workstreamFilter !== 'all') && (
                 <Button
@@ -494,149 +498,143 @@ function ActionsPageContent() {
         ) : viewMode === 'cards' ? (
           <div className="space-y-3">
             {filteredActions.map((action) => (
-              <ActionCard key={action.id} action={action} />
+              <ActionCard key={action.id} action={action} workstreams={workstreams} />
             ))}
           </div>
         ) : (
-          <ActionsTable actions={filteredActions} />
+          <ActionsTable actions={filteredActions} workstreams={workstreams} />
         )}
       </div>
 
       {/* Upload Modal */}
-      {showUploadModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="fixed inset-0 bg-black/50" onClick={() => setShowUploadModal(false)} />
-          <div className="relative bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Import Actions from CSV</h2>
-              <button
-                onClick={() => setShowUploadModal(false)}
-                className="p-1 text-gray-400 hover:text-gray-600 rounded"
-              >
-                <XMarkIcon className="w-5 h-5" />
-              </button>
-            </div>
+      <Modal
+        open={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        title="Import Actions from CSV"
+        size="lg"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Upload a CSV file to import multiple actions at once. The file should have column headers.
+          </p>
 
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600">
-                Upload a CSV file to import multiple actions at once. The file should have column headers.
-              </p>
+          <div className="bg-gray-50 rounded-lg p-4">
+            <h3 className="text-sm font-medium text-gray-900 mb-2">Supported Columns</h3>
+            <ul className="text-sm text-gray-600 space-y-1">
+              <li><strong>Title</strong> (required): Title, Name, or Action</li>
+              <li><strong>Description</strong>: Description or Details</li>
+              <li><strong>Priority</strong>: Critical, High, Medium, Low</li>
+              <li><strong>Status</strong>: Pending, In Progress, Complete, Cancelled</li>
+              <li><strong>Workstream</strong>: Must match existing workstream name</li>
+              <li><strong>Owner</strong>: User&apos;s full name or email</li>
+              <li><strong>Due Date</strong>: Due Date, Due, or Deadline (any date format)</li>
+            </ul>
+            <a
+              href="/templates/actions-import-template.csv"
+              download
+              className="inline-flex items-center gap-1 text-sm text-red-600 hover:text-red-700 mt-3"
+            >
+              <ArrowDownTrayIcon className="w-4 h-4" />
+              Download template
+            </a>
+          </div>
 
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h3 className="text-sm font-medium text-gray-900 mb-2">Supported Columns</h3>
-                <ul className="text-sm text-gray-600 space-y-1">
-                  <li><strong>Title</strong> (required): Title, Name, or Action</li>
-                  <li><strong>Description</strong>: Description or Details</li>
-                  <li><strong>Priority</strong>: Critical, High, Medium, Low</li>
-                  <li><strong>Status</strong>: Pending, In Progress, Complete, Cancelled</li>
-                  <li><strong>Workstream</strong>: Must match existing workstream name</li>
-                  <li><strong>Owner</strong>: User&apos;s full name or email</li>
-                  <li><strong>Due Date</strong>: Due Date, Due, or Deadline (any date format)</li>
-                </ul>
-                <a
-                  href="/templates/actions-import-template.csv"
-                  download
-                  className="inline-flex items-center gap-1 text-sm text-red-600 hover:text-red-700 mt-3"
-                >
-                  <ArrowDownTrayIcon className="w-4 h-4" />
-                  Download template
-                </a>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,.txt"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+
+          {uploadResults && (
+            <div className={cn(
+              'rounded-lg p-4',
+              uploadResults.errors.length > 0 ? 'bg-red-50' : uploadResults.warnings.length > 0 ? 'bg-amber-50' : 'bg-green-50'
+            )}>
+              <div className="flex items-center gap-2 mb-2">
+                {uploadResults.errors.length > 0 ? (
+                  <ExclamationCircleIcon className="w-5 h-5 text-red-500" />
+                ) : uploadResults.warnings.length > 0 ? (
+                  <ExclamationCircleIcon className="w-5 h-5 text-amber-500" />
+                ) : (
+                  <CheckCircleIcon className="w-5 h-5 text-green-500" />
+                )}
+                <span className="font-medium">
+                  {uploadResults.success} action{uploadResults.success !== 1 ? 's' : ''} imported
+                </span>
               </div>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".csv,.txt"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
-
-              {uploadResults && (
-                <div className={cn(
-                  'rounded-lg p-4',
-                  uploadResults.errors.length > 0 ? 'bg-red-50' : uploadResults.warnings.length > 0 ? 'bg-amber-50' : 'bg-green-50'
-                )}>
-                  <div className="flex items-center gap-2 mb-2">
-                    {uploadResults.errors.length > 0 ? (
-                      <ExclamationCircleIcon className="w-5 h-5 text-red-500" />
-                    ) : uploadResults.warnings.length > 0 ? (
-                      <ExclamationCircleIcon className="w-5 h-5 text-amber-500" />
-                    ) : (
-                      <CheckCircleIcon className="w-5 h-5 text-green-500" />
+              {uploadResults.warnings.length > 0 && (
+                <div className="mt-2">
+                  <p className="text-sm font-medium text-amber-800 mb-1">
+                    Warnings ({uploadResults.warnings.length}):
+                  </p>
+                  <ul className="text-sm text-amber-700 max-h-24 overflow-y-auto space-y-0.5">
+                    {uploadResults.warnings.slice(0, 5).map((warn, i) => (
+                      <li key={i}>{warn}</li>
+                    ))}
+                    {uploadResults.warnings.length > 5 && (
+                      <li className="text-amber-600 italic">
+                        ...and {uploadResults.warnings.length - 5} more
+                      </li>
                     )}
-                    <span className="font-medium">
-                      {uploadResults.success} action{uploadResults.success !== 1 ? 's' : ''} imported
-                    </span>
-                  </div>
-                  {uploadResults.warnings.length > 0 && (
-                    <div className="mt-2">
-                      <p className="text-sm font-medium text-amber-800 mb-1">
-                        Warnings ({uploadResults.warnings.length}):
-                      </p>
-                      <ul className="text-sm text-amber-700 max-h-24 overflow-y-auto space-y-0.5">
-                        {uploadResults.warnings.slice(0, 5).map((warn, i) => (
-                          <li key={i}>{warn}</li>
-                        ))}
-                        {uploadResults.warnings.length > 5 && (
-                          <li className="text-amber-600 italic">
-                            ...and {uploadResults.warnings.length - 5} more
-                          </li>
-                        )}
-                      </ul>
-                      <p className="text-xs text-amber-600 mt-2">
-                        Tip: Owner emails must match existing user accounts
-                      </p>
-                    </div>
-                  )}
-                  {uploadResults.errors.length > 0 && (
-                    <div className="mt-2">
-                      <p className="text-sm font-medium text-red-800 mb-1">Errors:</p>
-                      <ul className="text-sm text-red-700 max-h-24 overflow-y-auto space-y-0.5">
-                        {uploadResults.errors.map((err, i) => (
-                          <li key={i}>{err}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+                  </ul>
+                  <p className="text-xs text-amber-600 mt-2">
+                    Tip: Owner emails must match existing user accounts
+                  </p>
                 </div>
               )}
-
-              <div className="flex gap-3">
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => setShowUploadModal(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  className="flex-1"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploading}
-                >
-                  {uploading ? (
-                    <>
-                      <LoadingSpinner size="sm" className="mr-2" />
-                      Importing...
-                    </>
-                  ) : (
-                    <>
-                      <ArrowUpTrayIcon className="w-4 h-4 mr-2" />
-                      Select File
-                    </>
-                  )}
-                </Button>
-              </div>
+              {uploadResults.errors.length > 0 && (
+                <div className="mt-2">
+                  <p className="text-sm font-medium text-red-800 mb-1">Errors:</p>
+                  <ul className="text-sm text-red-700 max-h-24 overflow-y-auto space-y-0.5">
+                    {uploadResults.errors.map((err, i) => (
+                      <li key={i}>{err}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
+          )}
+
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setShowUploadModal(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+            >
+              {uploading ? (
+                <>
+                  <LoadingSpinner size="sm" className="mr-2" />
+                  Importing...
+                </>
+              ) : (
+                <>
+                  <ArrowUpTrayIcon className="w-4 h-4 mr-2" />
+                  Select File
+                </>
+              )}
+            </Button>
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }
 
-function ActionCard({ action }: { action: ActionWithRelations }) {
+function ActionCard({ action, workstreams }: { action: ActionWithRelations; workstreams: Workstream[] }) {
   const overdue = action.due_date && isOverdue(action.due_date) && action.status !== 'complete' && action.status !== 'cancelled';
+  const getParentWorkstream = (parentId: string | null | undefined) => {
+    if (!parentId) return null;
+    return workstreams.find(ws => ws.id === parentId) || null;
+  };
 
   return (
     <Link href={`/actions/${action.id}`}>
@@ -670,15 +668,10 @@ function ActionCard({ action }: { action: ActionWithRelations }) {
                   )}
                   <div className="flex items-center gap-3 mt-2 text-sm text-gray-500">
                     {action.workstream && (
-                      <span
-                        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                        style={{
-                          backgroundColor: `${action.workstream.color}20`,
-                          color: action.workstream.color,
-                        }}
-                      >
-                        {action.workstream.name}
-                      </span>
+                      <WorkstreamBadge
+                        workstream={action.workstream}
+                        parent={getParentWorkstream(action.workstream.parent_id)}
+                      />
                     )}
                     <span>Created {formatDate(action.created_at, { month: 'short', day: 'numeric' })}</span>
                   </div>
@@ -710,7 +703,12 @@ function ActionCard({ action }: { action: ActionWithRelations }) {
   );
 }
 
-function ActionsTable({ actions }: { actions: ActionWithRelations[] }) {
+function ActionsTable({ actions, workstreams }: { actions: ActionWithRelations[]; workstreams: Workstream[] }) {
+  const getParentWorkstream = (parentId: string | null | undefined) => {
+    if (!parentId) return null;
+    return workstreams.find(ws => ws.id === parentId) || null;
+  };
+
   return (
     <Card>
       <div className="overflow-x-auto">
@@ -769,15 +767,10 @@ function ActionsTable({ actions }: { actions: ActionWithRelations[] }) {
                   </td>
                   <td className="px-4 py-3">
                     {action.workstream ? (
-                      <span
-                        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                        style={{
-                          backgroundColor: `${action.workstream.color}20`,
-                          color: action.workstream.color,
-                        }}
-                      >
-                        {action.workstream.name}
-                      </span>
+                      <WorkstreamBadge
+                        workstream={action.workstream}
+                        parent={getParentWorkstream(action.workstream.parent_id)}
+                      />
                     ) : (
                       <span className="text-xs text-gray-400">-</span>
                     )}

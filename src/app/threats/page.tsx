@@ -12,6 +12,9 @@ import { Select } from '@/components/ui/select';
 import { RiskBadge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
+import { WorkstreamSelect } from '@/components/ui/workstream-select';
+import { WorkstreamBadge } from '@/components/ui/workstream-badge';
+import { StatsCard } from '@/components/ui/stats-card';
 import { formatDate, cn } from '@/lib/utils';
 import {
   PlusIcon,
@@ -112,11 +115,6 @@ export default function ThreatsPage() {
   //   onDelete: () => fetchThreats(),
   // });
 
-  const workstreamOptions = [
-    { value: 'all', label: 'All Workstreams' },
-    ...workstreams.map(w => ({ value: w.id, label: w.name })),
-  ];
-
   const riskOptions = [
     { value: 'all', label: 'All Risk Levels' },
     { value: 'high', label: 'High' },
@@ -153,51 +151,27 @@ export default function ThreatsPage() {
       <div className="p-6 space-y-6">
         {/* Risk Summary */}
         <div className="grid grid-cols-3 gap-4">
-          <Card className="bg-red-50 border-red-200">
-            <CardContent className="pt-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-red-600 font-medium">High Risk</p>
-                  <p className="text-2xl font-bold text-red-700">
-                    {threats.filter(t => t.current_risk === 'high').length}
-                  </p>
-                </div>
-                <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-                  <ExclamationTriangleIcon className="w-5 h-5 text-red-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-yellow-50 border-yellow-200">
-            <CardContent className="pt-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-yellow-600 font-medium">Medium Risk</p>
-                  <p className="text-2xl font-bold text-yellow-700">
-                    {threats.filter(t => t.current_risk === 'medium').length}
-                  </p>
-                </div>
-                <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
-                  <ExclamationTriangleIcon className="w-5 h-5 text-yellow-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-green-50 border-green-200">
-            <CardContent className="pt-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-green-600 font-medium">Low Risk</p>
-                  <p className="text-2xl font-bold text-green-700">
-                    {threats.filter(t => t.current_risk === 'low').length}
-                  </p>
-                </div>
-                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                  <ExclamationTriangleIcon className="w-5 h-5 text-green-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <StatsCard
+            title="High Risk"
+            value={threats.filter(t => t.current_risk === 'high').length}
+            icon={<ExclamationTriangleIcon className="w-5 h-5" />}
+            variant="light"
+            color="red"
+          />
+          <StatsCard
+            title="Medium Risk"
+            value={threats.filter(t => t.current_risk === 'medium').length}
+            icon={<ExclamationTriangleIcon className="w-5 h-5" />}
+            variant="light"
+            color="yellow"
+          />
+          <StatsCard
+            title="Low Risk"
+            value={threats.filter(t => t.current_risk === 'low').length}
+            icon={<ExclamationTriangleIcon className="w-5 h-5" />}
+            variant="light"
+            color="green"
+          />
         </div>
 
         {/* Filters */}
@@ -214,11 +188,11 @@ export default function ThreatsPage() {
                 onChange={setRiskFilter}
                 className="w-40"
               />
-              <Select
-                options={workstreamOptions}
+              <WorkstreamSelect
+                workstreams={workstreams}
                 value={workstreamFilter}
                 onChange={setWorkstreamFilter}
-                className="w-48"
+                className="w-56"
               />
             </div>
           </CardContent>
@@ -238,7 +212,7 @@ export default function ThreatsPage() {
         ) : (
           <div className="space-y-3">
             {filteredThreats.map((threat) => (
-              <ThreatCard key={threat.id} threat={threat} />
+              <ThreatCard key={threat.id} threat={threat} workstreams={workstreams} />
             ))}
           </div>
         )}
@@ -247,14 +221,19 @@ export default function ThreatsPage() {
   );
 }
 
-function ThreatCard({ threat }: { threat: ThreatWithRelations }) {
+function ThreatCard({ threat, workstreams }: { threat: ThreatWithRelations; workstreams: Workstream[] }) {
+  const getParentWorkstream = (parentId: string | null | undefined) => {
+    if (!parentId) return null;
+    return workstreams.find(ws => ws.id === parentId) || null;
+  };
+
   return (
     <Link href={`/threats/${threat.id}`}>
       <Card hover>
         <CardContent className="p-4">
           <div className="flex items-start gap-4">
             <div className={cn(
-              'w-1 h-full min-h-[80px] rounded-full',
+              'w-1 h-full min-h-[60px] rounded-full',
               threat.current_risk === 'high' && 'bg-red-500',
               threat.current_risk === 'medium' && 'bg-yellow-500',
               threat.current_risk === 'low' && 'bg-green-500',
@@ -267,15 +246,10 @@ function ThreatCard({ threat }: { threat: ThreatWithRelations }) {
                   <p className="text-sm text-gray-600 mt-1 line-clamp-2">{threat.description}</p>
                   <div className="flex items-center gap-3 mt-2 text-sm text-gray-500">
                     {threat.workstream && (
-                      <span
-                        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                        style={{
-                          backgroundColor: `${threat.workstream.color}20`,
-                          color: threat.workstream.color,
-                        }}
-                      >
-                        {threat.workstream.name}
-                      </span>
+                      <WorkstreamBadge
+                        workstream={threat.workstream}
+                        parent={getParentWorkstream(threat.workstream.parent_id)}
+                      />
                     )}
                     {threat.expected_delay && (
                       <span>Expected delay: {threat.expected_delay}</span>

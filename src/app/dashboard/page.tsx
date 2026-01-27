@@ -8,11 +8,14 @@ import { useAppStore } from '@/stores/app-store';
 import { Header } from '@/components/layout/header';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Select } from '@/components/ui/select';
 import { StatusBadge, PriorityBadge, RiskBadge } from '@/components/ui/badge';
 import { Avatar } from '@/components/ui/avatar';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
+import { WorkstreamSelect } from '@/components/ui/workstream-select';
+import { WorkstreamBadge } from '@/components/ui/workstream-badge';
+import { ColorIndicator } from '@/components/ui/color-indicator';
+import { StatsCard } from '@/components/ui/stats-card';
 import { formatDate, isOverdue, getDaysUntil } from '@/lib/utils';
 import {
   ClipboardDocumentListIcon,
@@ -54,15 +57,11 @@ export default function DashboardPage() {
   const [pendingQueries, setPendingQueries] = useState<(TechnicalQuery & { assignee?: User })[]>([]);
   const [upcomingMilestones, setUpcomingMilestones] = useState<(Milestone & { workstream?: Workstream })[]>([]);
 
-  // Workstream filter options
-  const workstreamOptions = useMemo(() => [
-    { value: 'all', label: 'All Workstreams' },
-    ...workstreams.map(ws => ({
-      value: ws.id,
-      label: ws.name,
-      icon: <div className="w-3 h-3 rounded-full" style={{ backgroundColor: ws.color }} />,
-    })),
-  ], [workstreams]);
+  // Helper to get parent workstream for hierarchy display
+  const getParentWorkstream = (parentId: string | null | undefined) => {
+    if (!parentId) return null;
+    return workstreams.find(ws => ws.id === parentId) || null;
+  };
 
   // Calculate stats based on selected workstream
   const stats = useMemo<DashboardStats | null>(() => {
@@ -295,11 +294,11 @@ export default function DashboardPage() {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <FunnelIcon className="w-4 h-4 text-gray-400" />
-              <Select
-                options={workstreamOptions}
+              <WorkstreamSelect
+                workstreams={workstreams}
                 value={selectedWorkstream}
                 onChange={setSelectedWorkstream}
-                className="w-48"
+                className="w-56"
               />
             </div>
             <Link href="/executive">
@@ -315,69 +314,43 @@ export default function DashboardPage() {
         {/* Stats Grid - Clickable Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Link href={`/actions?priority=critical${selectedWorkstream !== 'all' ? `&workstream=${selectedWorkstream}` : ''}`}>
-            <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white border-0 cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all">
-              <CardContent className="pt-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-red-100 text-sm font-medium">Critical Actions</p>
-                    <p className="text-3xl font-bold mt-1">{stats?.criticalActions || 0}</p>
-                  </div>
-                  <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
-                    <ExclamationCircleIcon className="w-6 h-6" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <StatsCard
+              title="Critical Actions"
+              value={stats?.criticalActions || 0}
+              icon={<ExclamationCircleIcon className="w-6 h-6" />}
+              variant="gradient"
+              color="red"
+            />
           </Link>
 
           <Link href={`/actions?status=overdue${selectedWorkstream !== 'all' ? `&workstream=${selectedWorkstream}` : ''}`}>
-            <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white border-0 cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all">
-              <CardContent className="pt-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-orange-100 text-sm font-medium">Overdue Actions</p>
-                    <p className="text-3xl font-bold mt-1">{stats?.overdueActions || 0}</p>
-                  </div>
-                  <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
-                    <ClockIcon className="w-6 h-6" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <StatsCard
+              title="Overdue Actions"
+              value={stats?.overdueActions || 0}
+              icon={<ClockIcon className="w-6 h-6" />}
+              variant="gradient"
+              color="orange"
+            />
           </Link>
 
           <Link href={`/threats?risk=high${selectedWorkstream !== 'all' ? `&workstream=${selectedWorkstream}` : ''}`}>
-            <Card className="bg-gradient-to-br from-amber-500 to-amber-600 text-white border-0 cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all">
-              <CardContent className="pt-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-amber-100 text-sm font-medium">High Risk Threats</p>
-                    <p className="text-3xl font-bold mt-1">{stats?.highRiskThreats || 0}</p>
-                  </div>
-                  <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
-                    <ExclamationTriangleIcon className="w-6 h-6" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <StatsCard
+              title="High Risk Threats"
+              value={stats?.highRiskThreats || 0}
+              icon={<ExclamationTriangleIcon className="w-6 h-6" />}
+              variant="gradient"
+              color="amber"
+            />
           </Link>
 
           <Link href={`/actions?status=complete${selectedWorkstream !== 'all' ? `&workstream=${selectedWorkstream}` : ''}`}>
-            <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white border-0 cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all">
-              <CardContent className="pt-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-green-100 text-sm font-medium">Completed Actions</p>
-                    <p className="text-3xl font-bold mt-1">
-                      {stats?.completedActions || 0}/{stats?.totalActions || 0}
-                    </p>
-                  </div>
-                  <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
-                    <CheckCircleIcon className="w-6 h-6" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <StatsCard
+              title="Completed Actions"
+              value={`${stats?.completedActions || 0}/${stats?.totalActions || 0}`}
+              icon={<CheckCircleIcon className="w-6 h-6" />}
+              variant="gradient"
+              color="green"
+            />
           </Link>
         </div>
 
@@ -402,7 +375,7 @@ export default function DashboardPage() {
             ) : (
               <div className="space-y-4">
                 {workstreams.map((workstream) => (
-                  <WorkstreamProgress key={workstream.id} workstream={workstream} />
+                  <WorkstreamProgress key={workstream.id} workstream={workstream} allWorkstreams={workstreams} />
                 ))}
               </div>
             )}
@@ -452,15 +425,10 @@ export default function DashboardPage() {
                           </div>
                           <div className="flex items-center gap-2 mt-1">
                             {action.workstream && (
-                              <span
-                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                                style={{
-                                  backgroundColor: `${action.workstream.color}20`,
-                                  color: action.workstream.color,
-                                }}
-                              >
-                                {action.workstream.name}
-                              </span>
+                              <WorkstreamBadge
+                                workstream={action.workstream}
+                                parent={getParentWorkstream(action.workstream.parent_id)}
+                              />
                             )}
                             <StatusBadge status={action.status} />
                           </div>
@@ -521,15 +489,10 @@ export default function DashboardPage() {
                           <h4 className="text-sm font-medium text-gray-900 truncate">{threat.title}</h4>
                           <div className="flex items-center gap-2 mt-1">
                             {threat.workstream && (
-                              <span
-                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                                style={{
-                                  backgroundColor: `${threat.workstream.color}20`,
-                                  color: threat.workstream.color,
-                                }}
-                              >
-                                {threat.workstream.name}
-                              </span>
+                              <WorkstreamBadge
+                                workstream={threat.workstream}
+                                parent={getParentWorkstream(threat.workstream.parent_id)}
+                              />
                             )}
                             {threat.expected_delay && (
                               <span className="text-xs text-gray-500">
@@ -623,15 +586,11 @@ export default function DashboardPage() {
                         <div className="flex-1 min-w-0">
                           <h4 className="text-sm font-medium text-gray-900 truncate">{milestone.title}</h4>
                           {milestone.workstream && (
-                            <span
-                              className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium mt-1"
-                              style={{
-                                backgroundColor: `${milestone.workstream.color}20`,
-                                color: milestone.workstream.color,
-                              }}
-                            >
-                              {milestone.workstream.name}
-                            </span>
+                            <WorkstreamBadge
+                              workstream={milestone.workstream}
+                              parent={getParentWorkstream(milestone.workstream.parent_id)}
+                              className="mt-1"
+                            />
                           )}
                         </div>
                         <div className="text-right">
@@ -683,8 +642,9 @@ export default function DashboardPage() {
   );
 }
 
-function WorkstreamProgress({ workstream }: { workstream: Workstream }) {
+function WorkstreamProgress({ workstream, allWorkstreams }: { workstream: Workstream; allWorkstreams: Workstream[] }) {
   const [stats, setStats] = useState({ total: 0, completed: 0 });
+  const parent = workstream.parent_id ? allWorkstreams.find(ws => ws.id === workstream.parent_id) : null;
 
   useEffect(() => {
     let mounted = true;
@@ -723,11 +683,18 @@ function WorkstreamProgress({ workstream }: { workstream: Workstream }) {
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div
-            className="w-3 h-3 rounded-full"
-            style={{ backgroundColor: workstream.color }}
-          />
-          <span className="text-sm font-medium text-gray-700">{workstream.name}</span>
+          <ColorIndicator color={workstream.color} size="sm" />
+          <span className="text-sm font-medium text-gray-700">
+            {parent ? (
+              <span className="flex items-center gap-1">
+                <span className="text-gray-400">{parent.name}</span>
+                <span className="text-gray-300">/</span>
+                <span>{workstream.name}</span>
+              </span>
+            ) : (
+              workstream.name
+            )}
+          </span>
         </div>
         <span className="text-sm text-gray-500">
           {stats.completed}/{stats.total} ({percentage}%)

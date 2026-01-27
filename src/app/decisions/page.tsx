@@ -8,10 +8,11 @@ import { useAppStore } from '@/stores/app-store';
 import { Header } from '@/components/layout/header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Select } from '@/components/ui/select';
 import { Avatar } from '@/components/ui/avatar';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
+import { WorkstreamSelect } from '@/components/ui/workstream-select';
+import { WorkstreamBadge } from '@/components/ui/workstream-badge';
 import { formatDate, getRelativeTime } from '@/lib/utils';
 import {
   PlusIcon,
@@ -64,11 +65,6 @@ export default function DecisionsPage() {
     ? decisions
     : decisions.filter(d => d.workstream_id === workstreamFilter);
 
-  const workstreamOptions = [
-    { value: 'all', label: 'All Workstreams' },
-    ...workstreams.map(w => ({ value: w.id, label: w.name })),
-  ];
-
   if (loading) {
     return (
       <div className="min-h-screen">
@@ -104,11 +100,11 @@ export default function DecisionsPage() {
                 <FunnelIcon className="w-4 h-4" />
                 <span className="text-sm font-medium">Filter:</span>
               </div>
-              <Select
-                options={workstreamOptions}
+              <WorkstreamSelect
+                workstreams={workstreams}
                 value={workstreamFilter}
                 onChange={setWorkstreamFilter}
-                className="w-48"
+                className="w-56"
               />
             </div>
           </CardContent>
@@ -128,7 +124,7 @@ export default function DecisionsPage() {
         ) : (
           <div className="space-y-4">
             {filteredDecisions.map((decision, index) => (
-              <DecisionCard key={decision.id} decision={decision} isFirst={index === 0} />
+              <DecisionCard key={decision.id} decision={decision} workstreams={workstreams} isFirst={index === 0} />
             ))}
           </div>
         )}
@@ -137,14 +133,19 @@ export default function DecisionsPage() {
   );
 }
 
-function DecisionCard({ decision, isFirst }: { decision: DecisionWithRelations; isFirst: boolean }) {
+function DecisionCard({ decision, workstreams, isFirst }: { decision: DecisionWithRelations; workstreams: Workstream[]; isFirst: boolean }) {
+  const getParentWorkstream = (parentId: string | null | undefined) => {
+    if (!parentId) return null;
+    return workstreams.find(ws => ws.id === parentId) || null;
+  };
+
   return (
     <div className="relative pl-8">
       {/* Timeline line */}
       <div className="absolute left-3 top-0 bottom-0 w-0.5 bg-gray-200" />
 
-      {/* Timeline dot */}
-      <div className={`absolute left-0 top-4 w-6 h-6 rounded-full border-4 border-white ${isFirst ? 'bg-red-500' : 'bg-gray-300'}`} />
+      {/* Timeline dot - standardized to w-4 h-4 */}
+      <div className={`absolute left-1 top-4 w-4 h-4 rounded-full border-2 border-white ${isFirst ? 'bg-red-500' : 'bg-gray-300'}`} />
 
       <Link href={`/decisions/${decision.id}`}>
         <Card hover>
@@ -154,15 +155,10 @@ function DecisionCard({ decision, isFirst }: { decision: DecisionWithRelations; 
                 <div className="flex items-center gap-2 mb-1">
                   <h3 className="text-base font-medium text-gray-900">{decision.title}</h3>
                   {decision.workstream && (
-                    <span
-                      className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                      style={{
-                        backgroundColor: `${decision.workstream.color}20`,
-                        color: decision.workstream.color,
-                      }}
-                    >
-                      {decision.workstream.name}
-                    </span>
+                    <WorkstreamBadge
+                      workstream={decision.workstream}
+                      parent={getParentWorkstream(decision.workstream.parent_id)}
+                    />
                   )}
                 </div>
                 <p className="text-sm text-gray-600 line-clamp-2">{decision.description}</p>

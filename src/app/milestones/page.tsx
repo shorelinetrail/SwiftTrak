@@ -12,6 +12,8 @@ import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
+import { WorkstreamBadge } from '@/components/ui/workstream-badge';
+import { StatsCard } from '@/components/ui/stats-card';
 import { formatDate, getDaysUntil, cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import {
@@ -117,39 +119,27 @@ export default function MilestonesPage() {
       <div className="p-6 space-y-8">
         {/* Stats */}
         <div className="grid grid-cols-3 gap-4">
-          <Card className="bg-blue-50 border-blue-200">
-            <CardContent className="pt-4">
-              <div className="flex items-center gap-3">
-                <ClockIcon className="w-8 h-8 text-blue-600" />
-                <div>
-                  <p className="text-2xl font-bold text-blue-700">{pendingMilestones.length}</p>
-                  <p className="text-sm text-blue-600">Pending</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-green-50 border-green-200">
-            <CardContent className="pt-4">
-              <div className="flex items-center gap-3">
-                <CheckCircleIcon className="w-8 h-8 text-green-600" />
-                <div>
-                  <p className="text-2xl font-bold text-green-700">{completedMilestones.length}</p>
-                  <p className="text-sm text-green-600">Completed</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-red-50 border-red-200">
-            <CardContent className="pt-4">
-              <div className="flex items-center gap-3">
-                <ExclamationCircleIcon className="w-8 h-8 text-red-600" />
-                <div>
-                  <p className="text-2xl font-bold text-red-700">{missedMilestones.length}</p>
-                  <p className="text-sm text-red-600">Missed</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <StatsCard
+            title="Pending"
+            value={pendingMilestones.length}
+            icon={<ClockIcon className="w-5 h-5" />}
+            variant="light"
+            color="blue"
+          />
+          <StatsCard
+            title="Completed"
+            value={completedMilestones.length}
+            icon={<CheckCircleIcon className="w-5 h-5" />}
+            variant="light"
+            color="green"
+          />
+          <StatsCard
+            title="Missed"
+            value={missedMilestones.length}
+            icon={<ExclamationCircleIcon className="w-5 h-5" />}
+            variant="light"
+            color="red"
+          />
         </div>
 
         {/* Pending Milestones */}
@@ -161,6 +151,7 @@ export default function MilestonesPage() {
                 <MilestoneCard
                   key={milestone.id}
                   milestone={milestone}
+                  workstreams={workstreams}
                   onToggleComplete={canEdit ? () => handleToggleComplete(milestone) : undefined}
                 />
               ))}
@@ -177,6 +168,7 @@ export default function MilestonesPage() {
                 <MilestoneCard
                   key={milestone.id}
                   milestone={milestone}
+                  workstreams={workstreams}
                   onToggleComplete={canEdit ? () => handleToggleComplete(milestone) : undefined}
                 />
               ))}
@@ -202,14 +194,21 @@ export default function MilestonesPage() {
 
 function MilestoneCard({
   milestone,
+  workstreams,
   onToggleComplete,
 }: {
   milestone: MilestoneWithRelations;
+  workstreams: Workstream[];
   onToggleComplete?: () => void;
 }) {
   const isCompleted = milestone.status === 'completed';
   const isPast = new Date(milestone.target_date) < new Date();
   const daysUntil = getDaysUntil(milestone.target_date);
+
+  const getParentWorkstream = (parentId: string | null | undefined) => {
+    if (!parentId) return null;
+    return workstreams.find(ws => ws.id === parentId) || null;
+  };
 
   return (
     <Card className={cn(
@@ -245,15 +244,10 @@ function MilestoneCard({
                 {milestone.title}
               </h3>
               {milestone.workstream && (
-                <span
-                  className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                  style={{
-                    backgroundColor: `${milestone.workstream.color}20`,
-                    color: milestone.workstream.color,
-                  }}
-                >
-                  {milestone.workstream.name}
-                </span>
+                <WorkstreamBadge
+                  workstream={milestone.workstream}
+                  parent={getParentWorkstream(milestone.workstream.parent_id)}
+                />
               )}
             </div>
             {milestone.description && (
