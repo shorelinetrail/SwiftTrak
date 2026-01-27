@@ -8,17 +8,17 @@ import { useAppStore } from '@/stores/app-store';
 import { Header } from '@/components/layout/header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Select } from '@/components/ui/select';
 import { Avatar } from '@/components/ui/avatar';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
-import { WorkstreamSelect } from '@/components/ui/workstream-select';
-import { WorkstreamBadge } from '@/components/ui/workstream-badge';
-import { formatDate, getRelativeTime } from '@/lib/utils';
+import { formatDate, getRelativeTime, buildWorkstreamOptions, getWorkstreamDisplayName } from '@/lib/utils';
 import {
   PlusIcon,
   DocumentTextIcon,
   FunnelIcon,
 } from '@heroicons/react/24/outline';
+import { usePermission } from '@/hooks/use-user';
 import type { Decision, Workstream, User } from '@/types/database';
 
 type DecisionWithRelations = Decision & {
@@ -28,6 +28,7 @@ type DecisionWithRelations = Decision & {
 
 export default function DecisionsPage() {
   const { workstreams } = useAppStore();
+  const { canEdit } = usePermission();
   const [loading, setLoading] = useState(true);
   const [decisions, setDecisions] = useState<DecisionWithRelations[]>([]);
   const [workstreamFilter, setWorkstreamFilter] = useState<string>('all');
@@ -65,6 +66,8 @@ export default function DecisionsPage() {
     ? decisions
     : decisions.filter(d => d.workstream_id === workstreamFilter);
 
+  const workstreamOptions = buildWorkstreamOptions(workstreams);
+
   if (loading) {
     return (
       <div className="min-h-screen">
@@ -82,12 +85,14 @@ export default function DecisionsPage() {
         title="Decision Log"
         subtitle={`${filteredDecisions.length} decision${filteredDecisions.length !== 1 ? 's' : ''} recorded`}
         actions={
-          <Link href="/decisions/new">
-            <Button size="sm">
-              <PlusIcon className="w-4 h-4 mr-2" />
-              Record Decision
-            </Button>
-          </Link>
+          canEdit && (
+            <Link href="/decisions/new">
+              <Button size="sm">
+                <PlusIcon className="w-4 h-4 mr-2" />
+                Record Decision
+              </Button>
+            </Link>
+          )
         }
       />
 
@@ -100,11 +105,11 @@ export default function DecisionsPage() {
                 <FunnelIcon className="w-4 h-4" />
                 <span className="text-sm font-medium">Filter:</span>
               </div>
-              <WorkstreamSelect
-                workstreams={workstreams}
+              <Select
+                options={workstreamOptions}
                 value={workstreamFilter}
                 onChange={setWorkstreamFilter}
-                className="w-56"
+                className="w-48"
               />
             </div>
           </CardContent>
@@ -124,7 +129,7 @@ export default function DecisionsPage() {
         ) : (
           <div className="space-y-4">
             {filteredDecisions.map((decision, index) => (
-              <DecisionCard key={decision.id} decision={decision} workstreams={workstreams} isFirst={index === 0} />
+              <DecisionCard key={decision.id} decision={decision} isFirst={index === 0} workstreams={workstreams} />
             ))}
           </div>
         )}
@@ -133,19 +138,14 @@ export default function DecisionsPage() {
   );
 }
 
-function DecisionCard({ decision, workstreams, isFirst }: { decision: DecisionWithRelations; workstreams: Workstream[]; isFirst: boolean }) {
-  const getParentWorkstream = (parentId: string | null | undefined) => {
-    if (!parentId) return null;
-    return workstreams.find(ws => ws.id === parentId) || null;
-  };
-
+function DecisionCard({ decision, isFirst, workstreams }: { decision: DecisionWithRelations; isFirst: boolean; workstreams: Workstream[] }) {
   return (
     <div className="relative pl-8">
       {/* Timeline line */}
       <div className="absolute left-3 top-0 bottom-0 w-0.5 bg-gray-200" />
 
-      {/* Timeline dot - standardized to w-4 h-4 */}
-      <div className={`absolute left-1 top-4 w-4 h-4 rounded-full border-2 border-white ${isFirst ? 'bg-red-500' : 'bg-gray-300'}`} />
+      {/* Timeline dot */}
+      <div className={`absolute left-0 top-4 w-6 h-6 rounded-full border-4 border-white ${isFirst ? 'bg-red-500' : 'bg-gray-300'}`} />
 
       <Link href={`/decisions/${decision.id}`}>
         <Card hover>
@@ -155,10 +155,15 @@ function DecisionCard({ decision, workstreams, isFirst }: { decision: DecisionWi
                 <div className="flex items-center gap-2 mb-1">
                   <h3 className="text-base font-medium text-gray-900">{decision.title}</h3>
                   {decision.workstream && (
-                    <WorkstreamBadge
-                      workstream={decision.workstream}
-                      parent={getParentWorkstream(decision.workstream.parent_id)}
-                    />
+                    <span
+                      className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                      style={{
+                        backgroundColor: `${decision.workstream.color}20`,
+                        color: decision.workstream.color,
+                      }}
+                    >
+                      {getWorkstreamDisplayName(decision.workstream, workstreams)}
+                    </span>
                   )}
                 </div>
                 <p className="text-sm text-gray-600 line-clamp-2">{decision.description}</p>

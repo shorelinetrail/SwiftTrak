@@ -311,7 +311,7 @@ export default function StakeholderPage() {
                       <RiskBadge risk={threat.current_risk} />
                     </div>
                     {threat.expected_delay && (
-                      <p className="text-sm text-gray-500">Expected delay: {threat.expected_delay}</p>
+                      <p className="text-sm text-gray-500">Potential delay: {threat.expected_delay}</p>
                     )}
                   </div>
                 ))}

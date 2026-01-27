@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import toast from 'react-hot-toast';
+import { buildWorkstreamOptions } from '@/lib/utils';
 import type { Priority, User, Workstream } from '@/types/database';
 
 export default function NewActionPage() {
@@ -24,8 +25,12 @@ export default function NewActionPage() {
     description: '',
     workstream_id: '',
     owner_id: '',
-    priority: 'medium' as Priority,
+    priority: '' as Priority | '', // Optional - can be unassigned
     due_date: '',
+    created_at: '', // Created date for importing historical actions
+    completed_at: '', // Date closed for importing already-closed actions
+    initial_comment: '', // For importing legacy comments
+    created_by_override: '', // For bulk import - defaults to System if blank
   });
 
   // Fetch workstreams and users on mount
@@ -71,49 +76,121 @@ export default function NewActionPage() {
       return;
     }
 
+    // System user ID for bulk imports
+    const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000';
+
+    // Determine who created this action
+    // If using import fields (created_at, date closed, initial comment, or created_by_override), use override or System
+    const isImport = formData.created_at || formData.completed_at || formData.initial_comment.trim() || formData.created_by_override;
+    const createdBy = isImport
+      ? (formData.created_by_override || SYSTEM_USER_ID)
+      : user?.id;
+
+    // Check that we have a valid creator
+    if (!createdBy) {
+      toast.error('Unable to determine action creator. Please refresh and try again.');
+      return;
+    }
+
     setLoading(true);
 
     try {
       const supabase = createClient();
 
+      // Determine status based on completion date
+      const isCompleted = !!formData.completed_at;
+      const status = isCompleted ? 'complete' : 'pending';
+
+      // Build insert data
+      const insertData: Record<string, unknown> = {
+        title: formData.title.trim(),
+        description: formData.description.trim() || null,
+        workstream_id: formData.workstream_id,
+        owner_id: formData.owner_id || null,
+        priority: formData.priority || null,
+        due_date: formData.due_date || null,
+        status,
+        created_by: createdBy,
+      };
+
+      // Add custom created_at for historical imports
+      if (formData.created_at) {
+        insertData.created_at = new Date(formData.created_at).toISOString();
+      }
+
+      // Add completed_at for imported closed actions
+      if (formData.completed_at) {
+        insertData.completed_at = new Date(formData.completed_at).toISOString();
+      }
+
       const { data, error } = await supabase
         .from('actions')
-        .insert({
-          title: formData.title.trim(),
-          description: formData.description.trim() || null,
-          workstream_id: formData.workstream_id,
-          owner_id: formData.owner_id || null,
-          priority: formData.priority,
-          due_date: formData.due_date || null,
-          status: 'pending',
-          created_by: user?.id,
-        })
+        .insert(insertData)
         .select()
         .single();
 
       if (error) throw error;
 
+      // If this is a historical import, set the audit entry date to match
+      if (formData.created_at && data) {
+        await supabase
+          .from('action_audit')
+          .update({ created_at: new Date(formData.created_at).toISOString() })
+          .eq('action_id', data.id)
+          .eq('change_type', 'created');
+      }
+
+      // If there's an initial comment (legacy import), create an action_update
+      if (formData.initial_comment.trim() && data) {
+        const { error: commentError } = await supabase
+          .from('action_updates')
+          .insert({
+            action_id: data.id,
+            user_id: createdBy, // Use same user as action creator for legacy comments
+            content: formData.initial_comment.trim(),
+          });
+
+        if (commentError) {
+          console.error('Error creating legacy comment:', commentError);
+          // Don't fail the whole operation, just warn
+          toast.error('Action created but legacy comment failed to save');
+        }
+      }
+
       toast.success('Action created successfully');
       router.push(`/actions/${data.id}`);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error creating action:', error);
-      toast.error('Failed to create action');
+      const message = error instanceof Error ? error.message : 'Failed to create action';
+      toast.error(message);
     } finally {
       setLoading(false);
     }
   };
 
-  const workstreamOptions = [
-    { value: '', label: 'Select a workstream...' },
-    ...workstreams.map(w => ({ value: w.id, label: w.name })),
-  ];
+  // Use hierarchy format for cleaner dropdowns, exclude parent workstreams that have children
+  const workstreamOptions = buildWorkstreamOptions(workstreams, {
+    allLabel: 'Select a workstream...',
+    allValue: '',
+    excludeParentsWithChildren: true,
+    mapOption: (ws) => ({
+      icon: <div className="w-3 h-3 rounded-full" style={{ backgroundColor: ws.color }} />,
+    }),
+  });
 
   const userOptions = [
     { value: '', label: 'Unassigned' },
     ...users.map(u => ({ value: u.id, label: u.full_name })),
   ];
 
+  // Options for created_by in import section - defaults to System if blank
+  const createdByOptions = [
+    { value: '', label: 'System (default)' },
+    ...users.filter(u => u.id !== '00000000-0000-0000-0000-000000000000').map(u => ({ value: u.id, label: u.full_name })),
+  ];
+
   const priorityOptions = [
+    { value: '', label: 'Unassigned' },
     { value: 'critical', label: 'Critical' },
     { value: 'high', label: 'High' },
     { value: 'medium', label: 'Medium' },
@@ -122,7 +199,14 @@ export default function NewActionPage() {
 
   return (
     <div className="min-h-screen">
-      <Header title="New Action" subtitle="Create a new action item" />
+      <Header
+        title="New Action"
+        subtitle="Create a new action item"
+        breadcrumbs={[
+          { label: 'Actions', href: '/actions' },
+          { label: 'New Action' },
+        ]}
+      />
 
       <div className="p-6 max-w-2xl">
         <form onSubmit={handleSubmit}>
@@ -174,6 +258,49 @@ export default function NewActionPage() {
                 value={formData.due_date}
                 onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
               />
+
+              {/* Legacy Import Section */}
+              <div className="border-t pt-6 mt-6">
+                <div className="mb-4">
+                  <p className="text-sm font-medium text-gray-700">Legacy Import Options</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    For importing historical actions from another system. Leave blank for new actions.
+                  </p>
+                </div>
+
+                <div className="space-y-4 bg-gray-50 p-4 rounded-lg">
+                  <div className="grid grid-cols-2 gap-4">
+                    <Input
+                      label="Date Created"
+                      type="date"
+                      value={formData.created_at}
+                      onChange={(e) => setFormData({ ...formData, created_at: e.target.value })}
+                    />
+                    <Input
+                      label="Date Closed"
+                      type="date"
+                      value={formData.completed_at}
+                      onChange={(e) => setFormData({ ...formData, completed_at: e.target.value })}
+                    />
+                  </div>
+
+                  <Select
+                    label="Created By"
+                    options={createdByOptions}
+                    value={formData.created_by_override}
+                    onChange={(value) => setFormData({ ...formData, created_by_override: value })}
+                    disabled={loadingUsers}
+                  />
+
+                  <Textarea
+                    label="Initial Comment"
+                    value={formData.initial_comment}
+                    onChange={(e) => setFormData({ ...formData, initial_comment: e.target.value })}
+                    placeholder="Paste legacy comments or notes from another system"
+                    rows={4}
+                  />
+                </div>
+              </div>
             </CardContent>
 
             <CardFooter>

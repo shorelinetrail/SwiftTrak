@@ -9,16 +9,14 @@ import { useAppStore } from '@/stores/app-store';
 import { Header } from '@/components/layout/header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Select } from '@/components/ui/select';
+import { Select, MultiSelect } from '@/components/ui/select';
+import { WorkstreamSelect, getWorkstreamFilterIds } from '@/components/ui/workstream-select';
 import { StatusBadge, PriorityBadge } from '@/components/ui/badge';
 import { Avatar } from '@/components/ui/avatar';
 import { Tabs } from '@/components/ui/tabs';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Modal } from '@/components/ui/modal';
-import { WorkstreamSelect } from '@/components/ui/workstream-select';
-import { WorkstreamBadge } from '@/components/ui/workstream-badge';
-import { formatDate, isOverdue, getDaysUntil, cn } from '@/lib/utils';
+import { formatDate, isOverdue, getDaysUntil, cn, buildWorkstreamOptions, getWorkstreamDisplayName } from '@/lib/utils';
 import {
   PlusIcon,
   FunnelIcon,
@@ -30,8 +28,12 @@ import {
   XMarkIcon,
   CheckCircleIcon,
   ExclamationCircleIcon,
+  ChevronUpIcon,
+  ChevronDownIcon,
+  MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
+import { usePermission } from '@/hooks/use-user';
 import type { Action, Workstream, User, ActionStatus, Priority } from '@/types/database';
 
 type ActionWithRelations = Action & {
@@ -39,6 +41,9 @@ type ActionWithRelations = Action & {
   workstream?: Workstream;
   creator?: User;
 };
+
+type SortColumn = 'title' | 'status' | 'priority' | 'workstream' | 'owner' | 'due_date' | 'created_at';
+type SortDirection = 'asc' | 'desc';
 
 export default function ActionsPage() {
   return (
@@ -52,12 +57,13 @@ function ActionsPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { workstreams, user } = useAppStore();
+  const { canEdit } = usePermission();
   const [loading, setLoading] = useState(true);
   const [actions, setActions] = useState<ActionWithRelations[]>([]);
   const [filteredActions, setFilteredActions] = useState<ActionWithRelations[]>([]);
 
-  // View mode (cards or table)
-  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+  // View mode (cards or table) - default to table
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('table');
 
   // Upload modal
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -65,11 +71,82 @@ function ActionsPageContent() {
   const [uploadResults, setUploadResults] = useState<{ success: number; errors: string[]; warnings: string[] } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Filters
-  const [statusFilter, setStatusFilter] = useState<string>(searchParams.get('status') || 'all');
-  const [workstreamFilter, setWorkstreamFilter] = useState<string>(searchParams.get('workstream') || 'all');
-  const [priorityFilter, setPriorityFilter] = useState<string>(searchParams.get('priority') || 'all');
+  // Search
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Filters (arrays for multi-select, string for workstream)
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [workstreamFilter, setWorkstreamFilter] = useState<string>('all');
+  const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState('all');
+
+  // Sorting
+  const [sortColumn, setSortColumn] = useState<SortColumn>('created_at');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+
+  // Restore filter/sort state from URL params or sessionStorage on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      // URL params take precedence over sessionStorage
+      const urlPriority = searchParams.get('priority');
+      const urlStatus = searchParams.get('status');
+      const urlWorkstream = searchParams.get('workstream');
+
+      if (urlPriority || urlStatus || urlWorkstream) {
+        // Apply URL params
+        if (urlPriority) {
+          setPriorityFilter(urlPriority.split(','));
+        }
+        if (urlStatus) {
+          if (urlStatus === 'overdue') {
+            setActiveTab('overdue');
+          } else {
+            setStatusFilter(urlStatus.split(','));
+          }
+        }
+        if (urlWorkstream) {
+          setWorkstreamFilter(urlWorkstream);
+        }
+        // Clear sessionStorage to avoid conflict on next visit
+        sessionStorage.removeItem('actionListState');
+      } else {
+        // Fall back to sessionStorage
+        const saved = sessionStorage.getItem('actionListState');
+        if (saved) {
+          try {
+            const state = JSON.parse(saved);
+            if (state.searchQuery) setSearchQuery(state.searchQuery);
+            if (state.statusFilter) setStatusFilter(state.statusFilter);
+            if (state.workstreamFilter) setWorkstreamFilter(state.workstreamFilter);
+            if (state.priorityFilter) setPriorityFilter(state.priorityFilter);
+            if (state.activeTab) setActiveTab(state.activeTab);
+            if (state.sortColumn) setSortColumn(state.sortColumn);
+            if (state.sortDirection) setSortDirection(state.sortDirection);
+            if (state.viewMode) setViewMode(state.viewMode);
+          } catch {
+            // Invalid JSON, ignore
+          }
+        }
+      }
+    }
+  }, [searchParams]);
+
+  // Save filter/sort state to sessionStorage when they change
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const state = {
+        searchQuery,
+        statusFilter,
+        workstreamFilter,
+        priorityFilter,
+        activeTab,
+        sortColumn,
+        sortDirection,
+        viewMode,
+      };
+      sessionStorage.setItem('actionListState', JSON.stringify(state));
+    }
+  }, [searchQuery, statusFilter, workstreamFilter, priorityFilter, activeTab, sortColumn, sortDirection, viewMode]);
 
   const fetchActions = useCallback(async () => {
     const supabase = createClient();
@@ -96,20 +173,33 @@ function ActionsPageContent() {
     fetchActions();
   }, [fetchActions]);
 
-  // Apply filters
+  // Apply filters and sorting
   useEffect(() => {
     let filtered = [...actions];
 
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(a => a.status === statusFilter);
+    // Search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(a =>
+        a.title.toLowerCase().includes(query) ||
+        a.description?.toLowerCase().includes(query) ||
+        a.owner?.full_name?.toLowerCase().includes(query) ||
+        a.workstream?.name?.toLowerCase().includes(query)
+      );
     }
 
-    if (workstreamFilter !== 'all') {
-      filtered = filtered.filter(a => a.workstream_id === workstreamFilter);
+    if (statusFilter.length > 0) {
+      filtered = filtered.filter(a => statusFilter.includes(a.status));
     }
 
-    if (priorityFilter !== 'all') {
-      filtered = filtered.filter(a => a.priority === priorityFilter);
+    // Filter by workstream (supports parent+children selection)
+    const workstreamIds = getWorkstreamFilterIds(workstreamFilter, workstreams);
+    if (workstreamIds) {
+      filtered = filtered.filter(a => a.workstream_id && workstreamIds.includes(a.workstream_id));
+    }
+
+    if (priorityFilter.length > 0) {
+      filtered = filtered.filter(a => a.priority && priorityFilter.includes(a.priority));
     }
 
     // Tab filters
@@ -124,8 +214,52 @@ function ActionsPageContent() {
       filtered = filtered.filter(a => a.priority === 'critical' && a.status !== 'complete');
     }
 
+    // Apply sorting
+    const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+    const statusOrder = { pending: 0, in_progress: 1, on_hold: 2, complete: 3, cancelled: 4 };
+
+    filtered.sort((a, b) => {
+      let comparison = 0;
+
+      switch (sortColumn) {
+        case 'title':
+          comparison = (a.title || '').localeCompare(b.title || '');
+          break;
+        case 'status':
+          comparison = (statusOrder[a.status] ?? 4) - (statusOrder[b.status] ?? 4);
+          break;
+        case 'priority':
+          const aPriority = a.priority ? priorityOrder[a.priority] : 5;
+          const bPriority = b.priority ? priorityOrder[b.priority] : 5;
+          comparison = aPriority - bPriority;
+          break;
+        case 'workstream':
+          comparison = (a.workstream?.name || '').localeCompare(b.workstream?.name || '');
+          break;
+        case 'owner':
+          comparison = (a.owner?.full_name || '').localeCompare(b.owner?.full_name || '');
+          break;
+        case 'due_date':
+          const aDate = a.due_date ? new Date(a.due_date).getTime() : Infinity;
+          const bDate = b.due_date ? new Date(b.due_date).getTime() : Infinity;
+          comparison = aDate - bDate;
+          break;
+        case 'created_at':
+          comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          break;
+      }
+
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+
     setFilteredActions(filtered);
-  }, [actions, statusFilter, workstreamFilter, priorityFilter, activeTab, user]);
+
+    // Store filtered action IDs in sessionStorage for navigation in detail page
+    if (typeof window !== 'undefined') {
+      const filteredIds = filtered.map(a => a.id);
+      sessionStorage.setItem('actionNavIds', JSON.stringify(filteredIds));
+    }
+  }, [actions, searchQuery, statusFilter, workstreamFilter, priorityFilter, activeTab, user, sortColumn, sortDirection]);
 
   // Real-time updates disabled for stability
   // useRealtime({
@@ -143,29 +277,40 @@ function ActionsPageContent() {
   ];
 
   const statusOptions = [
-    { value: 'all', label: 'All Statuses' },
     { value: 'pending', label: 'Pending' },
     { value: 'in_progress', label: 'In Progress' },
+    { value: 'on_hold', label: 'On Hold' },
     { value: 'complete', label: 'Complete' },
     { value: 'cancelled', label: 'Cancelled' },
   ];
 
   const priorityOptions = [
-    { value: 'all', label: 'All Priorities' },
     { value: 'critical', label: 'Critical' },
     { value: 'high', label: 'High' },
     { value: 'medium', label: 'Medium' },
     { value: 'low', label: 'Low' },
   ];
 
-  // Helper to get parent workstream for hierarchy display
-  const getParentWorkstream = (parentId: string | null | undefined) => {
-    if (!parentId) return null;
-    return workstreams.find(ws => ws.id === parentId) || null;
-  };
+  const workstreamOptions = buildWorkstreamOptions(workstreams, { includeAll: false });
 
   const handleExport = () => {
-    window.location.href = `/api/export/actions?status=${statusFilter}&workstream=${workstreamFilter}&priority=${priorityFilter}`;
+    const params = new URLSearchParams();
+    if (statusFilter.length > 0) params.set('status', statusFilter.join(','));
+    const wsIds = getWorkstreamFilterIds(workstreamFilter, workstreams);
+    if (wsIds) params.set('workstream', wsIds.join(','));
+    if (priorityFilter.length > 0) params.set('priority', priorityFilter.join(','));
+    window.location.href = `/api/export/actions?${params.toString()}`;
+  };
+
+  const hasActiveFilters = searchQuery.trim() || statusFilter.length > 0 || priorityFilter.length > 0 || workstreamFilter !== 'all';
+
+  const handleSort = (column: SortColumn) => {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -204,6 +349,19 @@ function ActionsPageContent() {
         'due date': 'due_date',
         'due': 'due_date',
         'deadline': 'due_date',
+        'date created': 'created_at',
+        'created': 'created_at',
+        'created date': 'created_at',
+        'date closed': 'completed_at',
+        'closed': 'completed_at',
+        'completed': 'completed_at',
+        'completion date': 'completed_at',
+        'created by': 'created_by',
+        'creator': 'created_by',
+        'initial comment': 'initial_comment',
+        'comment': 'initial_comment',
+        'comments': 'initial_comment',
+        'notes': 'initial_comment',
       };
 
       const fieldIndexes: Record<string, number> = {};
@@ -230,10 +388,21 @@ function ActionsPageContent() {
         userByName.set(u.full_name.toLowerCase(), { id: u.id, email: u.email });
       });
 
-      // Get workstreams for mapping
+      // Get workstreams for mapping - support both name and Parent/Child format
       const workstreamMap = new Map<string, string>();
+      const workstreamById = new Map<string, Workstream>();
       workstreams.forEach(w => {
         workstreamMap.set(w.name.toLowerCase(), w.id);
+        workstreamById.set(w.id, w);
+      });
+      // Add Parent/Child format mappings
+      workstreams.forEach(w => {
+        if (w.parent_id) {
+          const parent = workstreamById.get(w.parent_id);
+          if (parent) {
+            workstreamMap.set(`${parent.name.toLowerCase()}/${w.name.toLowerCase()}`, w.id);
+          }
+        }
       });
 
       // Track unmatched owners for summary
@@ -255,8 +424,8 @@ function ActionsPageContent() {
           continue;
         }
 
-        // Map priority
-        let priority: Priority = 'medium';
+        // Map priority (optional - can be null)
+        let priority: Priority | null = null;
         const priorityValue = getValue('priority')?.toLowerCase();
         if (priorityValue && ['critical', 'high', 'medium', 'low'].includes(priorityValue)) {
           priority = priorityValue as Priority;
@@ -265,7 +434,7 @@ function ActionsPageContent() {
         // Map status
         let status: ActionStatus = 'pending';
         const statusValue = getValue('status')?.toLowerCase().replace(/\s+/g, '_');
-        if (statusValue && ['pending', 'in_progress', 'complete', 'cancelled'].includes(statusValue)) {
+        if (statusValue && ['pending', 'in_progress', 'on_hold', 'complete', 'cancelled'].includes(statusValue)) {
           status = statusValue as ActionStatus;
         }
 
@@ -296,17 +465,62 @@ function ActionsPageContent() {
           }
         }
 
-        // Parse due date
+        // Parse due date (UK format DD/MM/YYYY)
         let due_date: string | null = null;
         const dueDateValue = getValue('due_date');
         if (dueDateValue) {
-          const parsed = new Date(dueDateValue);
-          if (!isNaN(parsed.getTime())) {
+          const parsed = parseDateUK(dueDateValue);
+          if (parsed) {
             due_date = parsed.toISOString();
           }
         }
 
-        const { error } = await supabase.from('actions').insert({
+        // Parse created date (for historical imports)
+        let created_at: string | null = null;
+        const createdAtValue = getValue('created_at');
+        if (createdAtValue) {
+          const parsed = parseDateUK(createdAtValue);
+          if (parsed) {
+            created_at = parsed.toISOString();
+          }
+        }
+
+        // Parse completed date (for closed actions)
+        let completed_at: string | null = null;
+        const completedAtValue = getValue('completed_at');
+        if (completedAtValue) {
+          const parsed = parseDateUK(completedAtValue);
+          if (parsed) {
+            completed_at = parsed.toISOString();
+            // Auto-set status to complete if date closed is provided
+            if (status === 'pending') {
+              status = 'complete';
+            }
+          }
+        }
+
+        // Map created_by - try user lookup, default to System
+        const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000';
+        let created_by_id: string = user?.id || SYSTEM_USER_ID;
+        const createdByValue = getValue('created_by');
+        if (createdByValue) {
+          const createdByLower = createdByValue.toLowerCase();
+          if (createdByLower === 'system') {
+            created_by_id = SYSTEM_USER_ID;
+          } else if (userByEmail.has(createdByLower)) {
+            created_by_id = userByEmail.get(createdByLower)!.id;
+          } else if (userByName.has(createdByLower)) {
+            created_by_id = userByName.get(createdByLower)!.id;
+          } else {
+            results.warnings.push(`Row ${i + 1}: Creator "${createdByValue}" not found - using current user`);
+          }
+        }
+
+        // Get initial comment for legacy import
+        const initialComment = getValue('initial_comment');
+
+        // Build insert data
+        const insertData: Record<string, unknown> = {
           title,
           description: getValue('description') || null,
           priority,
@@ -314,13 +528,42 @@ function ActionsPageContent() {
           workstream_id,
           owner_id,
           due_date,
-          created_by: user?.id,
-        });
+          completed_at,
+          created_by: created_by_id,
+        };
+
+        // Add custom created_at for historical imports
+        if (created_at) {
+          insertData.created_at = created_at;
+        }
+
+        const { data: newAction, error } = await supabase.from('actions').insert(insertData).select().single();
 
         if (error) {
           results.errors.push(`Row ${i + 1}: ${error.message}`);
         } else {
           results.success++;
+
+          // If this is a historical import, set the audit entry date to match
+          if (created_at && newAction) {
+            await supabase
+              .from('action_audit')
+              .update({ created_at })
+              .eq('action_id', newAction.id)
+              .eq('change_type', 'created');
+          }
+
+          // If there's an initial comment (legacy import), create an action_update
+          if (initialComment && newAction) {
+            await supabase
+              .from('action_updates')
+              .insert({
+                action_id: newAction.id,
+                user_id: created_by_id,
+                content: initialComment.trim(),
+                is_legacy_import: true,
+              });
+          }
         }
       }
 
@@ -371,6 +614,33 @@ function ActionsPageContent() {
     return result;
   }
 
+  // Parse date string with UK format (DD/MM/YYYY) priority
+  function parseDateUK(dateStr: string): Date | null {
+    if (!dateStr) return null;
+
+    // Try UK format DD/MM/YYYY or DD-MM-YYYY first
+    const ukMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if (ukMatch) {
+      const [, day, month, year] = ukMatch;
+      const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      if (!isNaN(date.getTime())) return date;
+    }
+
+    // Try ISO format YYYY-MM-DD
+    const isoMatch = dateStr.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+    if (isoMatch) {
+      const [, year, month, day] = isoMatch;
+      const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      if (!isNaN(date.getTime())) return date;
+    }
+
+    // Fallback to native Date parsing (handles "Jan 15, 2026" etc)
+    const parsed = new Date(dateStr);
+    if (!isNaN(parsed.getTime())) return parsed;
+
+    return null;
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen">
@@ -411,20 +681,24 @@ function ActionsPageContent() {
               </button>
             </div>
 
-            <Button variant="outline" size="sm" onClick={() => setShowUploadModal(true)}>
-              <ArrowUpTrayIcon className="w-4 h-4 mr-2" />
-              Import
-            </Button>
+            {canEdit && (
+              <Button variant="outline" size="sm" onClick={() => setShowUploadModal(true)}>
+                <ArrowUpTrayIcon className="w-4 h-4 mr-2" />
+                Import
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={handleExport}>
               <ArrowDownTrayIcon className="w-4 h-4 mr-2" />
               Export
             </Button>
-            <Link href="/actions/new">
-              <Button size="sm">
-                <PlusIcon className="w-4 h-4 mr-2" />
-                New Action
-              </Button>
-            </Link>
+            {canEdit && (
+              <Link href="/actions/new">
+                <Button size="sm">
+                  <PlusIcon className="w-4 h-4 mr-2" />
+                  New Action
+                </Button>
+              </Link>
+            )}
           </div>
         }
       />
@@ -433,39 +707,54 @@ function ActionsPageContent() {
         {/* Tabs */}
         <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
 
-        {/* Filters */}
+        {/* Search & Filters */}
         <Card padding="sm">
           <CardContent>
             <div className="flex flex-wrap items-center gap-4">
+              {/* Search */}
+              <div className="relative">
+                <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search actions..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent w-48"
+                />
+              </div>
+              <div className="h-6 w-px bg-gray-200" />
               <div className="flex items-center gap-2 text-gray-500">
                 <FunnelIcon className="w-4 h-4" />
                 <span className="text-sm font-medium">Filters:</span>
               </div>
-              <Select
+              <MultiSelect
                 options={statusOptions}
                 value={statusFilter}
                 onChange={setStatusFilter}
+                placeholder="All Statuses"
                 className="w-40"
               />
-              <Select
+              <MultiSelect
                 options={priorityOptions}
                 value={priorityFilter}
                 onChange={setPriorityFilter}
+                placeholder="All Priorities"
                 className="w-40"
               />
               <WorkstreamSelect
                 workstreams={workstreams}
                 value={workstreamFilter}
                 onChange={setWorkstreamFilter}
-                className="w-56"
+                className="w-48"
               />
-              {(statusFilter !== 'all' || priorityFilter !== 'all' || workstreamFilter !== 'all') && (
+              {hasActiveFilters && (
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => {
-                    setStatusFilter('all');
-                    setPriorityFilter('all');
+                    setSearchQuery('');
+                    setStatusFilter([]);
+                    setPriorityFilter([]);
                     setWorkstreamFilter('all');
                   }}
                 >
@@ -482,12 +771,12 @@ function ActionsPageContent() {
             icon={<ClipboardDocumentListIcon className="w-6 h-6" />}
             title="No actions found"
             description={
-              statusFilter !== 'all' || priorityFilter !== 'all' || workstreamFilter !== 'all'
+              hasActiveFilters
                 ? 'Try adjusting your filters.'
                 : 'Create your first action to get started.'
             }
             action={
-              statusFilter === 'all' && priorityFilter === 'all' && workstreamFilter === 'all'
+              !hasActiveFilters && canEdit
                 ? {
                     label: 'Create Action',
                     onClick: () => window.location.href = '/actions/new',
@@ -502,139 +791,158 @@ function ActionsPageContent() {
             ))}
           </div>
         ) : (
-          <ActionsTable actions={filteredActions} workstreams={workstreams} />
+          <ActionsTable
+            actions={filteredActions}
+            sortColumn={sortColumn}
+            sortDirection={sortDirection}
+            onSort={handleSort}
+            workstreams={workstreams}
+          />
         )}
       </div>
 
       {/* Upload Modal */}
-      <Modal
-        open={showUploadModal}
-        onClose={() => setShowUploadModal(false)}
-        title="Import Actions from CSV"
-        size="lg"
-      >
-        <div className="space-y-4">
-          <p className="text-sm text-gray-600">
-            Upload a CSV file to import multiple actions at once. The file should have column headers.
-          </p>
-
-          <div className="bg-gray-50 rounded-lg p-4">
-            <h3 className="text-sm font-medium text-gray-900 mb-2">Supported Columns</h3>
-            <ul className="text-sm text-gray-600 space-y-1">
-              <li><strong>Title</strong> (required): Title, Name, or Action</li>
-              <li><strong>Description</strong>: Description or Details</li>
-              <li><strong>Priority</strong>: Critical, High, Medium, Low</li>
-              <li><strong>Status</strong>: Pending, In Progress, Complete, Cancelled</li>
-              <li><strong>Workstream</strong>: Must match existing workstream name</li>
-              <li><strong>Owner</strong>: User&apos;s full name or email</li>
-              <li><strong>Due Date</strong>: Due Date, Due, or Deadline (any date format)</li>
-            </ul>
-            <a
-              href="/templates/actions-import-template.csv"
-              download
-              className="inline-flex items-center gap-1 text-sm text-red-600 hover:text-red-700 mt-3"
-            >
-              <ArrowDownTrayIcon className="w-4 h-4" />
-              Download template
-            </a>
-          </div>
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv,.txt"
-            onChange={handleFileUpload}
-            className="hidden"
-          />
-
-          {uploadResults && (
-            <div className={cn(
-              'rounded-lg p-4',
-              uploadResults.errors.length > 0 ? 'bg-red-50' : uploadResults.warnings.length > 0 ? 'bg-amber-50' : 'bg-green-50'
-            )}>
-              <div className="flex items-center gap-2 mb-2">
-                {uploadResults.errors.length > 0 ? (
-                  <ExclamationCircleIcon className="w-5 h-5 text-red-500" />
-                ) : uploadResults.warnings.length > 0 ? (
-                  <ExclamationCircleIcon className="w-5 h-5 text-amber-500" />
-                ) : (
-                  <CheckCircleIcon className="w-5 h-5 text-green-500" />
-                )}
-                <span className="font-medium">
-                  {uploadResults.success} action{uploadResults.success !== 1 ? 's' : ''} imported
-                </span>
-              </div>
-              {uploadResults.warnings.length > 0 && (
-                <div className="mt-2">
-                  <p className="text-sm font-medium text-amber-800 mb-1">
-                    Warnings ({uploadResults.warnings.length}):
-                  </p>
-                  <ul className="text-sm text-amber-700 max-h-24 overflow-y-auto space-y-0.5">
-                    {uploadResults.warnings.slice(0, 5).map((warn, i) => (
-                      <li key={i}>{warn}</li>
-                    ))}
-                    {uploadResults.warnings.length > 5 && (
-                      <li className="text-amber-600 italic">
-                        ...and {uploadResults.warnings.length - 5} more
-                      </li>
-                    )}
-                  </ul>
-                  <p className="text-xs text-amber-600 mt-2">
-                    Tip: Owner emails must match existing user accounts
-                  </p>
-                </div>
-              )}
-              {uploadResults.errors.length > 0 && (
-                <div className="mt-2">
-                  <p className="text-sm font-medium text-red-800 mb-1">Errors:</p>
-                  <ul className="text-sm text-red-700 max-h-24 overflow-y-auto space-y-0.5">
-                    {uploadResults.errors.map((err, i) => (
-                      <li key={i}>{err}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+      {showUploadModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="fixed inset-0 bg-black/50" onClick={() => setShowUploadModal(false)} />
+          <div className="relative bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">Import Actions from CSV</h2>
+              <button
+                onClick={() => setShowUploadModal(false)}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded"
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
             </div>
-          )}
 
-          <div className="flex gap-3">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onClick={() => setShowUploadModal(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              className="flex-1"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-            >
-              {uploading ? (
-                <>
-                  <LoadingSpinner size="sm" className="mr-2" />
-                  Importing...
-                </>
-              ) : (
-                <>
-                  <ArrowUpTrayIcon className="w-4 h-4 mr-2" />
-                  Select File
-                </>
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Upload a CSV file to import multiple actions at once. The file should have column headers.
+              </p>
+
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="text-sm font-medium text-gray-900 mb-2">Supported Columns</h3>
+                <ul className="text-sm text-gray-600 space-y-1">
+                  <li><strong>Title</strong> (required): Title, Name, or Action</li>
+                  <li><strong>Description</strong>: Description or Details</li>
+                  <li><strong>Priority</strong>: Critical, High, Medium, Low (or blank)</li>
+                  <li><strong>Status</strong>: Pending, In Progress, Complete, Cancelled</li>
+                  <li><strong>Workstream</strong>: Parent/Child format (e.g., &quot;IT Systems/Development&quot;)</li>
+                  <li><strong>Owner</strong>: User&apos;s full name or email</li>
+                  <li><strong>Due Date</strong>: Due Date, Due, or Deadline</li>
+                </ul>
+                <h3 className="text-sm font-medium text-gray-900 mt-4 mb-2">Legacy Import Columns</h3>
+                <ul className="text-sm text-gray-600 space-y-1">
+                  <li><strong>Date Created</strong>: Original creation date for historical actions</li>
+                  <li><strong>Date Closed</strong>: Completion date (auto-sets status to Complete)</li>
+                  <li><strong>Created By</strong>: Creator name/email (defaults to System)</li>
+                  <li><strong>Initial Comment</strong>: Legacy notes to import as first comment</li>
+                </ul>
+                <a
+                  href="/templates/actions-import-template.csv"
+                  download
+                  className="inline-flex items-center gap-1 text-sm text-red-600 hover:text-red-700 mt-3"
+                >
+                  <ArrowDownTrayIcon className="w-4 h-4" />
+                  Download template
+                </a>
+              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.txt"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+
+              {uploadResults && (
+                <div className={cn(
+                  'rounded-lg p-4',
+                  uploadResults.errors.length > 0 ? 'bg-red-50' : uploadResults.warnings.length > 0 ? 'bg-amber-50' : 'bg-green-50'
+                )}>
+                  <div className="flex items-center gap-2 mb-2">
+                    {uploadResults.errors.length > 0 ? (
+                      <ExclamationCircleIcon className="w-5 h-5 text-red-500" />
+                    ) : uploadResults.warnings.length > 0 ? (
+                      <ExclamationCircleIcon className="w-5 h-5 text-amber-500" />
+                    ) : (
+                      <CheckCircleIcon className="w-5 h-5 text-green-500" />
+                    )}
+                    <span className="font-medium">
+                      {uploadResults.success} action{uploadResults.success !== 1 ? 's' : ''} imported
+                    </span>
+                  </div>
+                  {uploadResults.warnings.length > 0 && (
+                    <div className="mt-2">
+                      <p className="text-sm font-medium text-amber-800 mb-1">
+                        Warnings ({uploadResults.warnings.length}):
+                      </p>
+                      <ul className="text-sm text-amber-700 max-h-24 overflow-y-auto space-y-0.5">
+                        {uploadResults.warnings.slice(0, 5).map((warn, i) => (
+                          <li key={i}>{warn}</li>
+                        ))}
+                        {uploadResults.warnings.length > 5 && (
+                          <li className="text-amber-600 italic">
+                            ...and {uploadResults.warnings.length - 5} more
+                          </li>
+                        )}
+                      </ul>
+                      <p className="text-xs text-amber-600 mt-2">
+                        Tip: Owner emails must match existing user accounts
+                      </p>
+                    </div>
+                  )}
+                  {uploadResults.errors.length > 0 && (
+                    <div className="mt-2">
+                      <p className="text-sm font-medium text-red-800 mb-1">Errors:</p>
+                      <ul className="text-sm text-red-700 max-h-24 overflow-y-auto space-y-0.5">
+                        {uploadResults.errors.map((err, i) => (
+                          <li key={i}>{err}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
               )}
-            </Button>
+
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setShowUploadModal(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                >
+                  {uploading ? (
+                    <>
+                      <LoadingSpinner size="sm" className="mr-2" />
+                      Importing...
+                    </>
+                  ) : (
+                    <>
+                      <ArrowUpTrayIcon className="w-4 h-4 mr-2" />
+                      Select File
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
-      </Modal>
+      )}
     </div>
   );
 }
 
 function ActionCard({ action, workstreams }: { action: ActionWithRelations; workstreams: Workstream[] }) {
   const overdue = action.due_date && isOverdue(action.due_date) && action.status !== 'complete' && action.status !== 'cancelled';
-  const getParentWorkstream = (parentId: string | null | undefined) => {
-    if (!parentId) return null;
-    return workstreams.find(ws => ws.id === parentId) || null;
-  };
 
   return (
     <Link href={`/actions/${action.id}`}>
@@ -659,6 +967,9 @@ function ActionCard({ action, workstreams }: { action: ActionWithRelations; work
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
+                    {action.display_id && (
+                      <span className="text-xs font-mono text-gray-500">{action.display_id}</span>
+                    )}
                     <h3 className="text-base font-medium text-gray-900">{action.title}</h3>
                     <PriorityBadge priority={action.priority} />
                     <StatusBadge status={action.status} />
@@ -668,10 +979,15 @@ function ActionCard({ action, workstreams }: { action: ActionWithRelations; work
                   )}
                   <div className="flex items-center gap-3 mt-2 text-sm text-gray-500">
                     {action.workstream && (
-                      <WorkstreamBadge
-                        workstream={action.workstream}
-                        parent={getParentWorkstream(action.workstream.parent_id)}
-                      />
+                      <span
+                        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                        style={{
+                          backgroundColor: `${action.workstream.color}20`,
+                          color: action.workstream.color,
+                        }}
+                      >
+                        {getWorkstreamDisplayName(action.workstream, workstreams)}
+                      </span>
                     )}
                     <span>Created {formatDate(action.created_at, { month: 'short', day: 'numeric' })}</span>
                   </div>
@@ -703,11 +1019,39 @@ function ActionCard({ action, workstreams }: { action: ActionWithRelations; work
   );
 }
 
-function ActionsTable({ actions, workstreams }: { actions: ActionWithRelations[]; workstreams: Workstream[] }) {
-  const getParentWorkstream = (parentId: string | null | undefined) => {
-    if (!parentId) return null;
-    return workstreams.find(ws => ws.id === parentId) || null;
-  };
+interface ActionsTableProps {
+  actions: ActionWithRelations[];
+  sortColumn: SortColumn;
+  sortDirection: SortDirection;
+  onSort: (column: SortColumn) => void;
+  workstreams: Workstream[];
+}
+
+function ActionsTable({ actions, sortColumn, sortDirection, onSort, workstreams }: ActionsTableProps) {
+  const SortableHeader = ({ column, label }: { column: SortColumn; label: string }) => (
+    <th
+      className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
+      onClick={() => onSort(column)}
+    >
+      <div className="flex items-center gap-1">
+        {label}
+        <span className="inline-flex flex-col">
+          <ChevronUpIcon
+            className={cn(
+              'w-3 h-3 -mb-1',
+              sortColumn === column && sortDirection === 'asc' ? 'text-gray-900' : 'text-gray-300'
+            )}
+          />
+          <ChevronDownIcon
+            className={cn(
+              'w-3 h-3',
+              sortColumn === column && sortDirection === 'desc' ? 'text-gray-900' : 'text-gray-300'
+            )}
+          />
+        </span>
+      </div>
+    </th>
+  );
 
   return (
     <Card>
@@ -715,27 +1059,16 @@ function ActionsTable({ actions, workstreams }: { actions: ActionWithRelations[]
         <table className="w-full">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50">
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
-                Title
+              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3 w-20">
+                ID
               </th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
-                Status
-              </th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
-                Priority
-              </th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
-                Workstream
-              </th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
-                Owner
-              </th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
-                Due Date
-              </th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-4 py-3">
-                Created
-              </th>
+              <SortableHeader column="title" label="Title" />
+              <SortableHeader column="status" label="Status" />
+              <SortableHeader column="priority" label="Priority" />
+              <SortableHeader column="workstream" label="Workstream" />
+              <SortableHeader column="owner" label="Owner" />
+              <SortableHeader column="due_date" label="Due Date" />
+              <SortableHeader column="created_at" label="Created" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
@@ -752,10 +1085,13 @@ function ActionsTable({ actions, workstreams }: { actions: ActionWithRelations[]
                   onClick={() => window.location.href = `/actions/${action.id}`}
                 >
                   <td className="px-4 py-3">
-                    <div className="max-w-xs">
-                      <p className="text-sm font-medium text-gray-900 truncate">{action.title}</p>
+                    <span className="text-xs font-mono text-gray-500">{action.display_id || '-'}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="max-w-md">
+                      <p className="text-sm font-medium text-gray-900">{action.title}</p>
                       {action.description && (
-                        <p className="text-xs text-gray-500 truncate mt-0.5">{action.description}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{action.description}</p>
                       )}
                     </div>
                   </td>
@@ -767,10 +1103,15 @@ function ActionsTable({ actions, workstreams }: { actions: ActionWithRelations[]
                   </td>
                   <td className="px-4 py-3">
                     {action.workstream ? (
-                      <WorkstreamBadge
-                        workstream={action.workstream}
-                        parent={getParentWorkstream(action.workstream.parent_id)}
-                      />
+                      <span
+                        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                        style={{
+                          backgroundColor: `${action.workstream.color}20`,
+                          color: action.workstream.color,
+                        }}
+                      >
+                        {getWorkstreamDisplayName(action.workstream, workstreams)}
+                      </span>
                     ) : (
                       <span className="text-xs text-gray-400">-</span>
                     )}

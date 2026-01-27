@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { User, Workstream, Notification } from '@/types/database';
+import type { User, Workstream, Notification, FeatureConfig } from '@/types/database';
 
 interface AppState {
   // User
@@ -19,9 +19,15 @@ interface AppState {
   markNotificationRead: (id: string) => void;
   unreadCount: number;
 
+  // Feature Config
+  featureConfig: FeatureConfig;
+  setFeatureConfig: (config: FeatureConfig) => void;
+
   // UI State
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
+  mobileMenuOpen: boolean;
+  setMobileMenuOpen: (open: boolean) => void;
 
   // Real-time
   isConnected: boolean;
@@ -57,9 +63,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   })),
   unreadCount: 0,
 
+  // Feature Config
+  featureConfig: {
+    gantt_chart_enabled: true,
+    technical_queries_enabled: true,
+  },
+  setFeatureConfig: (featureConfig) => set({ featureConfig }),
+
   // UI State
   sidebarOpen: true,
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
+  mobileMenuOpen: false,
+  setMobileMenuOpen: (mobileMenuOpen) => set({ mobileMenuOpen }),
 
   // Real-time
   isConnected: false,
