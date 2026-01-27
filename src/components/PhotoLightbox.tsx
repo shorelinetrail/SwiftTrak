@@ -10,8 +10,28 @@ import {
   TrashIcon,
   PencilIcon,
   CheckIcon,
+  DocumentIcon,
 } from '@heroicons/react/24/outline';
 import { formatDate } from '@/lib/utils';
+
+// Image file extensions that can be previewed
+const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'];
+
+function isImageFile(filename: string): boolean {
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+  return IMAGE_EXTENSIONS.includes(ext);
+}
+
+function getFileExtension(filename: string): string {
+  return filename.split('.').pop()?.toUpperCase() || 'FILE';
+}
+
+function formatFileSize(bytes?: number): string {
+  if (!bytes) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 interface Photo {
   id: string;
@@ -20,6 +40,7 @@ interface Photo {
   original_filename: string;
   taken_at?: string;
   caption?: string;
+  file_size?: number;
   uploader?: { full_name: string };
 }
 
@@ -266,19 +287,44 @@ export function PhotoLightbox({
         </button>
       )}
 
-      {/* Image */}
+      {/* Image or Document Preview */}
       <div
         className="relative max-w-[90vw] max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        <Image
-          src={currentPhoto.url}
-          alt={currentPhoto.original_filename}
-          width={1200}
-          height={800}
-          className="max-w-full max-h-[85vh] object-contain"
-          priority
-        />
+        {isImageFile(currentPhoto.original_filename) ? (
+          <Image
+            src={currentPhoto.url}
+            alt={currentPhoto.original_filename}
+            width={1200}
+            height={800}
+            className="max-w-full max-h-[85vh] object-contain"
+            priority
+          />
+        ) : (
+          /* Non-image file preview */
+          <div className="flex flex-col items-center justify-center bg-gray-800 rounded-lg p-12 min-w-[300px]">
+            <div className="w-24 h-24 bg-gray-700 rounded-lg flex items-center justify-center mb-4">
+              <DocumentIcon className="w-12 h-12 text-gray-400" />
+            </div>
+            <div className="text-center">
+              <p className="text-white font-medium text-lg mb-1 max-w-[400px] truncate">
+                {currentPhoto.original_filename}
+              </p>
+              <p className="text-gray-400 text-sm">
+                {getFileExtension(currentPhoto.original_filename)} File
+                {currentPhoto.file_size && ` • ${formatFileSize(currentPhoto.file_size)}`}
+              </p>
+            </div>
+            <button
+              onClick={handleDownload}
+              className="mt-6 px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center gap-2 transition-colors"
+            >
+              <ArrowDownTrayIcon className="w-5 h-5" />
+              Download File
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Photo info */}

@@ -4,8 +4,20 @@ import { useState, useRef } from 'react';
 import Image from 'next/image';
 import { PhotoLightbox } from './PhotoLightbox';
 import { EmptyState } from '@/components/ui/empty-state';
-import { PhotoIcon, CheckIcon } from '@heroicons/react/24/outline';
+import { PhotoIcon, CheckIcon, DocumentIcon } from '@heroicons/react/24/outline';
 import type { WorkstreamPhoto } from '@/types/database';
+
+// Image file extensions that can be previewed
+const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'];
+
+function isImageFile(filename: string): boolean {
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+  return IMAGE_EXTENSIONS.includes(ext);
+}
+
+function getFileExtension(filename: string): string {
+  return filename.split('.').pop()?.toUpperCase() || 'FILE';
+}
 
 type PhotoWithRelations = Omit<WorkstreamPhoto, 'workstream' | 'uploader'> & {
   workstream?: { id: string; name: string; color: string };
@@ -144,6 +156,8 @@ export function PhotoGallery({
                   }
                 };
 
+                const isImage = isImageFile(photo.original_filename);
+
                 return (
                   <button
                     key={photo.id}
@@ -152,13 +166,28 @@ export function PhotoGallery({
                       isSelected ? 'ring-2 ring-red-500 ring-offset-2' : ''
                     }`}
                   >
-                    <Image
-                      src={imageUrl}
-                      alt={photo.original_filename}
-                      fill
-                      className="object-cover"
-                      sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 20vw"
-                    />
+                    {isImage && imageUrl ? (
+                      <Image
+                        src={imageUrl}
+                        alt={photo.original_filename}
+                        fill
+                        className="object-cover"
+                        sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 20vw"
+                      />
+                    ) : (
+                      /* Non-image file thumbnail */
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-200 p-2">
+                        <DocumentIcon className="w-10 h-10 text-gray-400 mb-1" />
+                        <span className="text-xs font-medium text-gray-500 truncate max-w-full px-1">
+                          {getFileExtension(photo.original_filename)}
+                        </span>
+                        <span className="text-[10px] text-gray-400 truncate max-w-full px-1 mt-0.5">
+                          {photo.original_filename.length > 15
+                            ? photo.original_filename.slice(0, 12) + '...'
+                            : photo.original_filename}
+                        </span>
+                      </div>
+                    )}
                     {selectionMode && (
                       <div
                         className={`absolute top-2 left-2 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
@@ -188,6 +217,7 @@ export function PhotoGallery({
             original_filename: p.original_filename,
             taken_at: p.taken_at,
             caption: p.caption,
+            file_size: p.file_size,
             uploader: p.uploader ? { full_name: p.uploader.full_name } : undefined,
           }))}
           currentIndex={lightboxIndex}
