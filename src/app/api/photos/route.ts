@@ -6,6 +6,8 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const workstreamId = searchParams.get('workstreamId');
+    const includeHidden = searchParams.get('includeHidden') === 'true';
+    const hiddenOnly = searchParams.get('hiddenOnly') === 'true';
 
     const supabase = await createClient();
 
@@ -21,6 +23,15 @@ export async function GET(request: NextRequest) {
     // Use admin client for queries and signed URL generation
     const adminClient = createAdminClient();
 
+    // Get user profile to check if admin
+    const { data: profile } = await adminClient
+      .from('users')
+      .select('id, role')
+      .or(`auth_id.eq.${user.id},id.eq.${user.id}`)
+      .single();
+
+    const isAdmin = profile?.role === 'admin';
+
     let query = adminClient
       .from('workstream_photos')
       .select(`
@@ -34,6 +45,16 @@ export async function GET(request: NextRequest) {
     if (workstreamId && workstreamId !== 'all') {
       query = query.eq('workstream_id', workstreamId);
     }
+
+    // Filter based on hidden status
+    if (hiddenOnly && isAdmin) {
+      // Admin requesting only hidden photos
+      query = query.eq('is_hidden', true);
+    } else if (!includeHidden || !isAdmin) {
+      // Non-admin users or not requesting hidden: exclude hidden photos
+      query = query.eq('is_hidden', false);
+    }
+    // else: admin requesting includeHidden - no filter needed
 
     const { data, error } = await query;
 
@@ -156,7 +177,7 @@ export async function DELETE(request: NextRequest) {
   }
 }
 
-// Update photo caption
+// Update photo (caption, is_hidden)
 export async function PATCH(request: NextRequest) {
   try {
     const supabase = await createClient();
@@ -167,7 +188,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { id, caption } = body;
+    const { id, caption, is_hidden } = body;
 
     if (!id) {
       return NextResponse.json({ error: 'Photo ID required' }, { status: 400 });
@@ -200,17 +221,35 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
     }
 
-    // Update caption
+    // Only admins can hide/unhide photos
+    if (is_hidden !== undefined && !isAdmin) {
+      return NextResponse.json({ error: 'Only admins can hide/unhide photos' }, { status: 403 });
+    }
+
+    // Build update object
+    const updateData: { caption?: string; is_hidden?: boolean; updated_at: string } = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (caption !== undefined) {
+      updateData.caption = caption;
+    }
+
+    if (is_hidden !== undefined) {
+      updateData.is_hidden = is_hidden;
+    }
+
+    // Update photo
     const { data: updated, error: updateError } = await adminClient
       .from('workstream_photos')
-      .update({ caption, updated_at: new Date().toISOString() })
+      .update(updateData)
       .eq('id', id)
       .select()
       .single();
 
     if (updateError) {
-      console.error('Error updating caption:', updateError);
-      return NextResponse.json({ error: 'Failed to update caption' }, { status: 500 });
+      console.error('Error updating photo:', updateError);
+      return NextResponse.json({ error: 'Failed to update photo' }, { status: 500 });
     }
 
     return NextResponse.json(updated);

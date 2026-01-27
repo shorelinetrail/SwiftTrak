@@ -11,6 +11,8 @@ import {
   PencilIcon,
   CheckIcon,
   DocumentIcon,
+  EyeIcon,
+  EyeSlashIcon,
 } from '@heroicons/react/24/outline';
 import { formatDate } from '@/lib/utils';
 
@@ -41,6 +43,7 @@ interface Photo {
   taken_at?: string;
   caption?: string;
   file_size?: number;
+  is_hidden?: boolean;
   uploader?: { full_name: string };
 }
 
@@ -51,7 +54,9 @@ interface PhotoLightboxProps {
   onNavigate: (index: number) => void;
   onDelete?: (photoId: string) => Promise<void>;
   onCaptionUpdate?: (photoId: string, caption: string) => Promise<void>;
+  onToggleHidden?: (photoId: string, isHidden: boolean) => Promise<void>;
   canEdit?: boolean;
+  isAdmin?: boolean;
 }
 
 export function PhotoLightbox({
@@ -61,13 +66,16 @@ export function PhotoLightbox({
   onNavigate,
   onDelete,
   onCaptionUpdate,
+  onToggleHidden,
   canEdit = false,
+  isAdmin = false,
 }: PhotoLightboxProps) {
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isEditingCaption, setIsEditingCaption] = useState(false);
   const [captionText, setCaptionText] = useState('');
   const [isSavingCaption, setIsSavingCaption] = useState(false);
+  const [isTogglingHidden, setIsTogglingHidden] = useState(false);
 
   const currentPhoto = photos[currentIndex];
 
@@ -197,6 +205,19 @@ export function PhotoLightbox({
     }
   };
 
+  const handleToggleHidden = async () => {
+    if (!onToggleHidden || isTogglingHidden) return;
+
+    setIsTogglingHidden(true);
+    try {
+      await onToggleHidden(currentPhoto.id, !currentPhoto.is_hidden);
+    } catch (error) {
+      console.error('Toggle hidden failed:', error);
+    } finally {
+      setIsTogglingHidden(false);
+    }
+  };
+
   if (!currentPhoto?.url) {
     return null;
   }
@@ -222,6 +243,29 @@ export function PhotoLightbox({
             title="Edit caption"
           >
             <PencilIcon className="w-5 h-5" />
+          </button>
+        )}
+
+        {/* Hide/Unhide button (admin only) */}
+        {isAdmin && onToggleHidden && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleToggleHidden();
+            }}
+            disabled={isTogglingHidden}
+            className={`w-10 h-10 rounded-full flex items-center justify-center text-white transition-colors disabled:opacity-50 ${
+              currentPhoto.is_hidden
+                ? 'bg-yellow-600/70 hover:bg-yellow-600'
+                : 'bg-black/50 hover:bg-black/70'
+            }`}
+            title={currentPhoto.is_hidden ? 'Unhide photo' : 'Hide photo'}
+          >
+            {currentPhoto.is_hidden ? (
+              <EyeIcon className="w-5 h-5" />
+            ) : (
+              <EyeSlashIcon className="w-5 h-5" />
+            )}
           </button>
         )}
 
@@ -378,6 +422,12 @@ export function PhotoLightbox({
 
           <div className="flex items-center justify-between text-xs text-gray-300">
             <div className="flex items-center gap-4">
+              {currentPhoto.is_hidden && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-yellow-600/80 text-white rounded-full text-xs font-medium">
+                  <EyeSlashIcon className="w-3 h-3" />
+                  Hidden
+                </span>
+              )}
               {currentPhoto.taken_at && (
                 <span>Taken: {formatDate(currentPhoto.taken_at)}</span>
               )}

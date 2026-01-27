@@ -453,6 +453,7 @@ export interface WorkstreamPhoto {
   file_size?: number;
   width?: number;
   height?: number;
+  is_hidden?: boolean;  // Hidden photos only visible to admins
   uploaded_by?: string;
   created_at: string;
   updated_at: string;

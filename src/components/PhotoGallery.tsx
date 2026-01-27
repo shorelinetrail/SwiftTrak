@@ -4,7 +4,7 @@ import { useState, useRef } from 'react';
 import Image from 'next/image';
 import { PhotoLightbox } from './PhotoLightbox';
 import { EmptyState } from '@/components/ui/empty-state';
-import { PhotoIcon, CheckIcon, DocumentIcon } from '@heroicons/react/24/outline';
+import { PhotoIcon, CheckIcon, DocumentIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 import type { WorkstreamPhoto } from '@/types/database';
 
 // Image file extensions that can be previewed
@@ -32,8 +32,10 @@ interface PhotoGalleryProps {
   onUploadClick?: () => void;
   canUpload?: boolean;
   canEdit?: boolean;
+  isAdmin?: boolean;
   onDelete?: (photoId: string) => Promise<void>;
   onCaptionUpdate?: (photoId: string, caption: string) => Promise<void>;
+  onToggleHidden?: (photoId: string, isHidden: boolean) => Promise<void>;
   selectionMode?: boolean;
   selectedIds?: Set<string>;
   onSelectionChange?: (ids: Set<string>) => void;
@@ -45,8 +47,10 @@ export function PhotoGallery({
   onUploadClick,
   canUpload = false,
   canEdit = false,
+  isAdmin = false,
   onDelete,
   onCaptionUpdate,
+  onToggleHidden,
   selectionMode = false,
   selectedIds = new Set(),
   onSelectionChange,
@@ -188,6 +192,12 @@ export function PhotoGallery({
                         </span>
                       </div>
                     )}
+                    {/* Hidden indicator (admin only) */}
+                    {photo.is_hidden && (
+                      <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-yellow-500 flex items-center justify-center">
+                        <EyeSlashIcon className="w-3.5 h-3.5 text-white" />
+                      </div>
+                    )}
                     {selectionMode && (
                       <div
                         className={`absolute top-2 left-2 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
@@ -218,14 +228,17 @@ export function PhotoGallery({
             taken_at: p.taken_at,
             caption: p.caption,
             file_size: p.file_size,
+            is_hidden: p.is_hidden,
             uploader: p.uploader ? { full_name: p.uploader.full_name } : undefined,
           }))}
           currentIndex={lightboxIndex}
           onClose={() => setLightboxIndex(null)}
           onNavigate={setLightboxIndex}
           canEdit={canEdit}
+          isAdmin={isAdmin}
           onDelete={onDelete}
           onCaptionUpdate={onCaptionUpdate}
+          onToggleHidden={onToggleHidden}
         />
       )}
     </>
