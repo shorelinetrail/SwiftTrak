@@ -9,10 +9,15 @@ interface TableWrapperProps {
 
 /**
  * Responsive table wrapper that enables horizontal scrolling on mobile
+ * Includes shadow indicators for scrollable content
  */
 export function TableWrapper({ children, className }: TableWrapperProps) {
   return (
-    <div className={cn('w-full overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0', className)}>
+    <div className={cn(
+      'w-full overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0',
+      'scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent',
+      className
+    )}>
       <div className="inline-block min-w-full align-middle">
         {children}
       </div>
@@ -101,5 +106,33 @@ export function TableCell({ children, className, ...props }: TableCellProps) {
     >
       {children}
     </td>
+  );
+}
+
+interface TableCellStickyProps extends React.TdHTMLAttributes<HTMLTableCellElement> {
+  children: React.ReactNode;
+  isHeader?: boolean;
+}
+
+/**
+ * Sticky first column cell for mobile - keeps important info visible while scrolling
+ */
+export function TableCellSticky({ children, className, isHeader = false, ...props }: TableCellStickyProps) {
+  const Component = isHeader ? 'th' : 'td';
+  return (
+    <Component
+      className={cn(
+        'px-4 py-3 text-sm whitespace-nowrap',
+        'sticky left-0 z-10',
+        isHeader
+          ? 'text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50'
+          : 'text-gray-900 bg-white',
+        'after:absolute after:right-0 after:top-0 after:bottom-0 after:w-4 after:bg-gradient-to-r after:from-transparent after:to-white/80',
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </Component>
   );
 }

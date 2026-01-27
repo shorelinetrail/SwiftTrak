@@ -80,7 +80,8 @@ export const Select = forwardRef<HTMLDivElement, SelectProps>(
                 <Listbox.Button
                   ref={buttonRef}
                   className={cn(
-                    'relative w-full cursor-pointer rounded-lg border bg-white py-2 pl-3 pr-10 text-left',
+                    'relative w-full cursor-pointer rounded-lg border bg-white py-2.5 pl-3 pr-10 text-left',
+                    'text-base sm:text-sm min-h-[44px] touch-manipulation',
                     'focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1',
                     disabled && 'bg-gray-50 cursor-not-allowed',
                     error ? 'border-red-500' : 'border-gray-300'
@@ -124,7 +125,7 @@ export const Select = forwardRef<HTMLDivElement, SelectProps>(
                           value={option.value}
                           className={({ active }) =>
                             cn(
-                              'relative cursor-pointer select-none py-2 pl-10 pr-4',
+                              'relative cursor-pointer select-none py-3 pl-10 pr-4 touch-manipulation',
                               active ? 'bg-red-50 text-red-900' : 'text-gray-900'
                             )
                           }
@@ -250,7 +251,8 @@ export function MultiSelect({
           disabled={disabled}
           onClick={() => setIsOpen(!isOpen)}
           className={cn(
-            'relative w-full cursor-pointer rounded-lg border bg-white py-2 pl-3 pr-10 text-left',
+            'relative w-full cursor-pointer rounded-lg border bg-white py-2.5 pl-3 pr-10 text-left',
+            'text-base sm:text-sm min-h-[44px] touch-manipulation',
             'focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500',
             disabled && 'bg-gray-50 cursor-not-allowed',
             'border-gray-300'
@@ -286,7 +288,7 @@ export function MultiSelect({
                     key={option.value}
                     onClick={() => toggleOption(option.value)}
                     className={cn(
-                      'relative cursor-pointer select-none py-2 pl-10 pr-4',
+                      'relative cursor-pointer select-none py-3 pl-10 pr-4 touch-manipulation',
                       'hover:bg-red-50 hover:text-red-900',
                       isSelected && 'bg-red-50/50'
                     )}

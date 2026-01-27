@@ -57,7 +57,7 @@ export function Modal({ open, onClose, title, description, children, size = 'md'
                 className={cn(
                   'w-full transform bg-white shadow-xl transition-all',
                   mobileFullScreen
-                    ? 'min-h-screen sm:min-h-0 sm:rounded-xl'
+                    ? 'min-h-screen sm:min-h-0 sm:rounded-xl pb-safe'
                     : 'rounded-xl',
                   sizes[size]
                 )}
@@ -79,7 +79,7 @@ export function Modal({ open, onClose, title, description, children, size = 'md'
                     </div>
                     <button
                       type="button"
-                      className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-500 -mr-2 touch-manipulation"
+                      className="rounded-lg p-2.5 text-gray-400 hover:bg-gray-100 hover:text-gray-500 -mr-2 touch-manipulation min-w-[44px] min-h-[44px] flex items-center justify-center"
                       onClick={onClose}
                     >
                       <XMarkIcon className="h-5 w-5 sm:h-6 sm:w-6" />

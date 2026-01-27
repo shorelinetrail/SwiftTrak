@@ -24,8 +24,8 @@ export function Card({ children, className, padding = 'md', hover, onClick }: Ca
       className={cn(
         'bg-white rounded-xl border border-gray-200 shadow-sm',
         paddings[padding],
-        hover && 'hover:shadow-md hover:border-gray-300 transition-all cursor-pointer active:scale-[0.99]',
-        onClick && 'cursor-pointer',
+        hover && 'hover:shadow-md hover:border-gray-300 transition-all cursor-pointer active:scale-[0.99] touch-manipulation',
+        onClick && 'cursor-pointer touch-manipulation',
         className
       )}
       onClick={onClick}
