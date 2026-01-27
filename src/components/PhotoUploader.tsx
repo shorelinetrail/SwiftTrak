@@ -2,13 +2,14 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { createClient } from '@/lib/supabase/client';
 import {
   PhotoIcon,
   XMarkIcon,
   CheckCircleIcon,
   ExclamationCircleIcon,
   ArrowUpTrayIcon,
+  DocumentIcon,
 } from '@heroicons/react/24/outline';
 import { cn } from '@/lib/utils';
 
@@ -24,10 +25,16 @@ interface PhotoUploaderProps {
   onUploadComplete?: (photos: { id: string; storage_path: string }[]) => void;
 }
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_IMAGE_SIZE_FOR_COMPRESSION = 10 * 1024 * 1024; // 10MB - compress images under this
 const MAX_DIMENSION = 2048;
-const TARGET_SIZE = 3.5 * 1024 * 1024; // 3.5MB for Vercel limit
-const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const TARGET_SIZE = 3.5 * 1024 * 1024; // 3.5MB for API upload
+const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+
+// Check if file is an image
+function isImageFile(file: File): boolean {
+  return IMAGE_TYPES.includes(file.type) || file.type.startsWith('image/');
+}
 
 // Extract EXIF date from JPEG before compression strips it
 function extractExifDate(file: File): Promise<string | null> {
@@ -239,12 +246,19 @@ export function PhotoUploader({ workstreamId, onUploadComplete }: PhotoUploaderP
     const newStates: UploadState[] = [];
 
     Array.from(newFiles).forEach((file) => {
-      if (!ACCEPTED_TYPES.includes(file.type)) {
+      // Check file size
+      if (file.size > MAX_FILE_SIZE) {
+        console.warn(`File ${file.name} exceeds 50MB limit`);
         return;
       }
 
       validFiles.push(file);
-      newPreviews.push(URL.createObjectURL(file));
+      // Only create preview URL for images
+      if (isImageFile(file)) {
+        newPreviews.push(URL.createObjectURL(file));
+      } else {
+        newPreviews.push(''); // Placeholder for non-images
+      }
       newStates.push({ progress: 0, status: 'pending' });
     });
 
@@ -270,7 +284,9 @@ export function PhotoUploader({ workstreamId, onUploadComplete }: PhotoUploaderP
   }, [handleFiles]);
 
   const removeFile = useCallback((index: number) => {
-    URL.revokeObjectURL(previews[index]);
+    if (previews[index]) {
+      URL.revokeObjectURL(previews[index]);
+    }
     setFiles((prev) => prev.filter((_, i) => i !== index));
     setPreviews((prev) => prev.filter((_, i) => i !== index));
     setUploadStates((prev) => prev.filter((_, i) => i !== index));
@@ -286,48 +302,118 @@ export function PhotoUploader({ workstreamId, onUploadComplete }: PhotoUploaderP
 
   const uploadFile = async (file: File, index: number): Promise<{ id: string; storage_path: string } | null> => {
     try {
-      // Step 1: Extract EXIF date
-      updateState(index, { status: 'extracting', progress: 10 });
-      const takenAt = await extractExifDate(file);
-      updateState(index, { takenAt: takenAt || undefined });
+      const isImage = isImageFile(file);
+      const shouldCompress = isImage && file.size <= MAX_IMAGE_SIZE_FOR_COMPRESSION;
 
-      // Step 2: Compress image
-      updateState(index, { status: 'compressing', progress: 30 });
-      const { blob: compressedBlob, width, height } = await compressImage(file);
+      let takenAt: string | null = null;
+      let uploadBlob: Blob = file;
+      let thumbnailBlob: Blob | null = null;
+      let width: number | null = null;
+      let height: number | null = null;
 
-      // Step 3: Create thumbnail
-      updateState(index, { progress: 50 });
-      const thumbnailBlob = await createThumbnail(compressedBlob);
+      if (isImage) {
+        // Step 1: Extract EXIF date for images
+        updateState(index, { status: 'extracting', progress: 10 });
+        takenAt = await extractExifDate(file);
+        updateState(index, { takenAt: takenAt || undefined });
 
-      // Step 4: Upload to API
+        if (shouldCompress) {
+          // Step 2: Compress image if small enough
+          updateState(index, { status: 'compressing', progress: 30 });
+          const compressed = await compressImage(file);
+          uploadBlob = compressed.blob;
+          width = compressed.width;
+          height = compressed.height;
+
+          // Step 3: Create thumbnail
+          updateState(index, { progress: 50 });
+          thumbnailBlob = await createThumbnail(uploadBlob);
+        }
+      }
+
+      // Step 4: Upload file
       updateState(index, { status: 'uploading', progress: 60 });
 
-      const formData = new FormData();
-      formData.append('file', compressedBlob, file.name.replace(/\.[^.]+$/, '.jpg'));
-      formData.append('thumbnail', thumbnailBlob, `thumb_${file.name.replace(/\.[^.]+$/, '.jpg')}`);
-      formData.append('workstreamId', workstreamId);
-      formData.append('originalFilename', file.name);
-      formData.append('width', width.toString());
-      formData.append('height', height.toString());
-      formData.append('fileSize', compressedBlob.size.toString());
-      if (takenAt) {
-        formData.append('takenAt', takenAt);
+      // For large files or non-images, upload directly to Supabase
+      const useDirectUpload = file.size > TARGET_SIZE || !shouldCompress;
+
+      if (useDirectUpload) {
+        // Direct upload to Supabase Storage
+        const supabase = createClient();
+
+        const timestamp = Date.now();
+        const randomStr = Math.random().toString(36).substring(2, 8);
+        const sanitizedFilename = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const storagePath = `${workstreamId}/${timestamp}_${randomStr}_${sanitizedFilename}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('photos')
+          .upload(storagePath, uploadBlob, {
+            contentType: file.type || 'application/octet-stream',
+            upsert: false,
+          });
+
+        if (uploadError) {
+          throw new Error(uploadError.message || 'Failed to upload file');
+        }
+
+        updateState(index, { progress: 80 });
+
+        // Create database record via API
+        const response = await fetch('/api/photos/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            workstreamId,
+            storagePath,
+            originalFilename: file.name,
+            fileSize: uploadBlob.size,
+            width,
+            height,
+            takenAt,
+          }),
+        });
+
+        if (!response.ok) {
+          // Try to clean up the uploaded file
+          await supabase.storage.from('photos').remove([storagePath]);
+          const error = await response.json();
+          throw new Error(error.error || 'Failed to register file');
+        }
+
+        const result = await response.json();
+        updateState(index, { status: 'complete', progress: 100 });
+        return { id: result.id, storage_path: result.storage_path };
+      } else {
+        // Use existing API upload for small compressed images
+        const formData = new FormData();
+        formData.append('file', uploadBlob, file.name.replace(/\.[^.]+$/, '.jpg'));
+        if (thumbnailBlob) {
+          formData.append('thumbnail', thumbnailBlob, `thumb_${file.name.replace(/\.[^.]+$/, '.jpg')}`);
+        }
+        formData.append('workstreamId', workstreamId);
+        formData.append('originalFilename', file.name);
+        if (width) formData.append('width', width.toString());
+        if (height) formData.append('height', height.toString());
+        formData.append('fileSize', uploadBlob.size.toString());
+        if (takenAt) {
+          formData.append('takenAt', takenAt);
+        }
+
+        const response = await fetch('/api/photos/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || 'Upload failed');
+        }
+
+        const result = await response.json();
+        updateState(index, { status: 'complete', progress: 100 });
+        return { id: result.id, storage_path: result.storage_path };
       }
-
-      const response = await fetch('/api/photos/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Upload failed');
-      }
-
-      const result = await response.json();
-      updateState(index, { status: 'complete', progress: 100 });
-
-      return { id: result.id, storage_path: result.storage_path };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Upload failed';
       updateState(index, { status: 'error', error: message });
@@ -380,7 +466,6 @@ export function PhotoUploader({ workstreamId, onUploadComplete }: PhotoUploaderP
         <input
           ref={fileInputRef}
           type="file"
-          accept={ACCEPTED_TYPES.join(',')}
           multiple
           onChange={(e) => e.target.files && handleFiles(e.target.files)}
           className="hidden"
@@ -390,7 +475,7 @@ export function PhotoUploader({ workstreamId, onUploadComplete }: PhotoUploaderP
           <span className="font-medium text-red-600">Click to upload</span> or drag and drop
         </p>
         <p className="text-xs text-gray-500 mt-1">
-          JPEG, PNG, WebP up to 10MB each
+          Images, documents, and other files up to 50MB each
         </p>
       </div>
 
@@ -399,11 +484,23 @@ export function PhotoUploader({ workstreamId, onUploadComplete }: PhotoUploaderP
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
           {files.map((file, index) => (
             <div key={index} className="relative aspect-square rounded-lg overflow-hidden bg-gray-100">
-              <img
-                src={previews[index]}
-                alt={file.name}
-                className="w-full h-full object-cover"
-              />
+              {previews[index] ? (
+                <img
+                  src={previews[index]}
+                  alt={file.name}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center p-2">
+                  <DocumentIcon className="w-12 h-12 text-gray-400 mb-2" />
+                  <p className="text-xs text-gray-600 text-center truncate w-full px-2">
+                    {file.name}
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    {(file.size / (1024 * 1024)).toFixed(1)} MB
+                  </p>
+                </div>
+              )}
 
               {/* Status overlay */}
               {uploadStates[index].status !== 'pending' && uploadStates[index].status !== 'complete' && (
@@ -479,7 +576,7 @@ export function PhotoUploader({ workstreamId, onUploadComplete }: PhotoUploaderP
             loading={isUploading}
           >
             <ArrowUpTrayIcon className="w-4 h-4 mr-2" />
-            Upload {pendingCount} Photo{pendingCount !== 1 ? 's' : ''}
+            Upload {pendingCount} File{pendingCount !== 1 ? 's' : ''}
           </Button>
         </div>
       )}

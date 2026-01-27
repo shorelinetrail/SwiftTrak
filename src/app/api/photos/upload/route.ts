@@ -65,10 +65,11 @@ export async function POST(request: NextRequest) {
 
     // Upload main file to Supabase Storage
     const fileBuffer = await file.arrayBuffer();
+    const contentType = file.type || 'application/octet-stream';
     const { error: uploadError } = await adminClient.storage
       .from('photos')
       .upload(storagePath, fileBuffer, {
-        contentType: 'image/jpeg',
+        contentType,
         upsert: false,
       });
 
