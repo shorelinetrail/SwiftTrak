@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDate, getDaysUntil, cn } from '@/lib/utils';
+import { formatDate, getDaysUntil, cn, getWorkstreamDisplayName } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import {
   PlusIcon,
@@ -106,12 +106,14 @@ export default function MilestonesPage() {
         title="Key Milestones"
         subtitle={`${pendingMilestones.length} pending, ${completedMilestones.length} completed`}
         actions={
-          <Link href="/milestones/new">
-            <Button size="sm">
-              <PlusIcon className="w-4 h-4 mr-2" />
-              Add Milestone
-            </Button>
-          </Link>
+          canEdit && (
+            <Link href="/milestones/new">
+              <Button size="sm">
+                <PlusIcon className="w-4 h-4 mr-2" />
+                Add Milestone
+              </Button>
+            </Link>
+          )
         }
       />
 
@@ -162,6 +164,7 @@ export default function MilestonesPage() {
                 <MilestoneCard
                   key={milestone.id}
                   milestone={milestone}
+                  workstreams={workstreams}
                   onToggleComplete={canEdit ? () => handleToggleComplete(milestone) : undefined}
                   canEdit={canEdit}
                 />
@@ -179,6 +182,7 @@ export default function MilestonesPage() {
                 <MilestoneCard
                   key={milestone.id}
                   milestone={milestone}
+                  workstreams={workstreams}
                   onToggleComplete={canEdit ? () => handleToggleComplete(milestone) : undefined}
                   canEdit={canEdit}
                 />
@@ -205,10 +209,12 @@ export default function MilestonesPage() {
 
 function MilestoneCard({
   milestone,
+  workstreams,
   onToggleComplete,
   canEdit,
 }: {
   milestone: MilestoneWithRelations;
+  workstreams: Workstream[];
   onToggleComplete?: () => void;
   canEdit?: boolean;
 }) {
@@ -257,7 +263,7 @@ function MilestoneCard({
                     color: milestone.workstream.color,
                   }}
                 >
-                  {milestone.workstream.name}
+                  {getWorkstreamDisplayName(milestone.workstream, workstreams)}
                 </span>
               )}
             </div>
@@ -277,9 +283,9 @@ function MilestoneCard({
               {!isCompleted && (
                 <p className={cn(
                   'text-xs',
-                  isPast ? 'text-red-500' : 'text-gray-500'
+                  isPast ? 'text-red-500' : daysUntil === 0 ? 'text-amber-600' : 'text-gray-500'
                 )}>
-                  {isPast ? `${Math.abs(daysUntil)} days overdue` : `${daysUntil} days`}
+                  {daysUntil === 0 ? 'Due today' : isPast ? `${Math.abs(daysUntil)} days overdue` : `${daysUntil} days`}
                 </p>
               )}
               {isCompleted && milestone.completed_at && (

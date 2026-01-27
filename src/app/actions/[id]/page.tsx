@@ -15,7 +15,7 @@ import { StatusBadge, PriorityBadge } from '@/components/ui/badge';
 import { Avatar } from '@/components/ui/avatar';
 import { Modal } from '@/components/ui/modal';
 import { LoadingSpinner, LoadingPage } from '@/components/ui/loading';
-import { formatDate, getRelativeTime, cn } from '@/lib/utils';
+import { formatDate, getRelativeTime, cn, buildWorkstreamOptions, getWorkstreamDisplayName } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import {
   PencilIcon,
@@ -26,8 +26,14 @@ import {
   PaperClipIcon,
   ChatBubbleLeftIcon,
   DocumentArrowDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ExclamationTriangleIcon,
+  EyeIcon,
+  EyeSlashIcon,
 } from '@heroicons/react/24/outline';
-import type { Action, ActionUpdate, ActionAudit, Workstream, User, Attachment, ActionStatus, Priority } from '@/types/database';
+import { RiskBadge } from '@/components/ui/badge';
+import type { Action, ActionUpdate, ActionAudit, Workstream, User, Attachment, ActionStatus, Priority, Threat } from '@/types/database';
 
 type ActionWithRelations = Action & {
   owner?: User;
@@ -38,6 +44,7 @@ type ActionWithRelations = Action & {
 type ActionUpdateWithUser = ActionUpdate & { user?: User };
 type ActionAuditWithUser = ActionAudit & { user?: User };
 type AttachmentWithUser = Attachment & { uploader?: User };
+type LinkedThreat = Threat & { workstream?: Workstream };
 
 export default function ActionDetailPage() {
   const params = useParams();
@@ -52,6 +59,11 @@ export default function ActionDetailPage() {
   const [auditLog, setAuditLog] = useState<ActionAuditWithUser[]>([]);
   const [attachments, setAttachments] = useState<AttachmentWithUser[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [relatedThreats, setRelatedThreats] = useState<LinkedThreat[]>([]);
+
+  // Navigation through actions
+  const [allActionIds, setAllActionIds] = useState<string[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(-1);
 
   // Modal states
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -62,7 +74,26 @@ export default function ActionDetailPage() {
   const [newUpdate, setNewUpdate] = useState('');
   const [submittingUpdate, setSubmittingUpdate] = useState(false);
   const [completionComment, setCompletionComment] = useState('');
+  const [completionDate, setCompletionDate] = useState('');
   const [editForm, setEditForm] = useState<Partial<Action>>({});
+
+  // Update editing states
+  const [editingUpdateId, setEditingUpdateId] = useState<string | null>(null);
+  const [editingUpdateContent, setEditingUpdateContent] = useState('');
+  const [deletingUpdateId, setDeletingUpdateId] = useState<string | null>(null);
+
+  // Admin import comment form
+  const [adminCommentUser, setAdminCommentUser] = useState('');
+  const [adminCommentDate, setAdminCommentDate] = useState('');
+  const [adminCommentContent, setAdminCommentContent] = useState('');
+  const [submittingAdminComment, setSubmittingAdminComment] = useState(false);
+
+  // Admin edit created date
+  const [editingCreatedDate, setEditingCreatedDate] = useState(false);
+  const [newCreatedDate, setNewCreatedDate] = useState('');
+
+  // Toggle for admin-only features
+  const [showAdminFeatures, setShowAdminFeatures] = useState(false);
 
   const fetchAction = useCallback(async () => {
     const supabase = createClient();
@@ -95,7 +126,7 @@ export default function ActionDetailPage() {
         user:users(id, full_name, avatar_url)
       `)
       .eq('action_id', actionId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: true });
 
     if (updatesData) {
       setUpdates(updatesData as unknown as ActionUpdateWithUser[]);
@@ -140,12 +171,78 @@ export default function ActionDetailPage() {
       setUsers(usersData as User[]);
     }
 
+    // Fetch related threats via threat_action_links
+    const { data: threatLinksData } = await supabase
+      .from('threat_action_links')
+      .select(`
+        threat:threats(
+          id, title, status, current_risk, description,
+          workstream:workstreams(id, name, color)
+        )
+      `)
+      .eq('action_id', actionId);
+
+    if (threatLinksData) {
+      const threats = threatLinksData
+        .map((link: { threat: LinkedThreat }) => link.threat)
+        .filter((threat: LinkedThreat | null): threat is LinkedThreat => threat !== null);
+      setRelatedThreats(threats);
+    }
+
     setLoading(false);
   }, [actionId, router]);
 
   useEffect(() => {
     fetchAction();
   }, [fetchAction]);
+
+  // Get action IDs for navigation - use sessionStorage if available (preserves filter from list)
+  useEffect(() => {
+    const getActionIds = async () => {
+      // First try to get filtered IDs from sessionStorage (set by actions list page)
+      if (typeof window !== 'undefined') {
+        const storedIds = sessionStorage.getItem('actionNavIds');
+        if (storedIds) {
+          try {
+            const ids = JSON.parse(storedIds) as string[];
+            if (ids.length > 0 && ids.includes(actionId)) {
+              setAllActionIds(ids);
+              setCurrentIndex(ids.indexOf(actionId));
+              return;
+            }
+          } catch {
+            // Invalid JSON, fall through to fetch all
+          }
+        }
+      }
+
+      // Fallback: fetch all action IDs if no stored filter or current action not in filter
+      const supabase = createClient();
+      const { data } = await supabase
+        .from('actions')
+        .select('id')
+        .order('created_at', { ascending: false });
+
+      if (data) {
+        const ids = data.map(a => a.id);
+        setAllActionIds(ids);
+        setCurrentIndex(ids.indexOf(actionId));
+      }
+    };
+    getActionIds();
+  }, [actionId]);
+
+  const goToPrevious = () => {
+    if (currentIndex > 0) {
+      router.push(`/actions/${allActionIds[currentIndex - 1]}`);
+    }
+  };
+
+  const goToNext = () => {
+    if (currentIndex < allActionIds.length - 1) {
+      router.push(`/actions/${allActionIds[currentIndex + 1]}`);
+    }
+  };
 
   // Real-time updates disabled for stability
   // useRealtime({
@@ -186,6 +283,146 @@ export default function ActionDetailPage() {
     }
   };
 
+  const handleEditUpdate = async (updateId: string) => {
+    if (!editingUpdateContent.trim()) return;
+
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase
+        .from('action_updates')
+        .update({ content: editingUpdateContent.trim() })
+        .eq('id', updateId);
+
+      if (error) throw error;
+
+      toast.success('Update edited');
+      setEditingUpdateId(null);
+      setEditingUpdateContent('');
+      fetchAction();
+    } catch (error) {
+      console.error('Error editing update:', error);
+      toast.error('Failed to edit update');
+    }
+  };
+
+  const handleDeleteUpdate = async (updateId: string) => {
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase
+        .from('action_updates')
+        .delete()
+        .eq('id', updateId);
+
+      if (error) throw error;
+
+      toast.success('Update deleted');
+      setDeletingUpdateId(null);
+      fetchAction();
+    } catch (error) {
+      console.error('Error deleting update:', error);
+      toast.error('Failed to delete update');
+    }
+  };
+
+  // Admin-only: Add comment as a different user with custom date
+  const handleAddAdminComment = async () => {
+    if (!adminCommentContent.trim()) {
+      toast.error('Comment content is required');
+      return;
+    }
+
+    if (!canAdmin) {
+      toast.error('Admin permission required');
+      return;
+    }
+
+    setSubmittingAdminComment(true);
+    try {
+      const supabase = createClient();
+
+      // Use System user if no user selected
+      const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000';
+      const selectedUserId = adminCommentUser || SYSTEM_USER_ID;
+
+      // Build insert data - mark as legacy import to hide date
+      const insertData: Record<string, unknown> = {
+        action_id: actionId,
+        user_id: selectedUserId,
+        content: adminCommentContent.trim(),
+        is_legacy_import: true,
+      };
+
+      // If a custom date is set, add it
+      if (adminCommentDate) {
+        insertData.created_at = new Date(adminCommentDate).toISOString();
+      }
+
+      const { error } = await supabase.from('action_updates').insert(insertData);
+
+      if (error) throw error;
+
+      // Reset form
+      setAdminCommentUser('');
+      setAdminCommentDate('');
+      setAdminCommentContent('');
+      toast.success('Comment imported successfully');
+      fetchAction();
+    } catch (error) {
+      console.error('Error adding admin comment:', error);
+      toast.error('Failed to import comment');
+    } finally {
+      setSubmittingAdminComment(false);
+    }
+  };
+
+  // Admin-only: Update created date
+  const handleUpdateCreatedDate = async () => {
+    if (!newCreatedDate || !canAdmin) return;
+
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase
+        .from('actions')
+        .update({ created_at: new Date(newCreatedDate).toISOString() })
+        .eq('id', actionId);
+
+      if (error) throw error;
+
+      toast.success('Created date updated');
+      setEditingCreatedDate(false);
+      setNewCreatedDate('');
+      fetchAction();
+    } catch (error) {
+      console.error('Error updating created date:', error);
+      toast.error('Failed to update created date');
+    }
+  };
+
+  const handleToggleHideFromRecent = async (auditId: string, currentValue: boolean) => {
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('action_audit')
+        .update({ hide_from_recent: !currentValue })
+        .eq('id', auditId);
+
+      if (error) throw error;
+
+      // Update local state
+      setAuditLog(prev => prev.map(entry =>
+        entry.id === auditId ? { ...entry, hide_from_recent: !currentValue } : entry
+      ));
+
+      toast.success(!currentValue ? 'Hidden from recent updates' : 'Shown in recent updates');
+    } catch (error) {
+      console.error('Error toggling hide from recent:', error);
+      toast.error('Failed to update');
+    }
+  };
+
   const handleStatusChange = async (newStatus: ActionStatus) => {
     try {
       const supabase = createClient();
@@ -193,19 +430,27 @@ export default function ActionDetailPage() {
       const updateData: Partial<Action> = { status: newStatus };
 
       if (newStatus === 'complete') {
-        updateData.completed_at = new Date().toISOString();
+        // Use custom date if provided (admin feature), otherwise use now
+        updateData.completed_at = completionDate
+          ? new Date(completionDate).toISOString()
+          : new Date().toISOString();
         updateData.completion_comment = completionComment || undefined;
       }
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('actions')
         .update(updateData)
-        .eq('id', actionId);
+        .eq('id', actionId)
+        .select()
+        .single();
 
       if (error) throw error;
+      if (!data) throw new Error('Update failed - no data returned');
 
       toast.success(`Status updated to ${newStatus.replace('_', ' ')}`);
       setCompleteModalOpen(false);
+      setCompletionDate('');
+      setCompletionComment('');
       fetchAction();
     } catch (error) {
       console.error('Error updating status:', error);
@@ -217,7 +462,7 @@ export default function ActionDetailPage() {
     try {
       const supabase = createClient();
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('actions')
         .update({
           title: editForm.title,
@@ -226,10 +471,14 @@ export default function ActionDetailPage() {
           owner_id: editForm.owner_id,
           priority: editForm.priority,
           due_date: editForm.due_date,
+          status: editForm.status,
         })
-        .eq('id', actionId);
+        .eq('id', actionId)
+        .select()
+        .single();
 
       if (error) throw error;
+      if (!data) throw new Error('Update failed - no data returned');
 
       toast.success('Action updated');
       setEditModalOpen(false);
@@ -303,7 +552,19 @@ export default function ActionDetailPage() {
   };
 
   if (loading) {
-    return <LoadingPage />;
+    return (
+      <div className="min-h-screen">
+        <Header
+          breadcrumbs={[
+            { label: 'Actions', href: '/actions' },
+            { label: 'Loading...' },
+          ]}
+        />
+        <div className="p-6 flex items-center justify-center h-64">
+          <LoadingSpinner size="lg" />
+        </div>
+      </div>
+    );
   }
 
   if (!action) {
@@ -313,6 +574,7 @@ export default function ActionDetailPage() {
   const statusOptions = [
     { value: 'pending', label: 'Pending' },
     { value: 'in_progress', label: 'In Progress' },
+    { value: 'on_hold', label: 'On Hold' },
     { value: 'complete', label: 'Complete' },
     { value: 'cancelled', label: 'Cancelled' },
   ];
@@ -324,7 +586,13 @@ export default function ActionDetailPage() {
     { value: 'low', label: 'Low' },
   ];
 
-  const workstreamOptions = workstreams.map(w => ({ value: w.id, label: w.name }));
+  const workstreamOptions = buildWorkstreamOptions(workstreams, {
+    includeAll: false,
+    excludeParentsWithChildren: true,
+    mapOption: (ws) => ({
+      icon: <div className="w-3 h-3 rounded-full" style={{ backgroundColor: ws.color }} />,
+    }),
+  });
   const userOptions = [
     { value: '', label: 'Unassigned' },
     ...users.map(u => ({ value: u.id, label: u.full_name })),
@@ -333,31 +601,10 @@ export default function ActionDetailPage() {
   return (
     <div className="min-h-screen">
       <Header
-        title={action.title}
-        subtitle={action.workstream?.name}
-        actions={
-          <div className="flex gap-2">
-            {canEdit && (
-              <>
-                <Button variant="outline" size="sm" onClick={() => setEditModalOpen(true)}>
-                  <PencilIcon className="w-4 h-4 mr-2" />
-                  Edit
-                </Button>
-                {action.status !== 'complete' && action.status !== 'cancelled' && (
-                  <Button size="sm" onClick={() => setCompleteModalOpen(true)}>
-                    <CheckCircleIcon className="w-4 h-4 mr-2" />
-                    Complete
-                  </Button>
-                )}
-              </>
-            )}
-            {canAdmin && (
-              <Button variant="danger" size="sm" onClick={() => setDeleteModalOpen(true)}>
-                <TrashIcon className="w-4 h-4" />
-              </Button>
-            )}
-          </div>
-        }
+        breadcrumbs={[
+          { label: 'Actions', href: '/actions' },
+          { label: action.title },
+        ]}
       />
 
       <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -366,30 +613,100 @@ export default function ActionDetailPage() {
           {/* Action Details */}
           <Card>
             <CardContent className="pt-6">
+              {/* Title and Actions Row */}
               <div className="flex items-start justify-between gap-4 mb-4">
-                <div className="flex items-center gap-3">
-                  <StatusBadge status={action.status} />
-                  <PriorityBadge priority={action.priority} />
+                <div>
+                  {action.display_id && (
+                    <span className="text-sm font-mono text-gray-500 mb-1 block">{action.display_id}</span>
+                  )}
+                  <h1 className="text-2xl font-bold text-gray-900">{action.title}</h1>
                 </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {/* Navigation */}
+                  {allActionIds.length > 1 && (
+                    <div className="flex items-center gap-1 mr-2">
+                      <button
+                        onClick={goToPrevious}
+                        disabled={currentIndex <= 0}
+                        className={cn(
+                          'p-1.5 rounded-lg transition-colors',
+                          currentIndex > 0
+                            ? 'text-gray-600 hover:bg-gray-100'
+                            : 'text-gray-300 cursor-not-allowed'
+                        )}
+                        title="Previous action"
+                      >
+                        <ChevronLeftIcon className="w-5 h-5" />
+                      </button>
+                      <span className="text-xs text-gray-500 min-w-[4rem] text-center">
+                        {currentIndex + 1} / {allActionIds.length}
+                      </span>
+                      <button
+                        onClick={goToNext}
+                        disabled={currentIndex >= allActionIds.length - 1}
+                        className={cn(
+                          'p-1.5 rounded-lg transition-colors',
+                          currentIndex < allActionIds.length - 1
+                            ? 'text-gray-600 hover:bg-gray-100'
+                            : 'text-gray-300 cursor-not-allowed'
+                        )}
+                        title="Next action"
+                      >
+                        <ChevronRightIcon className="w-5 h-5" />
+                      </button>
+                    </div>
+                  )}
+
+                  {canEdit && (
+                    <>
+                      <Button variant="outline" size="sm" onClick={() => setEditModalOpen(true)}>
+                        <PencilIcon className="w-4 h-4 mr-2" />
+                        Edit
+                      </Button>
+                      {action.status !== 'complete' && action.status !== 'cancelled' && (
+                        <Button size="sm" onClick={() => setCompleteModalOpen(true)}>
+                          <CheckCircleIcon className="w-4 h-4 mr-2" />
+                          Complete
+                        </Button>
+                      )}
+                    </>
+                  )}
+                  {canAdmin && showAdminFeatures && (
+                    <Button variant="danger" size="sm" onClick={() => setDeleteModalOpen(true)}>
+                      <TrashIcon className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Status Badges Row */}
+              <div className="flex items-center flex-wrap gap-2 mb-6">
+                <StatusBadge status={action.status} />
+                <PriorityBadge priority={action.priority} />
                 {action.workstream && (
                   <span
-                    className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium"
+                    className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
                     style={{
                       backgroundColor: `${action.workstream.color}20`,
                       color: action.workstream.color,
                     }}
                   >
-                    {action.workstream.name}
+                    {getWorkstreamDisplayName(action.workstream, workstreams)}
                   </span>
                 )}
               </div>
 
+              {/* Description Section */}
               {action.description && (
-                <div className="prose prose-sm max-w-none text-gray-700 mb-6">
-                  {action.description}
+                <div className="mb-6">
+                  <h3 className="text-sm font-medium text-gray-500 mb-2">Description</h3>
+                  <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap">
+                    {action.description}
+                  </div>
                 </div>
               )}
 
+              {/* Completion Note */}
               {action.completion_comment && action.status === 'complete' && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
                   <h4 className="text-sm font-medium text-green-800 mb-1">Completion Note</h4>
@@ -397,6 +714,7 @@ export default function ActionDetailPage() {
                 </div>
               )}
 
+              {/* Details Grid */}
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <span className="text-gray-500">Owner</span>
@@ -424,9 +742,40 @@ export default function ActionDetailPage() {
                 </div>
                 <div>
                   <span className="text-gray-500">Created</span>
-                  <p className="mt-1 font-medium text-gray-900">
-                    {formatDate(action.created_at)} by {action.creator?.full_name}
-                  </p>
+                  {canAdmin && showAdminFeatures && editingCreatedDate ? (
+                    <div className="mt-1 flex items-center gap-2">
+                      <Input
+                        type="datetime-local"
+                        value={newCreatedDate}
+                        onChange={(e) => setNewCreatedDate(e.target.value)}
+                        className="text-sm"
+                      />
+                      <Button size="sm" onClick={handleUpdateCreatedDate}>
+                        Save
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => {
+                        setEditingCreatedDate(false);
+                        setNewCreatedDate('');
+                      }}>
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="mt-1 font-medium text-gray-900">
+                      {formatDate(action.created_at)} by {action.creator?.full_name}
+                      {canAdmin && showAdminFeatures && (
+                        <button
+                          onClick={() => {
+                            setEditingCreatedDate(true);
+                            setNewCreatedDate(new Date(action.created_at).toISOString().slice(0, 16));
+                          }}
+                          className="ml-2 text-xs text-gray-400 hover:text-gray-600"
+                        >
+                          (edit)
+                        </button>
+                      )}
+                    </p>
+                  )}
                 </div>
                 {action.completed_at && (
                   <div>
@@ -442,15 +791,128 @@ export default function ActionDetailPage() {
 
           {/* Updates */}
           <Card>
-            <CardHeader>
+            <CardHeader
+              actions={
+                canAdmin && (
+                  <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showAdminFeatures}
+                      onChange={(e) => setShowAdminFeatures(e.target.checked)}
+                      className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                    />
+                    Admin tools
+                  </label>
+                )
+              }
+            >
               <CardTitle className="flex items-center gap-2">
                 <ChatBubbleLeftIcon className="w-5 h-5 text-gray-400" />
                 Updates ({updates.length})
               </CardTitle>
             </CardHeader>
             <CardContent>
+              {updates.length === 0 ? (
+                <p className="text-center text-gray-500 py-8">No updates yet</p>
+              ) : (
+                <div className="space-y-4 mb-4">
+                  {updates.map((update) => (
+                    <div key={update.id} className="flex gap-3 p-3 bg-gray-50 rounded-lg">
+                      <Avatar
+                        src={update.user?.avatar_url}
+                        name={update.user?.full_name || 'Unknown'}
+                        size="sm"
+                      />
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-gray-900">
+                              {update.user?.full_name || 'Unknown'}
+                            </span>
+                            {!update.is_legacy_import && (
+                              <span className="text-xs text-gray-500">
+                                {getRelativeTime(update.created_at)}
+                              </span>
+                            )}
+                          </div>
+                          {canEdit && (update.user_id === user?.id || canAdmin) && (
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => {
+                                  setEditingUpdateId(update.id);
+                                  setEditingUpdateContent(update.content);
+                                }}
+                                className="p-1 text-gray-400 hover:text-gray-600 rounded"
+                                title="Edit"
+                              >
+                                <PencilIcon className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => setDeletingUpdateId(update.id)}
+                                className="p-1 text-gray-400 hover:text-red-600 rounded"
+                                title="Delete"
+                              >
+                                <TrashIcon className="w-4 h-4" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        {editingUpdateId === update.id ? (
+                          <div className="mt-2">
+                            <Textarea
+                              value={editingUpdateContent}
+                              onChange={(e) => setEditingUpdateContent(e.target.value)}
+                              rows={2}
+                            />
+                            <div className="flex justify-end gap-2 mt-2">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setEditingUpdateId(null);
+                                  setEditingUpdateContent('');
+                                }}
+                              >
+                                Cancel
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => handleEditUpdate(update.id)}
+                              >
+                                Save
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap">{update.content}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Delete Update Confirmation */}
+              {deletingUpdateId && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center">
+                  <div className="fixed inset-0 bg-black/50" onClick={() => setDeletingUpdateId(null)} />
+                  <div className="relative bg-white rounded-xl shadow-xl max-w-sm w-full mx-4 p-6">
+                    <h3 className="text-lg font-semibold mb-2">Delete Update</h3>
+                    <p className="text-gray-600 mb-4">Are you sure you want to delete this update?</p>
+                    <div className="flex justify-end gap-3">
+                      <Button variant="outline" onClick={() => setDeletingUpdateId(null)}>
+                        Cancel
+                      </Button>
+                      <Button variant="danger" onClick={() => handleDeleteUpdate(deletingUpdateId)}>
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {canEdit && (
-                <div className="mb-4">
+                <div className="pt-4 border-t border-gray-200">
                   <Textarea
                     placeholder="Add an update..."
                     value={newUpdate}
@@ -470,30 +932,49 @@ export default function ActionDetailPage() {
                 </div>
               )}
 
-              {updates.length === 0 ? (
-                <p className="text-center text-gray-500 py-8">No updates yet</p>
-              ) : (
-                <div className="space-y-4">
-                  {updates.map((update) => (
-                    <div key={update.id} className="flex gap-3 p-3 bg-gray-50 rounded-lg">
-                      <Avatar
-                        src={update.user?.avatar_url}
-                        name={update.user?.full_name || 'Unknown'}
-                        size="sm"
+              {/* Admin-only: Import comments with custom user/date */}
+              {canAdmin && showAdminFeatures && (
+                <div className="mt-6 p-4 border border-dashed border-gray-300 rounded-lg bg-gray-50">
+                  <p className="text-sm font-medium text-gray-700 mb-3">
+                    Admin: Import Legacy Comment
+                  </p>
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <Select
+                        label="User (defaults to System)"
+                        options={[
+                          { value: '', label: 'System (default)' },
+                          ...users.filter(u => u.id !== '00000000-0000-0000-0000-000000000000').map(u => ({ value: u.id, label: u.full_name })),
+                        ]}
+                        value={adminCommentUser}
+                        onChange={setAdminCommentUser}
                       />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-900">
-                            {update.user?.full_name || 'Unknown'}
-                          </span>
-                          <span className="text-xs text-gray-500">
-                            {getRelativeTime(update.created_at)}
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-700 mt-1">{update.content}</p>
-                      </div>
+                      <Input
+                        label="Date (optional)"
+                        type="datetime-local"
+                        value={adminCommentDate}
+                        onChange={(e) => setAdminCommentDate(e.target.value)}
+                      />
                     </div>
-                  ))}
+                    <Textarea
+                      label="Comment"
+                      placeholder="Paste legacy comment..."
+                      value={adminCommentContent}
+                      onChange={(e) => setAdminCommentContent(e.target.value)}
+                      rows={3}
+                    />
+                    <div className="flex justify-end">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleAddAdminComment}
+                        disabled={!adminCommentContent.trim() || submittingAdminComment}
+                        loading={submittingAdminComment}
+                      >
+                        Import Comment
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               )}
             </CardContent>
@@ -550,8 +1031,48 @@ export default function ActionDetailPage() {
           </Card>
         </div>
 
-        {/* Sidebar - Audit Trail */}
+        {/* Sidebar */}
         <div className="space-y-6">
+          {/* Related Threats */}
+          {relatedThreats.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ExclamationTriangleIcon className="w-5 h-5 text-gray-400" />
+                  Related Threats ({relatedThreats.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {relatedThreats.map((threat) => (
+                    <a
+                      key={threat.id}
+                      href={`/threats/${threat.id}`}
+                      className="block p-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                    >
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {threat.title}
+                      </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <RiskBadge risk={threat.current_risk} />
+                        {threat.status === 'closed' ? (
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-800">
+                            Closed
+                          </span>
+                        ) : (
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-800">
+                            Open
+                          </span>
+                        )}
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Audit Trail */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -565,16 +1086,39 @@ export default function ActionDetailPage() {
               ) : (
                 <div className="space-y-4">
                   {auditLog.map((entry) => (
-                    <div key={entry.id} className="relative pl-4 border-l-2 border-gray-200">
+                    <div key={entry.id} className={cn(
+                      "relative pl-4 border-l-2 border-gray-200 group",
+                      entry.hide_from_recent && "opacity-50"
+                    )}>
                       <div className="absolute -left-1.5 top-0 w-3 h-3 rounded-full bg-gray-300" />
-                      <p className="text-sm text-gray-900">
-                        <span className="font-medium">{entry.user?.full_name || 'System'}</span>
-                        {' '}
-                        {formatAuditChange(entry)}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {getRelativeTime(entry.created_at)}
-                      </p>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <p className="text-sm text-gray-900">
+                            <span className="font-medium">{entry.user?.full_name || 'System'}</span>
+                            {' '}
+                            {formatAuditChange(entry, users)}
+                            {entry.hide_from_recent && (
+                              <span className="ml-2 text-xs text-gray-400">(hidden from recent)</span>
+                            )}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {getRelativeTime(entry.change_type === 'created' ? action.created_at : entry.created_at)}
+                          </p>
+                        </div>
+                        {canAdmin && (
+                          <button
+                            onClick={() => handleToggleHideFromRecent(entry.id, entry.hide_from_recent || false)}
+                            className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-gray-600 transition-opacity"
+                            title={entry.hide_from_recent ? 'Show in recent updates' : 'Hide from recent updates'}
+                          >
+                            {entry.hide_from_recent ? (
+                              <EyeIcon className="w-4 h-4" />
+                            ) : (
+                              <EyeSlashIcon className="w-4 h-4" />
+                            )}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -597,6 +1141,26 @@ export default function ActionDetailPage() {
                   >
                     <ClockIcon className="w-4 h-4 mr-2" />
                     Start Working
+                  </Button>
+                )}
+                {action.status === 'on_hold' && (
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start"
+                    onClick={() => handleStatusChange('in_progress')}
+                  >
+                    <ClockIcon className="w-4 h-4 mr-2" />
+                    Resume Work
+                  </Button>
+                )}
+                {(action.status === 'pending' || action.status === 'in_progress') && (
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start text-yellow-600 hover:bg-yellow-50"
+                    onClick={() => handleStatusChange('on_hold')}
+                  >
+                    <ClockIcon className="w-4 h-4 mr-2" />
+                    Put On Hold
                   </Button>
                 )}
                 <Button
@@ -678,21 +1242,44 @@ export default function ActionDetailPage() {
       {/* Complete Modal */}
       <Modal
         open={completeModalOpen}
-        onClose={() => setCompleteModalOpen(false)}
+        onClose={() => {
+          setCompleteModalOpen(false);
+          setCompletionDate('');
+          setCompletionComment('');
+        }}
         title="Complete Action"
       >
         <p className="text-gray-600 mb-4">
           Mark this action as complete. You can optionally add a completion note.
         </p>
-        <Textarea
-          label="Completion Note (Optional)"
-          value={completionComment}
-          onChange={(e) => setCompletionComment(e.target.value)}
-          placeholder="Add any final notes..."
-          rows={3}
-        />
+        <div className="space-y-4">
+          <Textarea
+            label="Completion Note (Optional)"
+            value={completionComment}
+            onChange={(e) => setCompletionComment(e.target.value)}
+            placeholder="Add any final notes..."
+            rows={3}
+          />
+          {canAdmin && (
+            <div>
+              <Input
+                type="date"
+                label="Completion Date (Admin)"
+                value={completionDate}
+                onChange={(e) => setCompletionDate(e.target.value)}
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Leave blank to use today&apos;s date
+              </p>
+            </div>
+          )}
+        </div>
         <div className="flex justify-end gap-3 mt-6">
-          <Button variant="outline" onClick={() => setCompleteModalOpen(false)}>
+          <Button variant="outline" onClick={() => {
+            setCompleteModalOpen(false);
+            setCompletionDate('');
+            setCompletionComment('');
+          }}>
             Cancel
           </Button>
           <Button onClick={() => handleStatusChange('complete')}>
@@ -725,19 +1312,43 @@ export default function ActionDetailPage() {
   );
 }
 
-function formatAuditChange(entry: ActionAuditWithUser): string {
+function formatAuditChange(entry: ActionAuditWithUser, users: User[]): string {
+  const formatValue = (value: string | null | undefined, type: string) => {
+    if (!value || value === 'null') return 'none';
+    if (type === 'status') return value.replace('_', ' ');
+    if (type === 'date') {
+      try {
+        return formatDate(value, { month: 'short', day: 'numeric', year: 'numeric' });
+      } catch {
+        return value;
+      }
+    }
+    if (type === 'user') {
+      // Look up user name from UUID
+      const user = users.find(u => u.id === value);
+      return user?.full_name || 'Unassigned';
+    }
+    return value;
+  };
+
   switch (entry.change_type) {
     case 'created':
-      return `created this action`;
+      return 'created this action';
     case 'status_changed':
-      return `changed status from ${entry.old_value} to ${entry.new_value}`;
+      return `changed status from "${formatValue(entry.old_value, 'status')}" to "${formatValue(entry.new_value, 'status')}"`;
     case 'owner_changed':
-      return `changed the owner`;
+      return `reassigned owner from "${formatValue(entry.old_value, 'user')}" to "${formatValue(entry.new_value, 'user')}"`;
     case 'priority_changed':
-      return `changed priority from ${entry.old_value} to ${entry.new_value}`;
+      return `changed priority from "${formatValue(entry.old_value, 'text')}" to "${formatValue(entry.new_value, 'text')}"`;
     case 'due_date_changed':
-      return `changed the due date`;
+      return `changed due date from "${formatValue(entry.old_value, 'date')}" to "${formatValue(entry.new_value, 'date')}"`;
+    case 'title_changed':
+      return `changed title from "${entry.old_value}" to "${entry.new_value}"`;
+    case 'description_changed':
+      return 'updated the description';
+    case 'workstream_changed':
+      return `moved from "${formatValue(entry.old_value, 'text')}" to "${formatValue(entry.new_value, 'text')}"`;
     default:
-      return `made changes`;
+      return 'made changes';
   }
 }

@@ -6,11 +6,12 @@ import { Sidebar } from './sidebar';
 import { AuthProvider, useAuth } from '@/providers/auth-provider';
 import { useAppStore } from '@/stores/app-store';
 import { createClient } from '@/lib/supabase/client';
-import { LoadingPage } from '@/components/ui/loading';
-import type { Workstream, Notification } from '@/types/database';
+import { LoadingSpinner } from '@/components/ui/loading';
+import type { Workstream, Notification, FeatureConfig } from '@/types/database';
 
 // Module-level state to track workstream fetch across all MainLayout instances
 let workstreamsFetchInProgress = false;
+let featureConfigFetchInProgress = false;
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -18,7 +19,7 @@ interface MainLayoutProps {
 
 function MainLayoutContent({ children }: MainLayoutProps) {
   const { user, loading } = useAuth();
-  const { workstreams, setWorkstreams, setNotifications, sidebarOpen } = useAppStore();
+  const { workstreams, setWorkstreams, setNotifications, sidebarOpen, featureConfig, setFeatureConfig } = useAppStore();
   const lastUserIdRef = useRef<string | null>(null);
 
   console.log('[MainLayoutContent] Render - user:', !!user, 'loading:', loading, 'workstreams:', workstreams.length);
@@ -62,6 +63,35 @@ function MainLayoutContent({ children }: MainLayoutProps) {
     };
   }, [workstreams.length, setWorkstreams]);
 
+  // Fetch feature config once globally
+  useEffect(() => {
+    if (featureConfigFetchInProgress) return;
+    featureConfigFetchInProgress = true;
+    let mounted = true;
+
+    const fetchFeatureConfig = async () => {
+      const supabase = createClient();
+      try {
+        const result = await Promise.race([
+          supabase.from('system_settings').select('*').eq('key', 'feature_config').maybeSingle(),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+        ]);
+
+        if (mounted && result?.data?.value) {
+          setFeatureConfig(result.data.value as FeatureConfig);
+        }
+      } catch (error) {
+        console.error('[MainLayout] Error fetching feature config:', error);
+      }
+    };
+
+    fetchFeatureConfig();
+
+    return () => {
+      mounted = false;
+    };
+  }, [setFeatureConfig]);
+
   // Fetch notifications when user changes - with timeout protection
   useEffect(() => {
     if (!user || user.id === lastUserIdRef.current) return;
@@ -96,10 +126,36 @@ function MainLayoutContent({ children }: MainLayoutProps) {
     };
   }, [user, setNotifications]);
 
-  // Show loading while auth initializes
+  // Show loading while auth initializes - but keep the layout structure
   if (loading) {
     console.log('[MainLayoutContent] Showing loading page');
-    return <LoadingPage />;
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Toaster
+          position="top-right"
+          toastOptions={{
+            duration: 4000,
+            style: {
+              background: '#1f2937',
+              color: '#fff',
+            },
+          }}
+        />
+        <Sidebar />
+        <main
+          className={`transition-all duration-300 pt-14 lg:pt-0 ${
+            sidebarOpen ? 'lg:ml-64' : 'lg:ml-20'
+          }`}
+        >
+          <div className="flex items-center justify-center h-screen">
+            <div className="text-center">
+              <LoadingSpinner size="lg" />
+              <p className="mt-4 text-gray-500">Loading...</p>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
   }
 
   console.log('[MainLayoutContent] Rendering content - user:', user?.email, 'role:', user?.role);
@@ -118,8 +174,8 @@ function MainLayoutContent({ children }: MainLayoutProps) {
       />
       <Sidebar />
       <main
-        className={`transition-all duration-300 ${
-          sidebarOpen ? 'ml-64' : 'ml-20'
+        className={`transition-all duration-300 pt-14 lg:pt-0 ${
+          sidebarOpen ? 'lg:ml-64' : 'lg:ml-20'
         }`}
       >
         {children}

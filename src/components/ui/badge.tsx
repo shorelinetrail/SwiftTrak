@@ -39,7 +39,7 @@ export function Badge({ children, variant = 'default', size = 'sm', className }:
 }
 
 interface StatusBadgeProps {
-  status: 'pending' | 'in_progress' | 'complete' | 'completed' | 'cancelled' | 'missed';
+  status: 'pending' | 'in_progress' | 'on_hold' | 'complete' | 'completed' | 'cancelled' | 'missed';
   className?: string;
 }
 
@@ -47,6 +47,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
   const statusConfig = {
     pending: { label: 'Pending', variant: 'default' as const },
     in_progress: { label: 'In Progress', variant: 'info' as const },
+    on_hold: { label: 'On Hold', variant: 'warning' as const },
     complete: { label: 'Complete', variant: 'success' as const },
     completed: { label: 'Completed', variant: 'success' as const },
     cancelled: { label: 'Cancelled', variant: 'danger' as const },
@@ -63,11 +64,14 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
 }
 
 interface PriorityBadgeProps {
-  priority: 'critical' | 'urgent' | 'high' | 'medium' | 'low';
+  priority: 'critical' | 'urgent' | 'high' | 'medium' | 'low' | null | undefined;
   className?: string;
 }
 
 export function PriorityBadge({ priority, className }: PriorityBadgeProps) {
+  // Return nothing if no priority is set
+  if (!priority) return null;
+
   const priorityConfig = {
     critical: { label: 'Critical', className: 'bg-red-600 text-white' },
     urgent: { label: 'Urgent', className: 'bg-red-600 text-white' },
@@ -92,12 +96,13 @@ export function PriorityBadge({ priority, className }: PriorityBadgeProps) {
 }
 
 interface RiskBadgeProps {
-  risk: 'low' | 'medium' | 'high';
+  risk: 'none' | 'low' | 'medium' | 'high';
   className?: string;
 }
 
 export function RiskBadge({ risk, className }: RiskBadgeProps) {
   const riskConfig = {
+    none: { label: 'None', className: 'bg-gray-100 text-gray-800 border border-gray-300' },
     low: { label: 'Low', className: 'bg-green-100 text-green-800 border border-green-300' },
     medium: { label: 'Medium', className: 'bg-yellow-100 text-yellow-800 border border-yellow-300' },
     high: { label: 'High', className: 'bg-red-100 text-red-800 border border-red-300' },

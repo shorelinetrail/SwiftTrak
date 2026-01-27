@@ -73,10 +73,11 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith(route)
   );
 
-  // Also allow static assets and API health check
+  // Also allow static assets and API auth routes
   const isStaticOrApi =
     request.nextUrl.pathname.startsWith('/_next') ||
     request.nextUrl.pathname.startsWith('/api/health') ||
+    request.nextUrl.pathname.startsWith('/api/auth/') ||
     request.nextUrl.pathname === '/favicon.ico';
 
   // Skip auth check for public routes and static assets

@@ -14,6 +14,7 @@ import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Tabs } from '@/components/ui/tabs';
 import { LoadingSpinner } from '@/components/ui/loading';
+import { PhotoGallery } from '@/components/PhotoGallery';
 import toast from 'react-hot-toast';
 import {
   PlusIcon,
@@ -23,25 +24,51 @@ import {
   SwatchIcon,
   LinkIcon,
   ClipboardDocumentIcon,
+  Cog6ToothIcon,
+  MegaphoneIcon,
+  PhotoIcon,
 } from '@heroicons/react/24/outline';
-import type { User, Workstream, StakeholderLink, UserRole } from '@/types/database';
+import type { User, Workstream, StakeholderLink, UserRole, UserStatus, UpdatesConfig, FeatureConfig } from '@/types/database';
 
 export default function AdminPage() {
   const router = useRouter();
-  const { workstreams, setWorkstreams } = useAppStore();
+  const { workstreams, setWorkstreams, setFeatureConfig } = useAppStore();
 
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [stakeholderLinks, setStakeholderLinks] = useState<StakeholderLink[]>([]);
+  const [updatesConfig, setUpdatesConfig] = useState<UpdatesConfig>({
+    auto_log_completed_milestones: true,
+    auto_log_completed_actions: false,
+  });
+  const [featureConfig, setFeatureConfigState] = useState<FeatureConfig>({
+    gantt_chart_enabled: true,
+    technical_queries_enabled: true,
+  });
   const [activeTab, setActiveTab] = useState('users');
+  const [photos, setPhotos] = useState<Array<{
+    id: string;
+    workstream_id: string;
+    storage_path: string;
+    original_filename: string;
+    caption?: string;
+    taken_at?: string;
+    created_at: string;
+    updated_at: string;
+    url?: string;
+    thumbnail_url?: string;
+    workstream?: { id: string; name: string; color: string };
+    uploader?: { id: string; full_name: string };
+  }>>([]);
+  const [photosLoading, setPhotosLoading] = useState(false);
 
   // Modal states
-  const [userModalOpen, setUserModalOpen] = useState(false);
+  const [createUserModalOpen, setCreateUserModalOpen] = useState(false);
   const [workstreamModalOpen, setWorkstreamModalOpen] = useState(false);
   const [stakeholderLinkModalOpen, setStakeholderLinkModalOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedWorkstream, setSelectedWorkstream] = useState<Workstream | null>(null);
+  const [invitingUserId, setInvitingUserId] = useState<string | null>(null);
 
   // Direct auth check and data fetch - bypasses complex hook chain
   useEffect(() => {
@@ -105,10 +132,12 @@ export default function AdminPage() {
         setCurrentUser(profile as User);
 
         // Step 4: Fetch admin data
-        const [usersResult, workstreamsResult, linksResult] = await Promise.all([
+        const [usersResult, workstreamsResult, linksResult, settingsResult, featureResult] = await Promise.all([
           supabase.from('users').select('*').order('full_name'),
           supabase.from('workstreams').select('*').order('order_index'),
           supabase.from('stakeholder_links').select('*').order('created_at', { ascending: false }),
+          supabase.from('system_settings').select('*').eq('key', 'updates_config').maybeSingle(),
+          supabase.from('system_settings').select('*').eq('key', 'feature_config').maybeSingle(),
         ]);
 
         if (!mounted) return;
@@ -116,6 +145,12 @@ export default function AdminPage() {
         if (usersResult.data) setUsers(usersResult.data as User[]);
         if (workstreamsResult.data) setWorkstreams(workstreamsResult.data as Workstream[]);
         if (linksResult.data) setStakeholderLinks(linksResult.data as StakeholderLink[]);
+        if (settingsResult.data?.value && !settingsResult.error) {
+          setUpdatesConfig(settingsResult.data.value as UpdatesConfig);
+        }
+        if (featureResult.data?.value && !featureResult.error) {
+          setFeatureConfigState(featureResult.data.value as FeatureConfig);
+        }
 
         setLoading(false);
       } catch (error) {
@@ -138,15 +173,23 @@ export default function AdminPage() {
     const supabase = createClient();
 
     try {
-      const [usersResult, workstreamsResult, linksResult] = await Promise.all([
+      const [usersResult, workstreamsResult, linksResult, settingsResult, featureResult] = await Promise.all([
         supabase.from('users').select('*').order('full_name'),
         supabase.from('workstreams').select('*').order('order_index'),
         supabase.from('stakeholder_links').select('*').order('created_at', { ascending: false }),
+        supabase.from('system_settings').select('*').eq('key', 'updates_config').maybeSingle(),
+        supabase.from('system_settings').select('*').eq('key', 'feature_config').maybeSingle(),
       ]);
 
       if (usersResult.data) setUsers(usersResult.data as User[]);
       if (workstreamsResult.data) setWorkstreams(workstreamsResult.data as Workstream[]);
       if (linksResult.data) setStakeholderLinks(linksResult.data as StakeholderLink[]);
+      if (settingsResult.data?.value && !settingsResult.error) {
+        setUpdatesConfig(settingsResult.data.value as UpdatesConfig);
+      }
+      if (featureResult.data?.value && !featureResult.error) {
+        setFeatureConfigState(featureResult.data.value as FeatureConfig);
+      }
     } catch (error) {
       console.error('[AdminPage] fetchData error:', error);
       toast.error('Failed to refresh data');
@@ -166,6 +209,133 @@ export default function AdminPage() {
     } else {
       toast.success('User role updated');
       fetchData();
+    }
+  };
+
+  const handleCreatePendingUser = async (data: { email: string; full_name: string; role: UserRole }) => {
+    const supabase = createClient();
+
+    // Check if user already exists
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('id, status')
+      .eq('email', data.email.toLowerCase())
+      .single();
+
+    if (existingUser) {
+      toast.error('A user with this email already exists');
+      return;
+    }
+
+    // Create pending user with a temporary UUID (not linked to auth.users yet)
+    const { error } = await supabase.from('users').insert({
+      id: crypto.randomUUID(),
+      email: data.email.toLowerCase(),
+      full_name: data.full_name,
+      role: data.role,
+      status: 'pending',
+      invited_by: currentUser?.id,
+      auth_linked: false,
+    });
+
+    if (error) {
+      console.error('[AdminPage] Failed to create pending user:', error);
+      toast.error(`Failed to create user: ${error.message}`);
+    } else {
+      toast.success('User created. They will be linked when they sign up.');
+      setCreateUserModalOpen(false);
+      fetchData();
+    }
+  };
+
+  const handleInviteUser = async (data: { email: string; full_name: string; role: UserRole }) => {
+    try {
+      const response = await fetch('/api/auth/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        toast.error(result.error || 'Failed to send invite');
+        return;
+      }
+
+      if (result.emailSent) {
+        toast.success('Invite sent! They will receive an email to set up their account.');
+        setCreateUserModalOpen(false);
+      } else {
+        // Email failed - show as error with details
+        toast.error(result.message || 'User created but invite email failed. Check SMTP configuration.');
+      }
+
+      fetchData();
+    } catch (error) {
+      console.error('[AdminPage] Failed to invite user:', error);
+      toast.error('Failed to send invite');
+    }
+  };
+
+  const handleSendInviteToExistingUser = async (user: User) => {
+    setInvitingUserId(user.id);
+    try {
+      const response = await fetch('/api/auth/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: user.email,
+          full_name: user.full_name,
+          role: user.role,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        toast.error(result.error || 'Failed to send invite');
+        return;
+      }
+
+      if (result.emailSent) {
+        toast.success(`Invite sent to ${user.email}`);
+      } else {
+        // Email failed - show as error with details
+        toast.error(result.message || 'Invite email could not be sent. Check SMTP configuration.');
+      }
+
+      fetchData();
+    } catch (error) {
+      console.error('[AdminPage] Failed to send invite:', error);
+      toast.error('Failed to send invite');
+    } finally {
+      setInvitingUserId(null);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string, userName: string) => {
+    if (!confirm(`Are you sure you want to delete ${userName}? This cannot be undone.`)) return;
+
+    try {
+      const response = await fetch('/api/auth/delete-user', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        console.error('[AdminPage] Failed to delete user:', result.error);
+        toast.error(result.error || 'Failed to delete user');
+      } else {
+        toast.success(`${userName} has been deleted`);
+        fetchData();
+      }
+    } catch (error) {
+      console.error('[AdminPage] Failed to delete user:', error);
+      toast.error('Failed to delete user');
     }
   };
 
@@ -275,10 +445,111 @@ export default function AdminPage() {
     toast.success('Copied to clipboard');
   };
 
+  const handleUpdateUpdatesConfig = async (config: UpdatesConfig) => {
+    const supabase = createClient();
+
+    const { error } = await supabase
+      .from('system_settings')
+      .upsert({
+        key: 'updates_config',
+        value: config,
+        updated_by: currentUser?.id,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'key' });
+
+    if (error) {
+      toast.error('Failed to update settings');
+      console.error('[AdminPage] Failed to update settings:', error);
+    } else {
+      setUpdatesConfig(config);
+      toast.success('Settings updated');
+    }
+  };
+
+  const handleUpdateFeatureConfig = async (config: FeatureConfig) => {
+    const supabase = createClient();
+
+    const { error } = await supabase
+      .from('system_settings')
+      .upsert({
+        key: 'feature_config',
+        value: config,
+        updated_by: currentUser?.id,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'key' });
+
+    if (error) {
+      toast.error('Failed to update feature settings');
+      console.error('[AdminPage] Failed to update feature settings:', error);
+    } else {
+      setFeatureConfigState(config);
+      setFeatureConfig(config); // Update global store
+      toast.success('Feature settings updated');
+    }
+  };
+
+  // Fetch photos when Photos tab is selected
+  const fetchPhotos = useCallback(async () => {
+    setPhotosLoading(true);
+    try {
+      const response = await fetch('/api/photos');
+      if (response.ok) {
+        const data = await response.json();
+        setPhotos(data);
+      }
+    } catch (error) {
+      console.error('Error fetching photos:', error);
+    } finally {
+      setPhotosLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'photos' && photos.length === 0 && !photosLoading) {
+      fetchPhotos();
+    }
+  }, [activeTab, photos.length, photosLoading, fetchPhotos]);
+
+  const handleDeletePhoto = async (photoId: string) => {
+    const response = await fetch(`/api/photos?id=${photoId}`, {
+      method: 'DELETE',
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      toast.error(error.error || 'Failed to delete photo');
+      throw new Error(error.error);
+    }
+
+    setPhotos((prev) => prev.filter((p) => p.id !== photoId));
+    toast.success('Photo deleted');
+  };
+
+  const handleCaptionUpdate = async (photoId: string, caption: string) => {
+    const response = await fetch('/api/photos', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: photoId, caption }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      toast.error(error.error || 'Failed to update caption');
+      throw new Error(error.error);
+    }
+
+    setPhotos((prev) =>
+      prev.map((p) => (p.id === photoId ? { ...p, caption } : p))
+    );
+    toast.success('Caption updated');
+  };
+
   const tabs = [
     { id: 'users', label: 'Users', count: users.length },
     { id: 'workstreams', label: 'Workstreams', count: workstreams.length },
     { id: 'stakeholder', label: 'Stakeholder Links', count: stakeholderLinks.length },
+    { id: 'photos', label: 'Photos', count: photos.length > 0 ? photos.length : undefined },
+    { id: 'settings', label: 'Settings' },
   ];
 
   if (loading) {
@@ -302,38 +573,85 @@ export default function AdminPage() {
         {/* Users Tab */}
         {activeTab === 'users' && (
           <Card>
-            <CardHeader>
+            <CardHeader
+              actions={
+                <Button size="sm" onClick={() => setCreateUserModalOpen(true)}>
+                  <PlusIcon className="w-4 h-4 mr-2" />
+                  Add User
+                </Button>
+              }
+            >
               <CardTitle className="flex items-center gap-2">
                 <UserGroupIcon className="w-5 h-5 text-gray-400" />
                 User Management
               </CardTitle>
             </CardHeader>
             <CardContent>
+              <p className="text-sm text-gray-500 mb-4">
+                Add users before they sign up. When they register with the same email, their account will be automatically linked.
+              </p>
               <div className="space-y-3">
                 {users.map((user) => (
                   <div
                     key={user.id}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                    className={`flex items-center justify-between p-3 rounded-lg ${
+                      user.status === 'pending' ? 'bg-amber-50 border border-amber-200' : 'bg-gray-50'
+                    }`}
                   >
                     <div className="flex items-center gap-3">
                       <Avatar src={user.avatar_url} name={user.full_name} size="sm" />
                       <div>
-                        <p className="font-medium text-gray-900">{user.full_name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-gray-900">{user.full_name}</p>
+                          {user.status === 'pending' && (
+                            <Badge variant="warning" size="sm">Pending</Badge>
+                          )}
+                          {user.id === currentUser?.id && (
+                            <Badge variant="default" size="sm">You</Badge>
+                          )}
+                        </div>
                         <p className="text-sm text-gray-500">{user.email}</p>
                       </div>
                     </div>
-                    <Select
-                      options={[
-                        { value: 'view', label: 'View Only' },
-                        { value: 'edit', label: 'Can Edit' },
-                        { value: 'admin', label: 'Admin' },
-                      ]}
-                      value={user.role}
-                      onChange={(value) => handleUpdateUserRole(user.id, value as UserRole)}
-                      className="w-32"
-                    />
+                    <div className="flex items-center gap-2">
+                      {user.status === 'pending' && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => handleSendInviteToExistingUser(user)}
+                          disabled={invitingUserId === user.id}
+                        >
+                          {invitingUserId === user.id ? 'Sending...' : user.invited_at ? 'Resend Invite' : 'Send Invite'}
+                        </Button>
+                      )}
+                      <Select
+                        options={[
+                          { value: 'view', label: 'View Only' },
+                          { value: 'edit', label: 'Can Edit' },
+                          { value: 'admin', label: 'Admin' },
+                        ]}
+                        value={user.role}
+                        onChange={(value) => handleUpdateUserRole(user.id, value as UserRole)}
+                        className="w-32"
+                      />
+                      {user.id !== currentUser?.id && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDeleteUser(user.id, user.full_name)}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          Delete
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 ))}
+                {users.length === 0 && (
+                  <p className="text-center text-gray-500 py-8">
+                    No users yet. Add users to pre-configure their roles before they sign up.
+                  </p>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -468,6 +786,215 @@ export default function AdminPage() {
             </CardContent>
           </Card>
         )}
+
+        {/* Photos Tab */}
+        {activeTab === 'photos' && (
+          <div className="space-y-6">
+            {/* Album Management */}
+            <Card>
+              <CardHeader
+                actions={
+                  <Button size="sm" onClick={() => {
+                    setSelectedWorkstream(null);
+                    setWorkstreamModalOpen(true);
+                  }}>
+                    <PlusIcon className="w-4 h-4 mr-2" />
+                    New Album
+                  </Button>
+                }
+              >
+                <CardTitle className="flex items-center gap-2">
+                  <SwatchIcon className="w-5 h-5 text-gray-400" />
+                  Photo Albums
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-gray-500 mb-4">
+                  Albums are based on workstreams. Create, edit, or delete albums to organize photos.
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                  {workstreams.map((ws) => {
+                    const photoCount = photos.filter((p) => p.workstream_id === ws.id).length;
+                    return (
+                      <div
+                        key={ws.id}
+                        className="relative p-3 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors group"
+                      >
+                        <div
+                          className="w-8 h-8 rounded-lg mb-2"
+                          style={{ backgroundColor: ws.color }}
+                        />
+                        <p className="text-sm font-medium text-gray-900 truncate">{ws.name}</p>
+                        <p className="text-xs text-gray-500">{photoCount} photo{photoCount !== 1 ? 's' : ''}</p>
+
+                        {/* Edit/Delete buttons on hover */}
+                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => {
+                              setSelectedWorkstream(ws);
+                              setWorkstreamModalOpen(true);
+                            }}
+                            className="p-1 bg-white rounded shadow hover:bg-gray-50"
+                            title="Edit album"
+                          >
+                            <PencilIcon className="w-3 h-3 text-gray-500" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteWorkstream(ws.id)}
+                            className="p-1 bg-white rounded shadow hover:bg-gray-50"
+                            title="Delete album"
+                          >
+                            <TrashIcon className="w-3 h-3 text-red-500" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {workstreams.length === 0 && (
+                    <p className="col-span-full text-center text-gray-500 py-4">
+                      No albums yet. Create one to start organizing photos.
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Photo Gallery */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <PhotoIcon className="w-5 h-5 text-gray-400" />
+                  All Photos ({photos.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {photosLoading ? (
+                  <div className="flex justify-center py-8">
+                    <LoadingSpinner />
+                  </div>
+                ) : (
+                  <PhotoGallery
+                    photos={photos}
+                    emptyMessage="No photos uploaded yet"
+                    canEdit={true}
+                    onDelete={handleDeletePhoto}
+                    onCaptionUpdate={handleCaptionUpdate}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Settings Tab */}
+        {activeTab === 'settings' && (
+          <div className="space-y-6">
+            {/* Feature Toggles */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Cog6ToothIcon className="w-5 h-5 text-gray-400" />
+                  Feature Settings
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-gray-500 mb-6">
+                  Enable or disable optional features for your team.
+                </p>
+                <div className="space-y-4">
+                  <label className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="font-medium text-gray-900">Gantt Chart</p>
+                      <p className="text-sm text-gray-500">
+                        Show Gantt chart for visual project timeline and milestone tracking
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={featureConfig.gantt_chart_enabled}
+                      onChange={(e) => handleUpdateFeatureConfig({
+                        ...featureConfig,
+                        gantt_chart_enabled: e.target.checked,
+                      })}
+                      className="h-5 w-5 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="font-medium text-gray-900">Technical Queries</p>
+                      <p className="text-sm text-gray-500">
+                        Enable technical query tracking and assignment system
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={featureConfig.technical_queries_enabled}
+                      onChange={(e) => handleUpdateFeatureConfig({
+                        ...featureConfig,
+                        technical_queries_enabled: e.target.checked,
+                      })}
+                      className="h-5 w-5 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                    />
+                  </label>
+
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Updates & Activity Settings */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <MegaphoneIcon className="w-5 h-5 text-gray-400" />
+                  Updates & Activity Settings
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-gray-500 mb-6">
+                  Configure automatic logging of activity to the Updates feed.
+                </p>
+                <div className="space-y-4">
+                  <label className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="font-medium text-gray-900">Auto-log completed milestones</p>
+                      <p className="text-sm text-gray-500">
+                        Automatically post to Updates when a milestone is marked as completed
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={updatesConfig.auto_log_completed_milestones}
+                      onChange={(e) => handleUpdateUpdatesConfig({
+                        ...updatesConfig,
+                        auto_log_completed_milestones: e.target.checked,
+                      })}
+                      className="h-5 w-5 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="font-medium text-gray-900">Auto-log completed actions</p>
+                      <p className="text-sm text-gray-500">
+                        Automatically post to Updates when an action is marked as complete
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={updatesConfig.auto_log_completed_actions}
+                      onChange={(e) => handleUpdateUpdatesConfig({
+                        ...updatesConfig,
+                        auto_log_completed_actions: e.target.checked,
+                      })}
+                      className="h-5 w-5 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                    />
+                  </label>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </div>
 
       {/* Workstream Modal */}
@@ -493,6 +1020,14 @@ export default function AdminPage() {
         onClose={() => setStakeholderLinkModalOpen(false)}
         workstreams={workstreams}
         onSave={handleCreateStakeholderLink}
+      />
+
+      {/* Create User Modal */}
+      <CreateUserModal
+        open={createUserModalOpen}
+        onClose={() => setCreateUserModalOpen(false)}
+        onSave={handleCreatePendingUser}
+        onInvite={handleInviteUser}
       />
     </div>
   );
@@ -651,6 +1186,106 @@ function StakeholderLinkModal({
           }
         }}>
           Create Link
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+function CreateUserModal({
+  open,
+  onClose,
+  onSave,
+  onInvite,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSave: (data: { email: string; full_name: string; role: UserRole }) => void;
+  onInvite: (data: { email: string; full_name: string; role: UserRole }) => Promise<void>;
+}) {
+  const [formData, setFormData] = useState({
+    email: '',
+    full_name: '',
+    role: 'view' as UserRole,
+  });
+  const [sendInvite, setSendInvite] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setFormData({ email: '', full_name: '', role: 'view' });
+      setSendInvite(true);
+      setSaving(false);
+    }
+  }, [open]);
+
+  const handleSubmit = async () => {
+    if (!formData.email.trim() || !formData.full_name.trim()) return;
+
+    setSaving(true);
+    try {
+      if (sendInvite) {
+        await onInvite(formData);
+      } else {
+        onSave(formData);
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Add User">
+      <div className="space-y-4">
+        <p className="text-sm text-gray-500">
+          Add a new user and optionally send them an invite email to set up their account.
+        </p>
+        <Input
+          label="Email"
+          type="email"
+          value={formData.email}
+          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+          placeholder="user@example.com"
+          required
+        />
+        <Input
+          label="Full Name"
+          value={formData.full_name}
+          onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+          placeholder="John Doe"
+          required
+        />
+        <Select
+          label="Role"
+          options={[
+            { value: 'view', label: 'View Only' },
+            { value: 'edit', label: 'Can Edit' },
+            { value: 'admin', label: 'Admin' },
+          ]}
+          value={formData.role}
+          onChange={(value) => setFormData({ ...formData, role: value as UserRole })}
+        />
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={sendInvite}
+            onChange={(e) => setSendInvite(e.target.checked)}
+            className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+          />
+          <span className="text-sm text-gray-700">Send invite email</span>
+        </label>
+        {!sendInvite && (
+          <p className="text-xs text-gray-500 ml-6">
+            User will be created but won&apos;t receive an email. They can sign up manually with this email.
+          </p>
+        )}
+      </div>
+      <div className="flex justify-end gap-3 mt-6">
+        <Button variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button onClick={handleSubmit} loading={saving}>
+          {sendInvite ? 'Send Invite' : 'Add User'}
         </Button>
       </div>
     </Modal>
