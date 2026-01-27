@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import Image from 'next/image';
 import { PhotoLightbox } from './PhotoLightbox';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -40,6 +40,7 @@ export function PhotoGallery({
   onSelectionChange,
 }: PhotoGalleryProps) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const lastSelectedIndexRef = useRef<number | null>(null);
 
   if (photos.length === 0) {
     return (
@@ -104,14 +105,39 @@ export function PhotoGallery({
 
                 if (!imageUrl) return null;
 
-                const handleClick = () => {
+                const handleClick = (e: React.MouseEvent) => {
                   if (selectionMode && onSelectionChange) {
                     const newSelection = new Set(selectedIds);
-                    if (isSelected) {
-                      newSelection.delete(photo.id);
-                    } else {
-                      newSelection.add(photo.id);
+
+                    // Shift+click: range selection
+                    if (e.shiftKey && lastSelectedIndexRef.current !== null) {
+                      const start = Math.min(lastSelectedIndexRef.current, flatIndex);
+                      const end = Math.max(lastSelectedIndexRef.current, flatIndex);
+
+                      // Add all photos in range to selection
+                      for (let i = start; i <= end; i++) {
+                        newSelection.add(flatPhotos[i].id);
+                      }
                     }
+                    // Ctrl/Cmd+click: toggle individual selection
+                    else if (e.ctrlKey || e.metaKey) {
+                      if (isSelected) {
+                        newSelection.delete(photo.id);
+                      } else {
+                        newSelection.add(photo.id);
+                      }
+                      lastSelectedIndexRef.current = flatIndex;
+                    }
+                    // Regular click: toggle selection
+                    else {
+                      if (isSelected) {
+                        newSelection.delete(photo.id);
+                      } else {
+                        newSelection.add(photo.id);
+                      }
+                      lastSelectedIndexRef.current = flatIndex;
+                    }
+
                     onSelectionChange(newSelection);
                   } else {
                     setLightboxIndex(flatIndex);
