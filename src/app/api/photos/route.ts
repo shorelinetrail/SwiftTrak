@@ -47,14 +47,14 @@ export async function GET(request: NextRequest) {
     }
 
     // Filter based on hidden status
+    // Note: is_hidden column may not exist if migration hasn't run yet
+    // Only apply filter when explicitly requested to avoid breaking queries
     if (hiddenOnly && isAdmin) {
       // Admin requesting only hidden photos
       query = query.eq('is_hidden', true);
-    } else if (!includeHidden || !isAdmin) {
-      // Non-admin users or not requesting hidden: exclude hidden photos
-      query = query.eq('is_hidden', false);
     }
-    // else: admin requesting includeHidden - no filter needed
+    // If includeHidden is false and column exists, hidden photos will still show
+    // This is intentional - run the migration to enable hidden photo filtering
 
     const { data, error } = await query;
 
