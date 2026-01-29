@@ -10,6 +10,8 @@ import { Header } from '@/components/layout/header';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { Tabs } from '@/components/ui/tabs';
+import { Modal } from '@/components/ui/modal';
+import { Input } from '@/components/ui/input';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { PhotoGallery } from '@/components/PhotoGallery';
 import { buildWorkstreamOptions } from '@/lib/utils';
@@ -17,6 +19,10 @@ import {
   PlusIcon,
   FunnelIcon,
   EyeSlashIcon,
+  CheckIcon,
+  XMarkIcon,
+  TrashIcon,
+  PencilIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import type { WorkstreamPhoto, Workstream, User } from '@/types/database';
@@ -37,6 +43,13 @@ export default function PhotosPage() {
   const [hiddenPhotos, setHiddenPhotos] = useState<PhotoWithRelations[]>([]);
   const [workstreamFilter, setWorkstreamFilter] = useState<string>('all');
   const [activeTab, setActiveTab] = useState<'all' | 'hidden'>('all');
+
+  // Selection mode for bulk operations
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkCaptionModalOpen, setBulkCaptionModalOpen] = useState(false);
+  const [bulkCaption, setBulkCaption] = useState('');
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false);
 
   const fetchPhotos = useCallback(async () => {
     // Fetch photos with signed URLs from API
@@ -171,6 +184,102 @@ export default function PhotosPage() {
     toast.success('Caption updated');
   };
 
+  // Bulk delete handler
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+
+    const confirmMsg = `Are you sure you want to delete ${selectedIds.size} photo${selectedIds.size !== 1 ? 's' : ''}? This cannot be undone.`;
+    if (!confirm(confirmMsg)) return;
+
+    setIsBulkProcessing(true);
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const photoId of selectedIds) {
+      try {
+        const response = await fetch(`/api/photos?id=${photoId}`, {
+          method: 'DELETE',
+        });
+        if (response.ok) {
+          successCount++;
+        } else {
+          errorCount++;
+        }
+      } catch {
+        errorCount++;
+      }
+    }
+
+    // Update local state - remove deleted photos
+    setPhotos((prev) => prev.filter((p) => !selectedIds.has(p.id)));
+    setHiddenPhotos((prev) => prev.filter((p) => !selectedIds.has(p.id)));
+
+    // Reset selection
+    setSelectedIds(new Set());
+    setSelectionMode(false);
+    setIsBulkProcessing(false);
+
+    if (errorCount === 0) {
+      toast.success(`Deleted ${successCount} photo${successCount !== 1 ? 's' : ''}`);
+    } else {
+      toast.error(`Deleted ${successCount}, failed ${errorCount}`);
+    }
+  };
+
+  // Bulk caption handler
+  const handleBulkCaption = async () => {
+    if (selectedIds.size === 0 || !bulkCaption.trim()) return;
+
+    setIsBulkProcessing(true);
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const photoId of selectedIds) {
+      try {
+        const response = await fetch('/api/photos', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: photoId, caption: bulkCaption.trim() }),
+        });
+        if (response.ok) {
+          successCount++;
+        } else {
+          errorCount++;
+        }
+      } catch {
+        errorCount++;
+      }
+    }
+
+    // Update local state
+    const newCaption = bulkCaption.trim();
+    setPhotos((prev) =>
+      prev.map((p) => (selectedIds.has(p.id) ? { ...p, caption: newCaption } : p))
+    );
+    setHiddenPhotos((prev) =>
+      prev.map((p) => (selectedIds.has(p.id) ? { ...p, caption: newCaption } : p))
+    );
+
+    // Reset
+    setBulkCaptionModalOpen(false);
+    setBulkCaption('');
+    setSelectedIds(new Set());
+    setSelectionMode(false);
+    setIsBulkProcessing(false);
+
+    if (errorCount === 0) {
+      toast.success(`Updated caption on ${successCount} photo${successCount !== 1 ? 's' : ''}`);
+    } else {
+      toast.error(`Updated ${successCount}, failed ${errorCount}`);
+    }
+  };
+
+  // Exit selection mode
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  };
+
   const workstreamOptions = buildWorkstreamOptions(workstreams, {
     allLabel: 'All Workstreams',
     allValue: 'all',
@@ -201,27 +310,72 @@ export default function PhotosPage() {
     <div className="min-h-screen">
       <Header
         title="Photos"
-        subtitle={`${photos.length} photo${photos.length !== 1 ? 's' : ''} across workstreams`}
+        subtitle={selectionMode
+          ? `${selectedIds.size} selected`
+          : `${photos.length} photo${photos.length !== 1 ? 's' : ''} across workstreams`
+        }
         actions={
-          <div className="flex items-center gap-3">
+          selectionMode ? (
             <div className="flex items-center gap-2">
-              <FunnelIcon className="w-4 h-4 text-gray-400" />
-              <Select
-                options={workstreamOptions}
-                value={workstreamFilter}
-                onChange={setWorkstreamFilter}
-                className="w-48"
-              />
+              {selectedIds.size > 0 && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setBulkCaptionModalOpen(true)}
+                    disabled={isBulkProcessing}
+                  >
+                    <PencilIcon className="w-4 h-4 mr-2" />
+                    Set Caption
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={handleBulkDelete}
+                    disabled={isBulkProcessing}
+                    className="text-red-600 hover:text-red-700"
+                  >
+                    <TrashIcon className="w-4 h-4 mr-2" />
+                    Delete
+                  </Button>
+                </>
+              )}
+              <Button size="sm" variant="secondary" onClick={exitSelectionMode}>
+                <XMarkIcon className="w-4 h-4 mr-2" />
+                Cancel
+              </Button>
             </div>
-            {canEdit && (
-              <Link href="/photos/upload">
-                <Button size="sm">
-                  <PlusIcon className="w-4 h-4 mr-2" />
-                  Upload Photos
+          ) : (
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <FunnelIcon className="w-4 h-4 text-gray-400" />
+                <Select
+                  options={workstreamOptions}
+                  value={workstreamFilter}
+                  onChange={setWorkstreamFilter}
+                  className="w-48"
+                />
+              </div>
+              {canEdit && photos.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setSelectionMode(true)}
+                >
+                  <CheckIcon className="w-4 h-4 mr-2" />
+                  Select
                 </Button>
-              </Link>
-            )}
-          </div>
+              )}
+              {canEdit && (
+                <Link href="/photos/upload">
+                  <Button size="sm">
+                    <PlusIcon className="w-4 h-4 mr-2" />
+                    Upload
+                  </Button>
+                </Link>
+              )}
+            </div>
+          )
         }
       />
 
@@ -281,6 +435,9 @@ export default function PhotosPage() {
               onDelete={handleDelete}
               onCaptionUpdate={handleCaptionUpdate}
               onToggleHidden={canAdmin ? handleToggleHidden : undefined}
+              selectionMode={selectionMode}
+              selectedIds={selectedIds}
+              onSelectionChange={setSelectedIds}
             />
           </>
         ) : (
@@ -306,10 +463,53 @@ export default function PhotosPage() {
               onDelete={handleDelete}
               onCaptionUpdate={handleCaptionUpdate}
               onToggleHidden={handleToggleHidden}
+              selectionMode={selectionMode}
+              selectedIds={selectedIds}
+              onSelectionChange={setSelectedIds}
             />
           </div>
         )}
       </div>
+
+      {/* Bulk Caption Modal */}
+      <Modal
+        open={bulkCaptionModalOpen}
+        onClose={() => {
+          setBulkCaptionModalOpen(false);
+          setBulkCaption('');
+        }}
+        title="Set Caption"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            This will set the same caption on {selectedIds.size} selected photo{selectedIds.size !== 1 ? 's' : ''}.
+          </p>
+          <Input
+            label="Caption"
+            value={bulkCaption}
+            onChange={(e) => setBulkCaption(e.target.value)}
+            placeholder="Enter caption for all selected photos..."
+          />
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setBulkCaptionModalOpen(false);
+                setBulkCaption('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleBulkCaption}
+              disabled={!bulkCaption.trim() || isBulkProcessing}
+            >
+              {isBulkProcessing ? 'Updating...' : 'Apply Caption'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -10,6 +10,7 @@ import {
   ExclamationCircleIcon,
   ArrowUpTrayIcon,
   DocumentIcon,
+  FilmIcon,
 } from '@heroicons/react/24/outline';
 import { cn } from '@/lib/utils';
 
@@ -25,15 +26,21 @@ interface PhotoUploaderProps {
   onUploadComplete?: (photos: { id: string; storage_path: string }[]) => void;
 }
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB (larger for videos)
 const MAX_IMAGE_SIZE_FOR_COMPRESSION = 10 * 1024 * 1024; // 10MB - compress images under this
 const MAX_DIMENSION = 2048;
 const TARGET_SIZE = 3.5 * 1024 * 1024; // 3.5MB for API upload
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/webm', 'video/x-msvideo', 'video/x-matroska', 'video/x-m4v', 'video/ogg'];
 
 // Check if file is an image
 function isImageFile(file: File): boolean {
   return IMAGE_TYPES.includes(file.type) || file.type.startsWith('image/');
+}
+
+// Check if file is a video
+function isVideoFile(file: File): boolean {
+  return VIDEO_TYPES.includes(file.type) || file.type.startsWith('video/');
 }
 
 // Extract EXIF date from JPEG before compression strips it
@@ -491,12 +498,25 @@ export function PhotoUploader({ workstreamId, onUploadComplete }: PhotoUploaderP
                   className="w-full h-full object-cover"
                 />
               ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center p-2">
-                  <DocumentIcon className="w-12 h-12 text-gray-400 mb-2" />
-                  <p className="text-xs text-gray-600 text-center truncate w-full px-2">
+                <div className={cn(
+                  "w-full h-full flex flex-col items-center justify-center p-2",
+                  isVideoFile(file) ? "bg-gray-800" : "bg-gray-100"
+                )}>
+                  {isVideoFile(file) ? (
+                    <FilmIcon className="w-12 h-12 text-gray-400 mb-2" />
+                  ) : (
+                    <DocumentIcon className="w-12 h-12 text-gray-400 mb-2" />
+                  )}
+                  <p className={cn(
+                    "text-xs text-center truncate w-full px-2",
+                    isVideoFile(file) ? "text-gray-300" : "text-gray-600"
+                  )}>
                     {file.name}
                   </p>
-                  <p className="text-xs text-gray-400">
+                  <p className={cn(
+                    "text-xs",
+                    isVideoFile(file) ? "text-gray-500" : "text-gray-400"
+                  )}>
                     {(file.size / (1024 * 1024)).toFixed(1)} MB
                   </p>
                 </div>

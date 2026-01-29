@@ -19,9 +19,31 @@ import { formatDate } from '@/lib/utils';
 // Image file extensions that can be previewed
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'];
 
+// Video file extensions that can be played
+const VIDEO_EXTENSIONS = ['mp4', 'mov', 'webm', 'avi', 'mkv', 'm4v', 'ogv'];
+
 function isImageFile(filename: string): boolean {
   const ext = filename.split('.').pop()?.toLowerCase() || '';
   return IMAGE_EXTENSIONS.includes(ext);
+}
+
+function isVideoFile(filename: string): boolean {
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+  return VIDEO_EXTENSIONS.includes(ext);
+}
+
+function getVideoMimeType(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+  const mimeTypes: Record<string, string> = {
+    mp4: 'video/mp4',
+    mov: 'video/quicktime',
+    webm: 'video/webm',
+    avi: 'video/x-msvideo',
+    mkv: 'video/x-matroska',
+    m4v: 'video/x-m4v',
+    ogv: 'video/ogg',
+  };
+  return mimeTypes[ext] || 'video/mp4';
 }
 
 function getFileExtension(filename: string): string {
@@ -331,7 +353,7 @@ export function PhotoLightbox({
         </button>
       )}
 
-      {/* Image or Document Preview */}
+      {/* Image, Video, or Document Preview */}
       <div
         className="relative max-w-[90vw] max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
@@ -345,8 +367,24 @@ export function PhotoLightbox({
             className="max-w-full max-h-[85vh] object-contain"
             priority
           />
+        ) : isVideoFile(currentPhoto.original_filename) ? (
+          /* Video player */
+          <video
+            key={currentPhoto.id}
+            controls
+            autoPlay
+            playsInline
+            className="max-w-full max-h-[85vh] rounded-lg"
+            style={{ maxWidth: '90vw', maxHeight: '85vh' }}
+          >
+            <source
+              src={currentPhoto.url}
+              type={getVideoMimeType(currentPhoto.original_filename)}
+            />
+            Your browser does not support the video tag.
+          </video>
         ) : (
-          /* Non-image file preview */
+          /* Non-image/video file preview */
           <div className="flex flex-col items-center justify-center bg-gray-800 rounded-lg p-12 min-w-[300px]">
             <div className="w-24 h-24 bg-gray-700 rounded-lg flex items-center justify-center mb-4">
               <DocumentIcon className="w-12 h-12 text-gray-400" />
