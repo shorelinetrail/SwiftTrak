@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Header } from '@/components/layout/header';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -62,6 +63,7 @@ const getStatusLabel = (status: VendorActivityStatus): string => {
 };
 
 export default function VendorActivitiesPage() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [activities, setActivities] = useState<VendorActivityWithRelations[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -414,20 +416,18 @@ export default function VendorActivitiesPage() {
                     return (
                       <tr
                         key={activity.id}
-                        className="hover:bg-gray-50 transition-colors"
+                        className="hover:bg-gray-50 transition-colors cursor-pointer"
+                        onClick={() => router.push(`/vendors/${activity.vendor_id}`)}
                       >
                         <td className="px-4 py-3 whitespace-nowrap">
-                          <Link
-                            href={`/vendors/${activity.vendor_id}`}
-                            className="text-sm font-medium text-gray-900 hover:text-red-600"
-                          >
+                          <div className="text-sm font-medium text-gray-900">
                             {activity.vendor?.vendor_number && (
                               <span className="text-xs font-mono text-gray-500 block">
                                 {activity.vendor.vendor_number}
                               </span>
                             )}
                             {activity.vendor?.name}
-                          </Link>
+                          </div>
                         </td>
                         <td className="px-4 py-3">
                           <p className="text-sm text-gray-900 max-w-xs truncate" title={activity.description}>
