@@ -19,6 +19,7 @@ import {
   MagnifyingGlassIcon,
   TableCellsIcon,
   Squares2X2Icon,
+  ClipboardDocumentListIcon,
 } from '@heroicons/react/24/outline';
 import type { Vendor, VendorActivity, VendorContact } from '@/types/database';
 
@@ -133,6 +134,13 @@ function VendorsPageContent() {
         subtitle={`${filteredVendors.length} vendor${filteredVendors.length !== 1 ? 's' : ''}`}
         actions={
           <div className="flex items-center gap-2">
+            <Link href="/vendors/activities">
+              <Button variant="secondary" size="sm">
+                <ClipboardDocumentListIcon className="w-4 h-4 mr-2" />
+                <span className="hidden sm:inline">All Activities</span>
+                <span className="sm:hidden">Activities</span>
+              </Button>
+            </Link>
             {/* View Toggle */}
             <div className="flex rounded-lg border border-gray-200 p-1">
               <button
