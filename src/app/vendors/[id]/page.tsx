@@ -80,6 +80,7 @@ export default function VendorDetailPage() {
 
   const [activityForm, setActivityForm] = useState({
     description: '',
+    purchase_requisition: '',
     purchase_order: '',
     purchase_order_value: '',
     start_date: '',
@@ -345,6 +346,7 @@ export default function VendorDetailPage() {
       const activityData = {
         vendor_id: vendorId,
         description: activityForm.description.trim(),
+        purchase_requisition: activityForm.purchase_requisition.trim() || null,
         purchase_order: activityForm.purchase_order.trim() || null,
         purchase_order_value: activityForm.purchase_order_value ? parseFloat(activityForm.purchase_order_value) : null,
         provisional_start_date: activityForm.dates_confirmed ? null : (activityForm.start_date || null),
@@ -490,6 +492,7 @@ export default function VendorDetailPage() {
     const hasConfirmedDates = !!(activity.confirmed_start_date || activity.confirmed_end_date);
     setActivityForm({
       description: activity.description,
+      purchase_requisition: activity.purchase_requisition || '',
       purchase_order: activity.purchase_order || '',
       purchase_order_value: activity.purchase_order_value?.toString() || '',
       start_date: hasConfirmedDates
@@ -508,6 +511,7 @@ export default function VendorDetailPage() {
   const resetActivityForm = () => {
     setActivityForm({
       description: '',
+      purchase_requisition: '',
       purchase_order: '',
       purchase_order_value: '',
       start_date: '',
@@ -765,6 +769,12 @@ export default function VendorDetailPage() {
                           </div>
 
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                            {activity.purchase_requisition && (
+                              <div>
+                                <span className="text-gray-500">PR Number</span>
+                                <p className="font-medium">{activity.purchase_requisition}</p>
+                              </div>
+                            )}
                             {activity.purchase_order && (
                               <div>
                                 <span className="text-gray-500">PO Number</span>
@@ -1063,9 +1073,15 @@ export default function VendorDetailPage() {
             required
           />
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <Input
-              label="Purchase Order Number"
+              label="Purchase Requisition"
+              value={activityForm.purchase_requisition}
+              onChange={(e) => setActivityForm({ ...activityForm, purchase_requisition: e.target.value })}
+              placeholder="PR-12345"
+            />
+            <Input
+              label="Purchase Order"
               value={activityForm.purchase_order}
               onChange={(e) => setActivityForm({ ...activityForm, purchase_order: e.target.value })}
               placeholder="PO-12345"

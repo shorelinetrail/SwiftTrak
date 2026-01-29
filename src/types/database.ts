@@ -324,6 +324,7 @@ export interface VendorActivity {
   id: string;
   vendor_id: string;
   description: string;
+  purchase_requisition?: string;
   purchase_order?: string;
   purchase_order_value?: number;
   provisional_start_date?: string;
