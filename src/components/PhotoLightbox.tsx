@@ -20,7 +20,7 @@ import { formatDate } from '@/lib/utils';
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'];
 
 // Video file extensions that can be played
-const VIDEO_EXTENSIONS = ['mp4', 'mov', 'webm', 'avi', 'mkv', 'm4v', 'ogv'];
+const VIDEO_EXTENSIONS = ['mp4', 'mov', 'webm', 'avi', 'mkv', 'm4v', 'ogv', 'wmv'];
 
 function isImageFile(filename: string): boolean {
   const ext = filename.split('.').pop()?.toLowerCase() || '';
@@ -42,6 +42,7 @@ function getVideoMimeType(filename: string): string {
     mkv: 'video/x-matroska',
     m4v: 'video/x-m4v',
     ogv: 'video/ogg',
+    wmv: 'video/x-ms-wmv',
   };
   return mimeTypes[ext] || 'video/mp4';
 }

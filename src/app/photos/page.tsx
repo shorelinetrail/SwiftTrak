@@ -33,7 +33,7 @@ import type { WorkstreamPhoto, Workstream, User } from '@/types/database';
 
 // File type detection
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'];
-const VIDEO_EXTENSIONS = ['mp4', 'mov', 'webm', 'avi', 'mkv', 'm4v', 'ogv'];
+const VIDEO_EXTENSIONS = ['mp4', 'mov', 'webm', 'avi', 'mkv', 'm4v', 'ogv', 'wmv'];
 
 function getFileType(filename: string): 'photo' | 'video' | 'document' {
   const ext = filename.split('.').pop()?.toLowerCase() || '';
