@@ -23,9 +23,26 @@ import {
   XMarkIcon,
   TrashIcon,
   PencilIcon,
+  PhotoIcon,
+  FilmIcon,
+  DocumentIcon,
+  Squares2X2Icon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import type { WorkstreamPhoto, Workstream, User } from '@/types/database';
+
+// File type detection
+const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'];
+const VIDEO_EXTENSIONS = ['mp4', 'mov', 'webm', 'avi', 'mkv', 'm4v', 'ogv'];
+
+function getFileType(filename: string): 'photo' | 'video' | 'document' {
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+  if (IMAGE_EXTENSIONS.includes(ext)) return 'photo';
+  if (VIDEO_EXTENSIONS.includes(ext)) return 'video';
+  return 'document';
+}
+
+type FileTypeFilter = 'all' | 'photos' | 'videos' | 'documents';
 
 type PhotoWithRelations = WorkstreamPhoto & {
   workstream?: Workstream;
@@ -42,6 +59,7 @@ export default function PhotosPage() {
   const [photos, setPhotos] = useState<PhotoWithRelations[]>([]);
   const [hiddenPhotos, setHiddenPhotos] = useState<PhotoWithRelations[]>([]);
   const [workstreamFilter, setWorkstreamFilter] = useState<string>('all');
+  const [fileTypeFilter, setFileTypeFilter] = useState<FileTypeFilter>('all');
   const [activeTab, setActiveTab] = useState<'all' | 'hidden'>('all');
 
   // Selection mode for bulk operations
@@ -288,8 +306,31 @@ export default function PhotosPage() {
     }),
   });
 
+  // Filter photos by file type
+  const filterByFileType = (items: PhotoWithRelations[]) => {
+    if (fileTypeFilter === 'all') return items;
+    return items.filter((p) => {
+      const type = getFileType(p.original_filename);
+      if (fileTypeFilter === 'photos') return type === 'photo';
+      if (fileTypeFilter === 'videos') return type === 'video';
+      if (fileTypeFilter === 'documents') return type === 'document';
+      return true;
+    });
+  };
+
+  const filteredPhotos = filterByFileType(photos);
+  const filteredHiddenPhotos = filterByFileType(hiddenPhotos);
+
+  // Get file type counts
+  const typeCounts = {
+    all: photos.length,
+    photos: photos.filter((p) => getFileType(p.original_filename) === 'photo').length,
+    videos: photos.filter((p) => getFileType(p.original_filename) === 'video').length,
+    documents: photos.filter((p) => getFileType(p.original_filename) === 'document').length,
+  };
+
   // Get counts per workstream for stats
-  const photoCountByWorkstream = photos.reduce((acc, photo) => {
+  const photoCountByWorkstream = filteredPhotos.reduce((acc, photo) => {
     const wsId = photo.workstream_id;
     acc[wsId] = (acc[wsId] || 0) + 1;
     return acc;
@@ -298,7 +339,7 @@ export default function PhotosPage() {
   if (loading) {
     return (
       <div className="min-h-screen">
-        <Header title="Photos" subtitle="Loading..." />
+        <Header title="Files" subtitle="Loading..." />
         <div className="p-6 flex items-center justify-center h-64">
           <LoadingSpinner size="lg" />
         </div>
@@ -309,10 +350,10 @@ export default function PhotosPage() {
   return (
     <div className="min-h-screen">
       <Header
-        title="Photos"
+        title="Files"
         subtitle={selectionMode
           ? `${selectedIds.size} selected`
-          : `${photos.length} photo${photos.length !== 1 ? 's' : ''} across workstreams`
+          : `${photos.length} file${photos.length !== 1 ? 's' : ''} across workstreams`
         }
         actions={
           selectionMode ? (
@@ -380,17 +421,45 @@ export default function PhotosPage() {
       />
 
       <div className="p-6 space-y-6">
-        {/* Admin tabs for all/hidden photos */}
+        {/* Admin tabs for all/hidden files */}
         {canAdmin && (
           <Tabs
             activeTab={activeTab}
             onChange={(id) => setActiveTab(id as 'all' | 'hidden')}
             tabs={[
-              { id: 'all', label: 'All Photos', count: photos.length },
+              { id: 'all', label: 'All Files', count: photos.length },
               { id: 'hidden', label: 'Hidden', count: hiddenPhotos.length, icon: <EyeSlashIcon className="w-4 h-4" /> },
             ]}
           />
         )}
+
+        {/* File type filter tabs */}
+        <div className="flex flex-wrap items-center gap-2">
+          {[
+            { id: 'all' as FileTypeFilter, label: 'All', icon: <Squares2X2Icon className="w-4 h-4" />, count: typeCounts.all },
+            { id: 'photos' as FileTypeFilter, label: 'Photos', icon: <PhotoIcon className="w-4 h-4" />, count: typeCounts.photos },
+            { id: 'videos' as FileTypeFilter, label: 'Videos', icon: <FilmIcon className="w-4 h-4" />, count: typeCounts.videos },
+            { id: 'documents' as FileTypeFilter, label: 'Documents', icon: <DocumentIcon className="w-4 h-4" />, count: typeCounts.documents },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setFileTypeFilter(tab.id)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                fileTypeFilter === tab.id
+                  ? 'bg-red-100 text-red-700'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
+              {tab.count > 0 && (
+                <span className={`ml-1 text-xs ${fileTypeFilter === tab.id ? 'text-red-600' : 'text-gray-500'}`}>
+                  ({tab.count})
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
 
         {activeTab === 'all' ? (
           <>
@@ -413,20 +482,22 @@ export default function PhotosPage() {
                         {ws.name}
                       </p>
                       <p className="text-xs text-gray-500">
-                        {photoCountByWorkstream[ws.id]} photo{photoCountByWorkstream[ws.id] !== 1 ? 's' : ''}
+                        {photoCountByWorkstream[ws.id]} file{photoCountByWorkstream[ws.id] !== 1 ? 's' : ''}
                       </p>
                     </button>
                   ))}
               </div>
             )}
 
-            {/* Photo gallery - signed URLs are embedded in photos data */}
+            {/* File gallery - signed URLs are embedded in photos data */}
             <PhotoGallery
-              photos={photos}
+              photos={filteredPhotos}
               emptyMessage={
-                workstreamFilter === 'all'
-                  ? 'No photos uploaded yet'
-                  : 'No photos in this workstream'
+                fileTypeFilter !== 'all'
+                  ? `No ${fileTypeFilter} found`
+                  : workstreamFilter === 'all'
+                    ? 'No files uploaded yet'
+                    : 'No files in this workstream'
               }
               onUploadClick={() => router.push('/photos/upload')}
               canUpload={canEdit}
@@ -441,22 +512,22 @@ export default function PhotosPage() {
             />
           </>
         ) : (
-          /* Hidden photos (admin only) */
+          /* Hidden files (admin only) */
           <div className="space-y-4">
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <div className="flex items-start gap-3">
                 <EyeSlashIcon className="w-5 h-5 text-yellow-600 mt-0.5" />
                 <div>
-                  <p className="text-sm font-medium text-yellow-800">Hidden Photos</p>
+                  <p className="text-sm font-medium text-yellow-800">Hidden Files</p>
                   <p className="text-sm text-yellow-700 mt-1">
-                    These photos are only visible to administrators. Click the eye icon in the lightbox to unhide a photo.
+                    These files are only visible to administrators. Click the eye icon in the lightbox to unhide a file.
                   </p>
                 </div>
               </div>
             </div>
             <PhotoGallery
-              photos={hiddenPhotos}
-              emptyMessage="No hidden photos"
+              photos={filteredHiddenPhotos}
+              emptyMessage="No hidden files"
               canUpload={false}
               canEdit={canEdit}
               isAdmin={canAdmin}
@@ -483,13 +554,13 @@ export default function PhotosPage() {
       >
         <div className="space-y-4">
           <p className="text-sm text-gray-600">
-            This will set the same caption on {selectedIds.size} selected photo{selectedIds.size !== 1 ? 's' : ''}.
+            This will set the same caption on {selectedIds.size} selected file{selectedIds.size !== 1 ? 's' : ''}.
           </p>
           <Input
             label="Caption"
             value={bulkCaption}
             onChange={(e) => setBulkCaption(e.target.value)}
-            placeholder="Enter caption for all selected photos..."
+            placeholder="Enter caption for all selected files..."
           />
           <div className="flex justify-end gap-2">
             <Button

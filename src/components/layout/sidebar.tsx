@@ -22,7 +22,7 @@ import {
   BuildingOfficeIcon,
   Bars3Icon,
   XMarkIcon,
-  PhotoIcon,
+  FolderIcon,
 } from '@heroicons/react/24/outline';
 import { Avatar } from '../ui/avatar';
 
@@ -44,7 +44,7 @@ const navigation: NavItem[] = [
   { name: 'Decisions', href: '/decisions', icon: DocumentTextIcon },
   { name: 'Milestones', href: '/milestones', icon: FlagIcon },
   { name: 'Vendors', href: '/vendors', icon: BuildingOfficeIcon },
-  { name: 'Photos', href: '/photos', icon: PhotoIcon },
+  { name: 'Files', href: '/photos', icon: FolderIcon },
   { name: 'Gantt Chart', href: '/gantt', icon: ChartBarIcon, featureKey: 'gantt_chart_enabled' },
 ];
 

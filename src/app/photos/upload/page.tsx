@@ -43,14 +43,14 @@ export default function PhotoUploadPage() {
   // Redirect if no edit permission
   useEffect(() => {
     if (!loading && !canEdit) {
-      toast.error('You do not have permission to upload photos');
+      toast.error('You do not have permission to upload files');
       router.push('/photos');
     }
   }, [loading, canEdit, router]);
 
   const handleUploadComplete = (photos: { id: string; storage_path: string }[]) => {
     setUploadedCount((prev) => prev + photos.length);
-    toast.success(`${photos.length} photo${photos.length !== 1 ? 's' : ''} uploaded successfully`);
+    toast.success(`${photos.length} file${photos.length !== 1 ? 's' : ''} uploaded successfully`);
   };
 
   const workstreamOptions = buildWorkstreamOptions(workstreams, {
@@ -66,9 +66,9 @@ export default function PhotoUploadPage() {
     return (
       <div className="min-h-screen">
         <Header
-          title="Upload Photos"
+          title="Upload Files"
           breadcrumbs={[
-            { label: 'Photos', href: '/photos' },
+            { label: 'Files', href: '/photos' },
             { label: 'Upload' },
           ]}
         />
@@ -82,10 +82,10 @@ export default function PhotoUploadPage() {
   return (
     <div className="min-h-screen">
       <Header
-        title="Upload Photos"
-        subtitle="Add photos to document workstream progress"
+        title="Upload Files"
+        subtitle="Add photos, videos, and documents to workstreams"
         breadcrumbs={[
-          { label: 'Photos', href: '/photos' },
+          { label: 'Files', href: '/photos' },
           { label: 'Upload' },
         ]}
       />
@@ -103,7 +103,7 @@ export default function PhotoUploadPage() {
                 value={selectedWorkstream}
                 onChange={setSelectedWorkstream}
               />
-              <p className="mt-1 text-sm text-gray-500">Photos will be organized by workstream</p>
+              <p className="mt-1 text-sm text-gray-500">Files will be organized by workstream</p>
             </div>
 
             {selectedWorkstream && (
@@ -118,13 +118,13 @@ export default function PhotoUploadPage() {
             {uploadedCount > 0 && (
               <div className="flex items-center justify-between pt-4 border-t">
                 <p className="text-sm text-gray-600">
-                  {uploadedCount} photo{uploadedCount !== 1 ? 's' : ''} uploaded this session
+                  {uploadedCount} file{uploadedCount !== 1 ? 's' : ''} uploaded this session
                 </p>
                 <button
                   onClick={() => router.push('/photos')}
                   className="text-sm text-red-600 hover:text-red-700 font-medium"
                 >
-                  View Gallery →
+                  View Files →
                 </button>
               </div>
             )}
