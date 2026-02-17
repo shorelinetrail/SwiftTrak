@@ -55,6 +55,9 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
   };
 
   const config = statusConfig[status];
+  if (!config) {
+    return <Badge className={className}>{status}</Badge>;
+  }
 
   return (
     <Badge variant={config.variant} className={className}>
@@ -81,6 +84,13 @@ export function PriorityBadge({ priority, className }: PriorityBadgeProps) {
   };
 
   const config = priorityConfig[priority];
+  if (!config) {
+    return (
+      <span className={cn('inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-800', className)}>
+        {priority}
+      </span>
+    );
+  }
 
   return (
     <span
@@ -109,6 +119,13 @@ export function RiskBadge({ risk, className }: RiskBadgeProps) {
   };
 
   const config = riskConfig[risk];
+  if (!config) {
+    return (
+      <span className={cn('inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-800', className)}>
+        {risk}
+      </span>
+    );
+  }
 
   return (
     <span
