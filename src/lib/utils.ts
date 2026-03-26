@@ -241,3 +241,68 @@ export function calculatePERT(
   const standardDeviation = (pessimistic - optimistic) / 6;
   return { expected, standardDeviation };
 }
+
+export function buildWorkstreamOptions<T extends { id: string; name: string; parent_id?: string | null }>(
+  workstreams: T[],
+  config: {
+    includeAll?: boolean;
+    allLabel?: string;
+    allValue?: string;
+    labelFormat?: 'hierarchy' | 'path';
+    excludeParentsWithChildren?: boolean;
+    mapOption?: (ws: T, isChild: boolean) => Record<string, unknown>;
+  } = {}
+): Array<{ value: string; label: string } & Record<string, unknown>> {
+  const { includeAll = true, allLabel = 'All Workstreams', allValue = 'all', labelFormat = 'hierarchy', excludeParentsWithChildren = false, mapOption } = config;
+  const options: Array<{ value: string; label: string } & Record<string, unknown>> = [];
+
+  if (includeAll) {
+    options.push({ value: allValue, label: allLabel });
+  }
+
+  const workstreamMap = new Map<string, T>();
+  workstreams.forEach(ws => workstreamMap.set(ws.id, ws));
+
+  const rootWorkstreams = workstreams
+    .filter(ws => !ws.parent_id)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const childrenMap = new Map<string, T[]>();
+  workstreams.forEach(ws => {
+    if (ws.parent_id) {
+      const existing = childrenMap.get(ws.parent_id) || [];
+      existing.push(ws);
+      childrenMap.set(ws.parent_id, existing);
+    }
+  });
+
+  rootWorkstreams.forEach(root => {
+    const children = childrenMap.get(root.id) || [];
+    const hasChildren = children.length > 0;
+
+    if (!excludeParentsWithChildren || !hasChildren) {
+      const rootOption: { value: string; label: string } & Record<string, unknown> = {
+        value: root.id,
+        label: root.name,
+        ...(mapOption ? mapOption(root, false) : {}),
+      };
+      options.push(rootOption);
+    }
+
+    children
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .forEach(child => {
+        const childLabel = labelFormat === 'path'
+          ? `${root.name}/${child.name}`
+          : `— ${child.name}`;
+        const childOption: { value: string; label: string } & Record<string, unknown> = {
+          value: child.id,
+          label: childLabel,
+          ...(mapOption ? mapOption(child, true) : {}),
+        };
+        options.push(childOption);
+      });
+  });
+
+  return options;
+}

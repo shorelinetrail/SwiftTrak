@@ -203,6 +203,26 @@ export interface Attachment {
   uploader?: User;
 }
 
+export interface WorkstreamPhoto {
+  id: string;
+  workstream_id: string;
+  storage_path: string;
+  thumbnail_path?: string;
+  original_filename: string;
+  taken_at?: string;
+  caption?: string;
+  file_size?: number;
+  width?: number;
+  height?: number;
+  is_hidden?: boolean;
+  uploaded_by?: string;
+  created_at: string;
+  updated_at: string;
+  // Joined fields
+  workstream?: Workstream;
+  uploader?: User;
+}
+
 export interface Mention {
   id: string;
   entity_type: 'action_update' | 'query_response' | 'decision';

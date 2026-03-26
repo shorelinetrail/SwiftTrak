@@ -18,6 +18,7 @@ import {
   BellIcon,
   SwatchIcon,
   PaperClipIcon,
+  FolderIcon,
 } from '@heroicons/react/24/outline';
 import { Avatar } from '../ui/avatar';
 
@@ -29,6 +30,7 @@ const navigation = [
   { name: 'Decisions', href: '/decisions', icon: DocumentTextIcon },
   { name: 'Milestones', href: '/milestones', icon: FlagIcon },
   { name: 'Gantt Chart', href: '/gantt', icon: ChartBarIcon },
+  { name: 'Files', href: '/photos', icon: FolderIcon },
   { name: 'Attachments', href: '/attachments', icon: PaperClipIcon },
 ];
 

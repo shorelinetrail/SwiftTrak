@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
@@ -18,9 +19,10 @@ interface HeaderProps {
   title?: string;
   subtitle?: string;
   actions?: React.ReactNode;
+  breadcrumbs?: Array<{ label: string; href?: string }>;
 }
 
-export function Header({ title, subtitle, actions }: HeaderProps) {
+export function Header({ title, subtitle, actions, breadcrumbs }: HeaderProps) {
   const router = useRouter();
   const { user, unreadCount, isConnected } = useAppStore();
   const [searchQuery, setSearchQuery] = useState('');
@@ -43,6 +45,22 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
       <div className="flex h-16 items-center justify-between px-6">
         {/* Title */}
         <div>
+          {breadcrumbs && breadcrumbs.length > 0 && (
+            <nav className="flex items-center gap-1 text-sm text-gray-500 mb-0.5">
+              {breadcrumbs.map((crumb, i) => (
+                <span key={i} className="flex items-center gap-1">
+                  {i > 0 && <span>/</span>}
+                  {crumb.href ? (
+                    <Link href={crumb.href} className="hover:text-gray-700">
+                      {crumb.label}
+                    </Link>
+                  ) : (
+                    <span>{crumb.label}</span>
+                  )}
+                </span>
+              ))}
+            </nav>
+          )}
           {title && (
             <div className="flex items-center gap-3">
               <h1 className="text-xl font-semibold text-gray-900">{title}</h1>
