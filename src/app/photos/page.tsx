@@ -30,6 +30,7 @@ import {
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { ArrowDownTrayIcon } from '@heroicons/react/24/outline';
+import { bulkDownloadFiles, type DownloadProgress } from '@/lib/bulk-download';
 import type { WorkstreamPhoto, Workstream, User } from '@/types/database';
 
 // File type detection
@@ -69,6 +70,7 @@ export default function PhotosPage() {
   const [bulkCaptionModalOpen, setBulkCaptionModalOpen] = useState(false);
   const [bulkCaption, setBulkCaption] = useState('');
   const [isBulkProcessing, setIsBulkProcessing] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
 
   const fetchPhotos = useCallback(async () => {
     // Fetch photos with signed URLs from API
@@ -293,59 +295,43 @@ export default function PhotosPage() {
     }
   };
 
-  // Bulk download handler
+  // Bulk download handler — refreshes signed URLs then downloads with concurrency + retries
   const handleBulkDownload = async () => {
     const selected = photos.filter((p) => selectedIds.has(p.id));
     if (selected.length === 0) return;
 
     setIsBulkProcessing(true);
+    setDownloadProgress({ total: selected.length, completed: 0, failed: 0, currentFile: 'Refreshing URLs...', phase: 'downloading' });
+
     try {
-      const JSZip = (await import('jszip')).default;
-      const zip = new JSZip();
-      const fileNameCounts = new Map<string, number>();
-
-      for (const photo of selected) {
-        const url = photo.url;
-        if (!url) continue;
-
-        try {
-          const response = await fetch(url);
-          if (!response.ok) continue;
-          const blob = await response.blob();
-
-          let fileName = photo.original_filename;
-          const count = fileNameCounts.get(fileName) || 0;
-          if (count > 0) {
-            const dotIndex = fileName.lastIndexOf('.');
-            if (dotIndex > 0) {
-              fileName = `${fileName.slice(0, dotIndex)} (${count})${fileName.slice(dotIndex)}`;
-            } else {
-              fileName = `${fileName} (${count})`;
-            }
-          }
-          fileNameCounts.set(photo.original_filename, count + 1);
-          zip.file(fileName, blob);
-        } catch {
-          console.warn(`Failed to fetch: ${photo.original_filename}`);
-        }
+      // Refresh signed URLs to avoid expiry during download
+      const freshResponse = await fetch(
+        workstreamFilter === 'all' ? '/api/photos' : `/api/photos?workstreamId=${workstreamFilter}`
+      );
+      let filesToDownload = selected;
+      if (freshResponse.ok) {
+        const freshPhotos = await freshResponse.json() as PhotoWithRelations[];
+        const freshMap = new Map(freshPhotos.map((p) => [p.id, p]));
+        filesToDownload = selected.map((p) => freshMap.get(p.id) || p);
       }
 
-      const content = await zip.generateAsync({ type: 'blob' });
-      const downloadUrl = URL.createObjectURL(content);
-      const link = document.createElement('a');
-      link.href = downloadUrl;
-      link.download = 'swifttrak-files.zip';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(downloadUrl);
+      const files = filesToDownload
+        .filter((p) => p.url)
+        .map((p) => ({ url: p.url!, filename: p.original_filename }));
 
-      toast.success(`Downloading ${selected.length} file${selected.length !== 1 ? 's' : ''}`);
+      const result = await bulkDownloadFiles(files, 'swifttrak-files', setDownloadProgress);
+
+      if (result.failed === 0) {
+        toast.success(`Downloaded ${result.succeeded} file${result.succeeded !== 1 ? 's' : ''}`);
+      } else {
+        toast.error(`Downloaded ${result.succeeded} of ${result.total} (${result.failed} failed)`);
+      }
     } catch (error) {
       console.error('Bulk download failed:', error);
       toast.error('Failed to download files');
     } finally {
       setIsBulkProcessing(false);
+      setDownloadProgress(null);
     }
   };
 
@@ -485,6 +471,37 @@ export default function PhotosPage() {
           )
         }
       />
+
+      {/* Download progress bar */}
+      {downloadProgress && (
+        <div className="mx-6 mt-4 bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-gray-700">
+              {downloadProgress.phase === 'zipping'
+                ? 'Creating zip file...'
+                : downloadProgress.phase === 'done'
+                  ? 'Download complete'
+                  : `Downloading files... ${downloadProgress.completed}/${downloadProgress.total}`}
+            </span>
+            <span className="text-sm text-gray-500">
+              {downloadProgress.failed > 0 && (
+                <span className="text-red-600">{downloadProgress.failed} failed</span>
+              )}
+            </span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div
+              className="bg-red-600 h-2 rounded-full transition-all duration-300"
+              style={{ width: `${Math.round((downloadProgress.completed / downloadProgress.total) * 100)}%` }}
+            />
+          </div>
+          {downloadProgress.phase === 'downloading' && downloadProgress.currentFile && (
+            <p className="text-xs text-gray-500 mt-1 truncate">
+              {downloadProgress.currentFile}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="p-6 space-y-6">
         {/* Admin tabs for all/hidden files */}

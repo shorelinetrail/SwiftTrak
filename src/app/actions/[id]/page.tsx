@@ -28,7 +28,7 @@ import {
   DocumentArrowDownIcon,
   ArrowDownTrayIcon,
 } from '@heroicons/react/24/outline';
-import { bulkDownloadAttachments } from '@/lib/bulk-download';
+import { bulkDownloadAttachments, type DownloadProgress } from '@/lib/bulk-download';
 import type { Action, ActionUpdate, ActionAudit, Workstream, User, Attachment, ActionStatus, Priority } from '@/types/database';
 
 type ActionWithRelations = Action & {
@@ -66,6 +66,7 @@ export default function ActionDetailPage() {
   const [completionComment, setCompletionComment] = useState('');
   const [editForm, setEditForm] = useState<Partial<Action>>({});
   const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
 
   const fetchAction = useCallback(async () => {
     const supabase = createClient();
@@ -308,15 +309,21 @@ export default function ActionDetailPage() {
   const handleBulkDownload = async () => {
     if (attachments.length === 0) return;
     setDownloading(true);
+    setDownloadProgress(null);
     try {
       const zipName = `${action?.title?.replace(/[^a-zA-Z0-9]/g, '_') || 'attachments'}-files`;
-      await bulkDownloadAttachments(attachments, zipName);
-      toast.success('Download started');
+      const result = await bulkDownloadAttachments(attachments, zipName, setDownloadProgress);
+      if (result.failed === 0) {
+        toast.success(`Downloaded ${result.succeeded} file${result.succeeded !== 1 ? 's' : ''}`);
+      } else {
+        toast.error(`Downloaded ${result.succeeded} of ${result.total} (${result.failed} failed)`);
+      }
     } catch (error) {
       console.error('Bulk download failed:', error);
       toast.error('Failed to download files');
     } finally {
       setDownloading(false);
+      setDownloadProgress(null);
     }
   };
 
@@ -540,6 +547,26 @@ export default function ActionDetailPage() {
               </div>
             </CardHeader>
             <CardContent>
+              {downloadProgress && (
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-gray-600">
+                      {downloadProgress.phase === 'zipping'
+                        ? 'Creating zip...'
+                        : `${downloadProgress.completed}/${downloadProgress.total} files`}
+                    </span>
+                    {downloadProgress.failed > 0 && (
+                      <span className="text-xs text-red-600">{downloadProgress.failed} failed</span>
+                    )}
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-1.5">
+                    <div
+                      className="bg-red-600 h-1.5 rounded-full transition-all duration-300"
+                      style={{ width: `${Math.round((downloadProgress.completed / downloadProgress.total) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
               {canEdit && (
                 <div className="mb-4">
                   <label className="block">

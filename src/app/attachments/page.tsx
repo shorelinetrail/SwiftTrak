@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { LoadingPage } from '@/components/ui/loading';
 import { formatDate } from '@/lib/utils';
-import { bulkDownloadAttachments } from '@/lib/bulk-download';
+import { bulkDownloadAttachments, type DownloadProgress } from '@/lib/bulk-download';
 import toast from 'react-hot-toast';
 import {
   ArrowDownTrayIcon,
@@ -35,6 +35,7 @@ export default function AttachmentsPage() {
   const [entityMap, setEntityMap] = useState<Record<string, EntityInfo>>({});
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
 
   // Filters
   const [entityTypeFilter, setEntityTypeFilter] = useState('all');
@@ -147,14 +148,20 @@ export default function AttachmentsPage() {
     }
 
     setDownloading(true);
+    setDownloadProgress(null);
     try {
-      await bulkDownloadAttachments(toDownload, 'swifttrak-attachments');
-      toast.success(`Download started (${toDownload.length} file${toDownload.length > 1 ? 's' : ''})`);
+      const result = await bulkDownloadAttachments(toDownload, 'swifttrak-attachments', setDownloadProgress);
+      if (result.failed === 0) {
+        toast.success(`Downloaded ${result.succeeded} file${result.succeeded !== 1 ? 's' : ''}`);
+      } else {
+        toast.error(`Downloaded ${result.succeeded} of ${result.total} (${result.failed} failed)`);
+      }
     } catch (error) {
       console.error('Bulk download failed:', error);
       toast.error('Failed to download files');
     } finally {
       setDownloading(false);
+      setDownloadProgress(null);
     }
   };
 
@@ -162,14 +169,20 @@ export default function AttachmentsPage() {
     if (filteredAttachments.length === 0) return;
 
     setDownloading(true);
+    setDownloadProgress(null);
     try {
-      await bulkDownloadAttachments(filteredAttachments, 'swifttrak-all-attachments');
-      toast.success(`Download started (${filteredAttachments.length} files)`);
+      const result = await bulkDownloadAttachments(filteredAttachments, 'swifttrak-all-attachments', setDownloadProgress);
+      if (result.failed === 0) {
+        toast.success(`Downloaded ${result.succeeded} file${result.succeeded !== 1 ? 's' : ''}`);
+      } else {
+        toast.error(`Downloaded ${result.succeeded} of ${result.total} (${result.failed} failed)`);
+      }
     } catch (error) {
       console.error('Bulk download failed:', error);
       toast.error('Failed to download files');
     } finally {
       setDownloading(false);
+      setDownloadProgress(null);
     }
   };
 
@@ -243,6 +256,31 @@ export default function AttachmentsPage() {
           </div>
         }
       />
+
+      {/* Download progress bar */}
+      {downloadProgress && (
+        <div className="mx-6 mt-4 bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-gray-700">
+              {downloadProgress.phase === 'zipping'
+                ? 'Creating zip file...'
+                : `Downloading files... ${downloadProgress.completed}/${downloadProgress.total}`}
+            </span>
+            {downloadProgress.failed > 0 && (
+              <span className="text-sm text-red-600">{downloadProgress.failed} failed</span>
+            )}
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div
+              className="bg-red-600 h-2 rounded-full transition-all duration-300"
+              style={{ width: `${Math.round((downloadProgress.completed / downloadProgress.total) * 100)}%` }}
+            />
+          </div>
+          {downloadProgress.phase === 'downloading' && downloadProgress.currentFile && (
+            <p className="text-xs text-gray-500 mt-1 truncate">{downloadProgress.currentFile}</p>
+          )}
+        </div>
+      )}
 
       <div className="p-6 space-y-6">
         {/* Filters */}
