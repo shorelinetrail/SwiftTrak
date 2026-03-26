@@ -26,7 +26,9 @@ import {
   PaperClipIcon,
   ChatBubbleLeftIcon,
   DocumentArrowDownIcon,
+  ArrowDownTrayIcon,
 } from '@heroicons/react/24/outline';
+import { bulkDownloadAttachments } from '@/lib/bulk-download';
 import type { Action, ActionUpdate, ActionAudit, Workstream, User, Attachment, ActionStatus, Priority } from '@/types/database';
 
 type ActionWithRelations = Action & {
@@ -63,6 +65,7 @@ export default function ActionDetailPage() {
   const [submittingUpdate, setSubmittingUpdate] = useState(false);
   const [completionComment, setCompletionComment] = useState('');
   const [editForm, setEditForm] = useState<Partial<Action>>({});
+  const [downloading, setDownloading] = useState(false);
 
   const fetchAction = useCallback(async () => {
     const supabase = createClient();
@@ -302,6 +305,21 @@ export default function ActionDetailPage() {
     }
   };
 
+  const handleBulkDownload = async () => {
+    if (attachments.length === 0) return;
+    setDownloading(true);
+    try {
+      const zipName = `${action?.title?.replace(/[^a-zA-Z0-9]/g, '_') || 'attachments'}-files`;
+      await bulkDownloadAttachments(attachments, zipName);
+      toast.success('Download started');
+    } catch (error) {
+      console.error('Bulk download failed:', error);
+      toast.error('Failed to download files');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   if (loading) {
     return <LoadingPage />;
   }
@@ -502,10 +520,24 @@ export default function ActionDetailPage() {
           {/* Attachments */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <PaperClipIcon className="w-5 h-5 text-gray-400" />
-                Attachments ({attachments.length})
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <PaperClipIcon className="w-5 h-5 text-gray-400" />
+                  Attachments ({attachments.length})
+                </CardTitle>
+                {attachments.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleBulkDownload}
+                    disabled={downloading}
+                    loading={downloading}
+                  >
+                    <ArrowDownTrayIcon className="w-4 h-4 mr-2" />
+                    {downloading ? 'Downloading...' : 'Download All'}
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               {canEdit && (

@@ -17,6 +17,7 @@ import {
   ChevronRightIcon,
   BellIcon,
   SwatchIcon,
+  PaperClipIcon,
 } from '@heroicons/react/24/outline';
 import { Avatar } from '../ui/avatar';
 
@@ -28,6 +29,7 @@ const navigation = [
   { name: 'Decisions', href: '/decisions', icon: DocumentTextIcon },
   { name: 'Milestones', href: '/milestones', icon: FlagIcon },
   { name: 'Gantt Chart', href: '/gantt', icon: ChartBarIcon },
+  { name: 'Attachments', href: '/attachments', icon: PaperClipIcon },
 ];
 
 const editNavigation = [
