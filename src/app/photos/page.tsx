@@ -28,6 +28,7 @@ import {
   DocumentIcon,
   Squares2X2Icon,
   ArrowDownTrayIcon,
+  ArrowPathIcon,
   ListBulletIcon,
   ViewColumnsIcon,
 } from '@heroicons/react/24/outline';
@@ -75,6 +76,7 @@ export default function PhotosPage() {
   const [bulkCaption, setBulkCaption] = useState('');
   const [isBulkProcessing, setIsBulkProcessing] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const fetchPhotos = useCallback(async () => {
     const url = workstreamFilter === 'all'
@@ -326,6 +328,12 @@ export default function PhotosPage() {
     setSelectedIds(new Set());
   };
 
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([fetchPhotos(), fetchHiddenPhotos()]);
+    setRefreshing(false);
+  };
+
   // Memoize expensive computations
   const workstreamOptions = useMemo(
     () => buildWorkstreamOptions(workstreams, { allLabel: 'All Workstreams', allValue: 'all' }),
@@ -429,6 +437,14 @@ export default function PhotosPage() {
             </div>
           ) : (
             <div className="flex items-center gap-3">
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                title="Refresh"
+              >
+                <ArrowPathIcon className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+              </button>
               <div className="flex items-center gap-2">
                 <FunnelIcon className="w-4 h-4 text-gray-400" />
                 <Select
