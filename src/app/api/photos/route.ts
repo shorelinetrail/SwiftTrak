@@ -39,7 +39,6 @@ export async function GET(request: NextRequest) {
         workstream:workstreams(id, name, color),
         uploader:users!workstream_photos_uploaded_by_fkey(id, full_name, avatar_url)
       `)
-      .order('taken_at', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false });
 
     if (workstreamId && workstreamId !== 'all') {
