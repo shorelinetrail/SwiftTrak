@@ -66,36 +66,55 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Generate signed URLs for each photo (valid for 1 hour)
-    const SIGNED_URL_EXPIRY = 60 * 60; // 1 hour in seconds
+    // Generate signed URLs in batch (single request instead of N individual calls)
+    const SIGNED_URL_EXPIRY = 60 * 60; // 1 hour
 
-    const photosWithSignedUrls = await Promise.all(
-      (data || []).map(async (photo) => {
-        // Generate signed URL for main image using admin client
-        const { data: mainUrlData, error: mainUrlError } = await adminClient.storage
-          .from('photos')
-          .createSignedUrl(photo.storage_path, SIGNED_URL_EXPIRY);
+    const photos = data || [];
+    const mainPaths = photos.map((p) => p.storage_path);
+    const thumbPaths = photos
+      .filter((p) => p.thumbnail_path)
+      .map((p) => p.thumbnail_path as string);
 
-        if (mainUrlError) {
-          console.error('Error generating signed URL for', photo.storage_path, mainUrlError);
+    // Batch sign all URLs in just 1-2 requests
+    const [mainSigned, thumbSigned] = await Promise.all([
+      mainPaths.length > 0
+        ? adminClient.storage.from('photos').createSignedUrls(mainPaths, SIGNED_URL_EXPIRY)
+        : { data: [], error: null },
+      thumbPaths.length > 0
+        ? adminClient.storage.from('photos').createSignedUrls(thumbPaths, SIGNED_URL_EXPIRY)
+        : { data: [], error: null },
+    ]);
+
+    // Build lookup maps for O(1) access
+    const mainUrlMap = new Map<string, string>();
+    if (mainSigned.data) {
+      for (const item of mainSigned.data) {
+        if (item.signedUrl && item.path) {
+          mainUrlMap.set(item.path, item.signedUrl);
         }
+      }
+    }
 
-        // Generate signed URL for thumbnail if it exists
-        let thumbnailUrl = null;
-        if (photo.thumbnail_path) {
-          const { data: thumbUrlData } = await adminClient.storage
-            .from('photos')
-            .createSignedUrl(photo.thumbnail_path, SIGNED_URL_EXPIRY);
-          thumbnailUrl = thumbUrlData?.signedUrl || null;
+    const thumbUrlMap = new Map<string, string>();
+    if (thumbSigned.data) {
+      for (const item of thumbSigned.data) {
+        if (item.signedUrl && item.path) {
+          thumbUrlMap.set(item.path, item.signedUrl);
         }
+      }
+    }
 
-        return {
-          ...photo,
-          url: mainUrlData?.signedUrl || null,
-          thumbnail_url: thumbnailUrl || mainUrlData?.signedUrl || null,
-        };
-      })
-    );
+    const photosWithSignedUrls = photos.map((photo) => {
+      const mainUrl = mainUrlMap.get(photo.storage_path) || null;
+      const thumbUrl = photo.thumbnail_path
+        ? thumbUrlMap.get(photo.thumbnail_path) || null
+        : null;
+      return {
+        ...photo,
+        url: mainUrl,
+        thumbnail_url: thumbUrl || mainUrl,
+      };
+    });
 
     return NextResponse.json(photosWithSignedUrls);
   } catch (error) {

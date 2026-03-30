@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useMemo, memo } from 'react';
+import { useState, useRef, useMemo, memo, useEffect } from 'react';
 import Image from 'next/image';
 import { PhotoLightbox } from './PhotoLightbox';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -83,6 +83,38 @@ export const PhotoGallery = memo(function PhotoGallery({
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const lastSelectedIndexRef = useRef<number | null>(null);
 
+  // Progressive rendering: show PAGE_SIZE items, load more on scroll
+  const PAGE_SIZE = 40;
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  // Reset visible count when photos list changes
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [photos]);
+
+  // IntersectionObserver to load more when sentinel enters viewport
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || visibleCount >= photos.length) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount((prev) => Math.min(prev + PAGE_SIZE, photos.length));
+        }
+      },
+      { rootMargin: '400px' }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [visibleCount, photos.length]);
+
+  const visiblePhotos = useMemo(
+    () => photos.slice(0, visibleCount),
+    [photos, visibleCount]
+  );
+
   // Build id-to-index map once instead of O(n) findIndex per photo
   const idToIndex = useMemo(() => {
     const map = new Map<string, number>();
@@ -90,10 +122,10 @@ export const PhotoGallery = memo(function PhotoGallery({
     return map;
   }, [photos]);
 
-  // Group photos by date
+  // Group visible photos by date
   const groupedPhotos = useMemo(() => {
     const dateMap = new Map<string, PhotoWithRelations[]>();
-    photos.forEach((photo) => {
+    visiblePhotos.forEach((photo) => {
       const dateStr = (photo.taken_at ? new Date(photo.taken_at) : new Date(photo.created_at))
         .toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' });
       if (!dateMap.has(dateStr)) {
@@ -106,7 +138,7 @@ export const PhotoGallery = memo(function PhotoGallery({
       groups.push({ date, photos: datePhotos });
     });
     return groups;
-  }, [photos]);
+  }, [visiblePhotos]);
 
   // Lightbox photo data (memoized to avoid recreating on every render)
   const lightboxPhotos = useMemo(
@@ -183,7 +215,7 @@ export const PhotoGallery = memo(function PhotoGallery({
               </tr>
             </thead>
             <tbody>
-              {photos.map((photo) => {
+              {visiblePhotos.map((photo) => {
                 const flatIndex = idToIndex.get(photo.id) ?? 0;
                 const isSelected = selectedIds.has(photo.id);
                 const isImage = isImageFile(photo.original_filename);
@@ -375,6 +407,15 @@ export const PhotoGallery = memo(function PhotoGallery({
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Load more sentinel */}
+      {visibleCount < photos.length && (
+        <div ref={sentinelRef} className="flex justify-center py-6">
+          <p className="text-sm text-gray-400">
+            Showing {visibleCount} of {photos.length} files...
+          </p>
         </div>
       )}
 
