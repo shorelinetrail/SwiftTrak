@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
 import { usePermission } from '@/hooks/use-user';
@@ -27,9 +27,11 @@ import {
   FilmIcon,
   DocumentIcon,
   Squares2X2Icon,
+  ArrowDownTrayIcon,
+  ListBulletIcon,
+  ViewColumnsIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
-import { ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import { bulkDownloadFiles, type DownloadProgress } from '@/lib/bulk-download';
 import type { WorkstreamPhoto, Workstream, User } from '@/types/database';
 
@@ -55,6 +57,7 @@ type PhotoWithRelations = WorkstreamPhoto & {
 
 export default function PhotosPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const { workstreams, setWorkstreams } = useAppStore();
   const { canEdit, canAdmin } = usePermission();
   const [loading, setLoading] = useState(true);
@@ -63,6 +66,7 @@ export default function PhotosPage() {
   const [workstreamFilter, setWorkstreamFilter] = useState<string>('all');
   const [fileTypeFilter, setFileTypeFilter] = useState<FileTypeFilter>('all');
   const [activeTab, setActiveTab] = useState<'all' | 'hidden'>('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'details'>('grid');
 
   // Selection mode for bulk operations
   const [selectionMode, setSelectionMode] = useState(false);
@@ -73,7 +77,6 @@ export default function PhotosPage() {
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
 
   const fetchPhotos = useCallback(async () => {
-    // Fetch photos with signed URLs from API
     const url = workstreamFilter === 'all'
       ? '/api/photos'
       : `/api/photos?workstreamId=${workstreamFilter}`;
@@ -112,7 +115,7 @@ export default function PhotosPage() {
   // Fetch workstreams if not loaded
   useEffect(() => {
     if (workstreams.length === 0) {
-      const fetchWorkstreams = async () => {
+      const doFetch = async () => {
         const supabase = createClient();
         const { data } = await supabase
           .from('workstreams')
@@ -122,19 +125,27 @@ export default function PhotosPage() {
           setWorkstreams(data as Workstream[]);
         }
       };
-      fetchWorkstreams();
+      doFetch();
     }
   }, [workstreams.length, setWorkstreams]);
 
+  // Fetch photos when filter changes
   useEffect(() => {
     fetchPhotos();
-    if (canAdmin) {
+    fetchHiddenPhotos();
+  }, [fetchPhotos, fetchHiddenPhotos]);
+
+  // Refetch when navigating back (e.g. after upload)
+  useEffect(() => {
+    if (pathname === '/photos') {
+      fetchPhotos();
       fetchHiddenPhotos();
     }
-  }, [fetchPhotos, fetchHiddenPhotos, canAdmin]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
 
   // Toggle hidden handler (admin only)
-  const handleToggleHidden = async (photoId: string, isHidden: boolean) => {
+  const handleToggleHidden = useCallback(async (photoId: string, isHidden: boolean) => {
     const response = await fetch('/api/photos', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -147,9 +158,7 @@ export default function PhotosPage() {
       throw new Error(error.error);
     }
 
-    // Move photo between visible and hidden lists
     if (isHidden) {
-      // Moving from visible to hidden
       const photo = photos.find((p) => p.id === photoId);
       if (photo) {
         setPhotos((prev) => prev.filter((p) => p.id !== photoId));
@@ -157,7 +166,6 @@ export default function PhotosPage() {
       }
       toast.success('Photo hidden');
     } else {
-      // Moving from hidden to visible
       const photo = hiddenPhotos.find((p) => p.id === photoId);
       if (photo) {
         setHiddenPhotos((prev) => prev.filter((p) => p.id !== photoId));
@@ -165,13 +173,11 @@ export default function PhotosPage() {
       }
       toast.success('Photo unhidden');
     }
-  };
+  }, [photos, hiddenPhotos]);
 
   // Delete handler
-  const handleDelete = async (photoId: string) => {
-    const response = await fetch(`/api/photos?id=${photoId}`, {
-      method: 'DELETE',
-    });
+  const handleDelete = useCallback(async (photoId: string) => {
+    const response = await fetch(`/api/photos?id=${photoId}`, { method: 'DELETE' });
 
     if (!response.ok) {
       const error = await response.json();
@@ -179,13 +185,13 @@ export default function PhotosPage() {
       throw new Error(error.error);
     }
 
-    // Remove from local state
     setPhotos((prev) => prev.filter((p) => p.id !== photoId));
+    setHiddenPhotos((prev) => prev.filter((p) => p.id !== photoId));
     toast.success('Photo deleted');
-  };
+  }, []);
 
   // Caption update handler
-  const handleCaptionUpdate = async (photoId: string, caption: string) => {
+  const handleCaptionUpdate = useCallback(async (photoId: string, caption: string) => {
     const response = await fetch('/api/photos', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -198,18 +204,16 @@ export default function PhotosPage() {
       throw new Error(error.error);
     }
 
-    // Update local state
-    setPhotos((prev) =>
-      prev.map((p) => (p.id === photoId ? { ...p, caption } : p))
-    );
+    setPhotos((prev) => prev.map((p) => (p.id === photoId ? { ...p, caption } : p)));
+    setHiddenPhotos((prev) => prev.map((p) => (p.id === photoId ? { ...p, caption } : p)));
     toast.success('Caption updated');
-  };
+  }, []);
 
   // Bulk delete handler
   const handleBulkDelete = async () => {
     if (selectedIds.size === 0) return;
 
-    const confirmMsg = `Are you sure you want to delete ${selectedIds.size} photo${selectedIds.size !== 1 ? 's' : ''}? This cannot be undone.`;
+    const confirmMsg = `Are you sure you want to delete ${selectedIds.size} file${selectedIds.size !== 1 ? 's' : ''}? This cannot be undone.`;
     if (!confirm(confirmMsg)) return;
 
     setIsBulkProcessing(true);
@@ -218,30 +222,22 @@ export default function PhotosPage() {
 
     for (const photoId of selectedIds) {
       try {
-        const response = await fetch(`/api/photos?id=${photoId}`, {
-          method: 'DELETE',
-        });
-        if (response.ok) {
-          successCount++;
-        } else {
-          errorCount++;
-        }
+        const response = await fetch(`/api/photos?id=${photoId}`, { method: 'DELETE' });
+        if (response.ok) successCount++;
+        else errorCount++;
       } catch {
         errorCount++;
       }
     }
 
-    // Update local state - remove deleted photos
     setPhotos((prev) => prev.filter((p) => !selectedIds.has(p.id)));
     setHiddenPhotos((prev) => prev.filter((p) => !selectedIds.has(p.id)));
-
-    // Reset selection
     setSelectedIds(new Set());
     setSelectionMode(false);
     setIsBulkProcessing(false);
 
     if (errorCount === 0) {
-      toast.success(`Deleted ${successCount} photo${successCount !== 1 ? 's' : ''}`);
+      toast.success(`Deleted ${successCount} file${successCount !== 1 ? 's' : ''}`);
     } else {
       toast.error(`Deleted ${successCount}, failed ${errorCount}`);
     }
@@ -262,26 +258,16 @@ export default function PhotosPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id: photoId, caption: bulkCaption.trim() }),
         });
-        if (response.ok) {
-          successCount++;
-        } else {
-          errorCount++;
-        }
+        if (response.ok) successCount++;
+        else errorCount++;
       } catch {
         errorCount++;
       }
     }
 
-    // Update local state
     const newCaption = bulkCaption.trim();
-    setPhotos((prev) =>
-      prev.map((p) => (selectedIds.has(p.id) ? { ...p, caption: newCaption } : p))
-    );
-    setHiddenPhotos((prev) =>
-      prev.map((p) => (selectedIds.has(p.id) ? { ...p, caption: newCaption } : p))
-    );
-
-    // Reset
+    setPhotos((prev) => prev.map((p) => (selectedIds.has(p.id) ? { ...p, caption: newCaption } : p)));
+    setHiddenPhotos((prev) => prev.map((p) => (selectedIds.has(p.id) ? { ...p, caption: newCaption } : p)));
     setBulkCaptionModalOpen(false);
     setBulkCaption('');
     setSelectedIds(new Set());
@@ -289,13 +275,13 @@ export default function PhotosPage() {
     setIsBulkProcessing(false);
 
     if (errorCount === 0) {
-      toast.success(`Updated caption on ${successCount} photo${successCount !== 1 ? 's' : ''}`);
+      toast.success(`Updated caption on ${successCount} file${successCount !== 1 ? 's' : ''}`);
     } else {
       toast.error(`Updated ${successCount}, failed ${errorCount}`);
     }
   };
 
-  // Bulk download handler — refreshes signed URLs then downloads with concurrency + retries
+  // Bulk download handler
   const handleBulkDownload = async () => {
     const selected = photos.filter((p) => selectedIds.has(p.id));
     if (selected.length === 0) return;
@@ -304,7 +290,7 @@ export default function PhotosPage() {
     setDownloadProgress({ total: selected.length, completed: 0, failed: 0, currentFile: 'Refreshing URLs...', phase: 'downloading' });
 
     try {
-      // Refresh signed URLs to avoid expiry during download
+      // Refresh signed URLs to avoid expiry
       const freshResponse = await fetch(
         workstreamFilter === 'all' ? '/api/photos' : `/api/photos?workstreamId=${workstreamFilter}`
       );
@@ -335,49 +321,52 @@ export default function PhotosPage() {
     }
   };
 
-  // Exit selection mode
   const exitSelectionMode = () => {
     setSelectionMode(false);
     setSelectedIds(new Set());
   };
 
-  const workstreamOptions = buildWorkstreamOptions(workstreams, {
-    allLabel: 'All Workstreams',
-    allValue: 'all',
-    mapOption: (ws) => ({
-      icon: <div className="w-3 h-3 rounded-full" style={{ backgroundColor: ws.color }} />,
-    }),
-  });
+  // Memoize expensive computations
+  const workstreamOptions = useMemo(
+    () => buildWorkstreamOptions(workstreams, { allLabel: 'All Workstreams', allValue: 'all' }),
+    [workstreams]
+  );
 
-  // Filter photos by file type
-  const filterByFileType = (items: PhotoWithRelations[]) => {
-    if (fileTypeFilter === 'all') return items;
-    return items.filter((p) => {
+  const filteredPhotos = useMemo(() => {
+    if (fileTypeFilter === 'all') return photos;
+    return photos.filter((p) => {
       const type = getFileType(p.original_filename);
       if (fileTypeFilter === 'photos') return type === 'photo';
       if (fileTypeFilter === 'videos') return type === 'video';
       if (fileTypeFilter === 'documents') return type === 'document';
       return true;
     });
-  };
+  }, [photos, fileTypeFilter]);
 
-  const filteredPhotos = filterByFileType(photos);
-  const filteredHiddenPhotos = filterByFileType(hiddenPhotos);
+  const filteredHiddenPhotos = useMemo(() => {
+    if (fileTypeFilter === 'all') return hiddenPhotos;
+    return hiddenPhotos.filter((p) => {
+      const type = getFileType(p.original_filename);
+      if (fileTypeFilter === 'photos') return type === 'photo';
+      if (fileTypeFilter === 'videos') return type === 'video';
+      if (fileTypeFilter === 'documents') return type === 'document';
+      return true;
+    });
+  }, [hiddenPhotos, fileTypeFilter]);
 
-  // Get file type counts
-  const typeCounts = {
+  const typeCounts = useMemo(() => ({
     all: photos.length,
     photos: photos.filter((p) => getFileType(p.original_filename) === 'photo').length,
     videos: photos.filter((p) => getFileType(p.original_filename) === 'video').length,
     documents: photos.filter((p) => getFileType(p.original_filename) === 'document').length,
-  };
+  }), [photos]);
 
-  // Get counts per workstream for stats
-  const photoCountByWorkstream = filteredPhotos.reduce((acc, photo) => {
-    const wsId = photo.workstream_id;
-    acc[wsId] = (acc[wsId] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
+  const photoCountByWorkstream = useMemo(() => {
+    return filteredPhotos.reduce((acc, photo) => {
+      acc[photo.workstream_id] = (acc[photo.workstream_id] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+  }, [filteredPhotos]);
 
   if (loading) {
     return (
@@ -449,6 +438,23 @@ export default function PhotosPage() {
                   className="w-48"
                 />
               </div>
+              {/* View mode toggle */}
+              <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
+                <button
+                  onClick={() => setViewMode('grid')}
+                  className={`p-2 ${viewMode === 'grid' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}
+                  title="Grid view"
+                >
+                  <ViewColumnsIcon className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setViewMode('details')}
+                  className={`p-2 ${viewMode === 'details' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}
+                  title="Details view"
+                >
+                  <ListBulletIcon className="w-4 h-4" />
+                </button>
+              </div>
               {canEdit && photos.length > 0 && (
                 <Button
                   size="sm"
@@ -518,12 +524,12 @@ export default function PhotosPage() {
 
         {/* File type filter tabs */}
         <div className="flex flex-wrap items-center gap-2">
-          {[
+          {([
             { id: 'all' as FileTypeFilter, label: 'All', icon: <Squares2X2Icon className="w-4 h-4" />, count: typeCounts.all },
             { id: 'photos' as FileTypeFilter, label: 'Photos', icon: <PhotoIcon className="w-4 h-4" />, count: typeCounts.photos },
             { id: 'videos' as FileTypeFilter, label: 'Videos', icon: <FilmIcon className="w-4 h-4" />, count: typeCounts.videos },
             { id: 'documents' as FileTypeFilter, label: 'Documents', icon: <DocumentIcon className="w-4 h-4" />, count: typeCounts.documents },
-          ].map((tab) => (
+          ]).map((tab) => (
             <button
               key={tab.id}
               onClick={() => setFileTypeFilter(tab.id)}
@@ -546,8 +552,8 @@ export default function PhotosPage() {
 
         {activeTab === 'all' ? (
           <>
-            {/* Workstream album cards */}
-            {workstreamFilter === 'all' && workstreams.length > 0 && (
+            {/* Workstream album cards (grid view only) */}
+            {viewMode === 'grid' && workstreamFilter === 'all' && workstreams.length > 0 && (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
                 {workstreams
                   .filter((ws) => photoCountByWorkstream[ws.id])
@@ -572,7 +578,6 @@ export default function PhotosPage() {
               </div>
             )}
 
-            {/* File gallery - signed URLs are embedded in photos data */}
             <PhotoGallery
               photos={filteredPhotos}
               emptyMessage={
@@ -592,10 +597,10 @@ export default function PhotosPage() {
               selectionMode={selectionMode}
               selectedIds={selectedIds}
               onSelectionChange={setSelectedIds}
+              viewMode={viewMode}
             />
           </>
         ) : (
-          /* Hidden files (admin only) */
           <div className="space-y-4">
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <div className="flex items-start gap-3">
@@ -620,6 +625,7 @@ export default function PhotosPage() {
               selectionMode={selectionMode}
               selectedIds={selectedIds}
               onSelectionChange={setSelectedIds}
+              viewMode={viewMode}
             />
           </div>
         )}
