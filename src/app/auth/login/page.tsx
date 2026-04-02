@@ -13,29 +13,92 @@ export default function LoginPage() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage('');
+
+    // Validate inputs
+    if (!email.trim() || !password.trim()) {
+      setErrorMessage('Please enter email and password');
+      return;
+    }
+
+    if (isSignUp && !fullName.trim()) {
+      setErrorMessage('Please enter your full name');
+      return;
+    }
+
+    if (isSignUp) {
+      // Password complexity validation
+      if (password.length < 10) {
+        setErrorMessage('Password must be at least 10 characters');
+        return;
+      }
+      if (!/[A-Z]/.test(password)) {
+        setErrorMessage('Password must contain at least one uppercase letter');
+        return;
+      }
+      if (!/[a-z]/.test(password)) {
+        setErrorMessage('Password must contain at least one lowercase letter');
+        return;
+      }
+      if (!/[0-9]/.test(password)) {
+        setErrorMessage('Password must contain at least one number');
+        return;
+      }
+      if (!/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password)) {
+        setErrorMessage('Password must contain at least one special character');
+        return;
+      }
+    }
+
+    if (isSignUp && password !== confirmPassword) {
+      setErrorMessage('Passwords do not match');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
       const supabase = createClient();
 
       if (isSignUp) {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              full_name: fullName,
-            },
-          },
+        // Use server-side signup to bypass email confirmation issues
+        const response = await fetch('/api/auth/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password, full_name: fullName }),
         });
 
-        if (error) throw error;
+        // Handle potential empty or non-JSON responses
+        const text = await response.text();
+        let result;
+        try {
+          result = text ? JSON.parse(text) : {};
+        } catch {
+          console.error('Failed to parse signup response:', text);
+          throw new Error('Server error - please try again');
+        }
 
-        toast.success('Account created! Please check your email to verify your account.');
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to create account');
+        }
+
+        // Now sign in with the created credentials
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (signInError) throw signInError;
+
+        toast.success('Account created successfully!');
+        router.push('/dashboard');
+        router.refresh();
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email,
@@ -48,8 +111,9 @@ export default function LoginPage() {
         router.refresh();
       }
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'An error occurred';
-      toast.error(errorMessage);
+      console.error('[Auth] Error:', error);
+      const message = error instanceof Error ? error.message : 'An error occurred';
+      setErrorMessage(message);
     } finally {
       setIsLoading(false);
     }
@@ -72,6 +136,12 @@ export default function LoginPage() {
           <h2 className="text-xl font-semibold text-gray-900 mb-6">
             {isSignUp ? 'Create an account' : 'Sign in to your account'}
           </h2>
+
+          {errorMessage && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-600">{errorMessage}</p>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {isSignUp && (
@@ -101,8 +171,20 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Enter your password"
               required
-              hint={isSignUp ? 'At least 6 characters' : undefined}
+              hint={isSignUp ? 'Min 10 characters: uppercase, lowercase, number, and special character' : undefined}
             />
+
+            {isSignUp && (
+              <Input
+                label="Confirm Password"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Confirm your password"
+                required
+                error={confirmPassword && password !== confirmPassword ? 'Passwords do not match' : undefined}
+              />
+            )}
 
             <Button type="submit" className="w-full" loading={isLoading}>
               {isSignUp ? 'Create Account' : 'Sign In'}
@@ -111,7 +193,11 @@ export default function LoginPage() {
 
           <div className="mt-6 text-center">
             <button
-              onClick={() => setIsSignUp(!isSignUp)}
+              onClick={() => {
+                setIsSignUp(!isSignUp);
+                setErrorMessage('');
+                setConfirmPassword('');
+              }}
               className="text-sm text-red-600 hover:text-red-700"
             >
               {isSignUp

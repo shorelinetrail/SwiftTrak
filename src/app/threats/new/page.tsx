@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import toast from 'react-hot-toast';
+import { buildWorkstreamOptions } from '@/lib/utils';
 import type { RiskLevel, Workstream } from '@/types/database';
 
 export default function NewThreatPage() {
@@ -105,10 +106,14 @@ export default function NewThreatPage() {
     }
   };
 
-  const workstreamOptions = [
-    { value: '', label: 'Select a workstream...' },
-    ...workstreams.map(w => ({ value: w.id, label: w.name })),
-  ];
+  const workstreamOptions = buildWorkstreamOptions(workstreams, {
+    allLabel: 'Select a workstream...',
+    allValue: '',
+    excludeParentsWithChildren: true,
+    mapOption: (ws) => ({
+      icon: <div className="w-3 h-3 rounded-full" style={{ backgroundColor: ws.color }} />,
+    }),
+  });
 
   const riskOptions = [
     { value: 'low', label: 'Low' },
@@ -118,12 +123,20 @@ export default function NewThreatPage() {
 
   const mitigatedRiskOptions = [
     { value: '', label: 'Not yet determined' },
+    { value: 'none', label: 'None' },
     ...riskOptions,
   ];
 
   return (
     <div className="min-h-screen">
-      <Header title="Log Threat" subtitle="Document a new risk or threat" />
+      <Header
+        title="Log Threat"
+        subtitle="Document a new risk or threat"
+        breadcrumbs={[
+          { label: 'Threats', href: '/threats' },
+          { label: 'New Threat' },
+        ]}
+      />
 
       <div className="p-6 max-w-2xl">
         <form onSubmit={handleSubmit}>
@@ -169,7 +182,7 @@ export default function NewThreatPage() {
               </div>
 
               <Input
-                label="Expected Delay"
+                label="Potential Delay"
                 value={formData.expected_delay}
                 onChange={(e) => setFormData({ ...formData, expected_delay: e.target.value })}
                 placeholder="e.g., 2-3 days, 1 week"

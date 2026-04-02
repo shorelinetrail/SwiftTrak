@@ -72,6 +72,60 @@ body {
   animation: pulse-highlight 2s ease-out;
 }
 
+/* Safe area utilities for notched devices */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0);
+}
+
+/* Thin scrollbar utility */
+.scrollbar-thin {
+  scrollbar-width: thin;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-thumb-gray-300::-webkit-scrollbar-thumb {
+  background-color: #d1d5db;
+  border-radius: 3px;
+}
+
+.scrollbar-track-transparent::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Mobile touch improvements */
+@media (hover: none) and (pointer: coarse) {
+  /* Increase tap targets on touch devices */
+  button, a, [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Remove hover states on touch */
+  .hover\:bg-gray-50:hover {
+    background-color: transparent;
+  }
+
+  /* Prevent text selection on interactive elements */
+  button, [role="button"] {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
+/* Smooth scrolling on iOS */
+.overflow-x-auto,
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
 /* Print styles */
 @media print {
   .no-print {

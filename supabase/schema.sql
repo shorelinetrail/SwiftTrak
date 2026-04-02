@@ -13,21 +13,44 @@ CREATE TABLE users (
     full_name TEXT NOT NULL,
     avatar_url TEXT,
     role TEXT NOT NULL DEFAULT 'view' CHECK (role IN ('admin', 'edit', 'view')),
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'pending')),
+    invited_by UUID REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Auto-create user profile on auth signup
+-- Auto-create user profile on auth signup (handles linking to pending users)
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+    existing_user_id UUID;
 BEGIN
-    INSERT INTO public.users (id, email, full_name, role)
-    VALUES (
-        NEW.id,
-        NEW.email,
-        COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)),
-        'view'
-    );
+    -- Check if there's a pending user with this email
+    SELECT id INTO existing_user_id
+    FROM public.users
+    WHERE email = NEW.email AND status = 'pending';
+
+    IF existing_user_id IS NOT NULL THEN
+        -- Update the existing pending user to link with the new auth user
+        UPDATE public.users
+        SET
+            id = NEW.id,
+            full_name = COALESCE(NEW.raw_user_meta_data->>'full_name', full_name),
+            status = 'active',
+            updated_at = NOW()
+        WHERE id = existing_user_id;
+    ELSE
+        -- Create new user profile as before
+        INSERT INTO public.users (id, email, full_name, role, status)
+        VALUES (
+            NEW.id,
+            NEW.email,
+            COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)),
+            'view',
+            'active'
+        );
+    END IF;
+
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -344,6 +367,9 @@ CREATE POLICY "Users can update their own profile" ON users FOR UPDATE USING (au
 CREATE POLICY "Admins can update any user" ON users FOR UPDATE USING (
     EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'admin')
 );
+CREATE POLICY "Admins can insert users" ON users FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'admin')
+);
 
 -- Workstreams policies
 CREATE POLICY "Anyone can view workstreams" ON workstreams FOR SELECT USING (true);
@@ -504,6 +530,7 @@ CREATE INDEX idx_mentions_user ON mentions(mentioned_user_id);
 CREATE INDEX idx_notifications_user ON notifications(user_id);
 CREATE INDEX idx_notifications_read ON notifications(user_id, read);
 CREATE INDEX idx_stakeholder_links_token ON stakeholder_links(token);
+CREATE INDEX idx_users_status ON users(status);
 
 -- =====================================================
 -- REALTIME SUBSCRIPTIONS

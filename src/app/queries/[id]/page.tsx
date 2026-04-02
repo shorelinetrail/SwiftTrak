@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/input';
 import { PriorityBadge, Badge } from '@/components/ui/badge';
 import { Avatar } from '@/components/ui/avatar';
-import { LoadingPage } from '@/components/ui/loading';
+import { LoadingSpinner } from '@/components/ui/loading';
 import { formatDate, getRelativeTime } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import {
@@ -112,7 +112,20 @@ export default function QueryDetailPage() {
   };
 
   if (loading) {
-    return <LoadingPage />;
+    return (
+      <div className="min-h-screen">
+        <Header
+          title="Loading..."
+          breadcrumbs={[
+            { label: 'Queries', href: '/queries' },
+            { label: 'Loading...' },
+          ]}
+        />
+        <div className="p-6 flex items-center justify-center h-64">
+          <LoadingSpinner size="lg" />
+        </div>
+      </div>
+    );
   }
 
   if (!query) {
@@ -128,6 +141,10 @@ export default function QueryDetailPage() {
       <Header
         title={query.title}
         subtitle={query.workstream?.name || 'Technical Query'}
+        breadcrumbs={[
+          { label: 'Queries', href: '/queries' },
+          { label: query.title },
+        ]}
       />
 
       <div className="p-6 max-w-4xl space-y-6">

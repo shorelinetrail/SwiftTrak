@@ -1,17 +1,27 @@
 export type UserRole = 'admin' | 'edit' | 'view';
-export type ActionStatus = 'pending' | 'in_progress' | 'complete' | 'cancelled';
+export type UserStatus = 'active' | 'pending';
+export type ActionStatus = 'pending' | 'in_progress' | 'on_hold' | 'complete' | 'cancelled';
+export type ThreatStatus = 'open' | 'closed';
 export type Priority = 'critical' | 'high' | 'medium' | 'low';
 export type RiskLevel = 'low' | 'medium' | 'high';
+export type MitigatedRiskLevel = RiskLevel | 'none';
 export type QueryPriority = 'urgent' | 'high' | 'medium' | 'low';
 
 export interface User {
   id: string;
+  auth_id?: string;  // Links to Supabase auth - NULL for pending users
   email: string;
   full_name: string;
   avatar_url?: string;
   role: UserRole;
+  status: UserStatus;
+  invited_by?: string;
+  invited_at?: string;
+  auth_linked?: boolean;
   created_at: string;
   updated_at: string;
+  // Joined fields
+  inviter?: User;
 }
 
 export interface UserWorkstreamPermission {
@@ -39,6 +49,7 @@ export interface Workstream {
 
 export interface Action {
   id: string;
+  display_id?: string;
   title: string;
   description?: string;
   workstream_id: string;
@@ -63,6 +74,7 @@ export interface ActionUpdate {
   user_id: string;
   content: string;
   created_at: string;
+  is_legacy_import?: boolean;
   // Joined fields
   user?: User;
 }
@@ -75,21 +87,25 @@ export interface ActionAudit {
   old_value?: string;
   new_value?: string;
   created_at: string;
+  hide_from_recent?: boolean;
   // Joined fields
   user?: User;
 }
 
 export interface Threat {
   id: string;
+  display_id?: string;
   title: string;
   description: string;
   workstream_id: string;
   proposed_mitigation?: string;
   expected_delay?: string;
+  actual_delay?: string;
   unmitigated_risk: RiskLevel;
   current_risk: RiskLevel;
   solution?: string;
-  mitigated_risk?: RiskLevel;
+  mitigated_risk?: MitigatedRiskLevel;
+  status: ThreatStatus;
   created_at: string;
   updated_at: string;
   created_by: string;
@@ -98,8 +114,32 @@ export interface Threat {
   creator?: User;
 }
 
+export interface ThreatAudit {
+  id: string;
+  threat_id: string;
+  user_id: string;
+  change_type: string;
+  old_value?: string;
+  new_value?: string;
+  created_at: string;
+  // Joined fields
+  user?: User;
+}
+
+export interface ThreatUpdate {
+  id: string;
+  threat_id: string;
+  user_id: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+  // Joined fields
+  user?: User;
+}
+
 export interface TechnicalQuery {
   id: string;
+  display_id?: string;
   title: string;
   description: string;
   workstream_id?: string;
@@ -118,6 +158,7 @@ export interface TechnicalQuery {
 
 export interface Decision {
   id: string;
+  display_id?: string;
   title: string;
   description: string;
   workstream_id?: string;
@@ -130,8 +171,21 @@ export interface Decision {
   decision_maker?: User;
 }
 
+export interface DecisionAudit {
+  id: string;
+  decision_id: string;
+  user_id: string;
+  change_type: string;
+  old_value?: string;
+  new_value?: string;
+  created_at: string;
+  // Joined fields
+  user?: User;
+}
+
 export interface Milestone {
   id: string;
+  display_id?: string;
   title: string;
   description?: string;
   workstream_id?: string;
@@ -144,6 +198,18 @@ export interface Milestone {
   // Joined fields
   workstream?: Workstream;
   creator?: User;
+}
+
+export interface MilestoneAudit {
+  id: string;
+  milestone_id: string;
+  user_id: string;
+  change_type: string;
+  old_value?: string;
+  new_value?: string;
+  created_at: string;
+  // Joined fields
+  user?: User;
 }
 
 export interface GanttTask {
@@ -233,4 +299,166 @@ export interface Notification {
   entity_id?: string;
   read: boolean;
   created_at: string;
+}
+
+export type VendorActivityStatus = 'planned' | 'confirmed' | 'in_progress' | 'complete' | 'cancelled';
+
+export interface Vendor {
+  id: string;
+  name: string;
+  vendor_number?: string;
+  contact_name?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  notes?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+  // Joined fields
+  creator?: User;
+  activities?: VendorActivity[];
+  linked_actions?: Action[];
+}
+
+export interface VendorActivity {
+  id: string;
+  vendor_id: string;
+  description: string;
+  purchase_requisition?: string;
+  purchase_order?: string;
+  purchase_order_value?: number;
+  provisional_start_date?: string;
+  provisional_end_date?: string;
+  confirmed_start_date?: string;
+  confirmed_end_date?: string;
+  status: VendorActivityStatus;
+  notes?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+  // Joined fields
+  vendor?: Vendor;
+  creator?: User;
+}
+
+export interface VendorActionLink {
+  id: string;
+  vendor_id: string;
+  action_id: string;
+  created_by?: string;
+  created_at: string;
+  // Joined fields
+  vendor?: Vendor;
+  action?: Action;
+}
+
+export interface VendorAudit {
+  id: string;
+  vendor_id: string;
+  user_id?: string;
+  change_type: string;
+  field_name?: string;
+  old_value?: string;
+  new_value?: string;
+  created_at: string;
+  // Joined fields
+  user?: User;
+}
+
+export interface VendorActivityAudit {
+  id: string;
+  activity_id: string;
+  vendor_id: string;
+  user_id?: string;
+  change_type: string;
+  field_name?: string;
+  old_value?: string;
+  new_value?: string;
+  created_at: string;
+  // Joined fields
+  user?: User;
+}
+
+export interface VendorContact {
+  id: string;
+  vendor_id: string;
+  name: string;
+  job_title?: string;
+  email?: string;
+  phone?: string;
+  is_primary: boolean;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+  // Joined fields
+  creator?: User;
+}
+
+export interface ThreatActionLink {
+  id: string;
+  threat_id: string;
+  action_id: string;
+  created_by?: string;
+  created_at: string;
+  // Joined fields
+  threat?: Threat;
+  action?: Action;
+  creator?: User;
+}
+
+export type UpdateSourceType = 'manual' | 'milestone_completed' | 'action_completed';
+
+export interface Update {
+  id: string;
+  content: string;
+  workstream_id?: string;
+  posted_at: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  is_pinned: boolean;
+  source_type?: UpdateSourceType;
+  source_id?: string;
+  // Joined fields
+  workstream?: Workstream;
+  creator?: User;
+}
+
+export interface SystemSetting {
+  id: string;
+  key: string;
+  value: Record<string, unknown>;
+  updated_by?: string;
+  updated_at: string;
+}
+
+export interface UpdatesConfig {
+  auto_log_completed_milestones: boolean;
+  auto_log_completed_actions: boolean;
+}
+
+export interface FeatureConfig {
+  gantt_chart_enabled: boolean;
+  technical_queries_enabled: boolean;
+  photos_admin_only?: boolean;  // If true, only admins can see Photos section
+}
+
+export interface WorkstreamPhoto {
+  id: string;
+  workstream_id: string;
+  storage_path: string;
+  thumbnail_path?: string;
+  original_filename: string;
+  taken_at?: string;  // EXIF date for sorting
+  caption?: string;
+  file_size?: number;
+  width?: number;
+  height?: number;
+  is_hidden?: boolean;  // Hidden photos only visible to admins
+  uploaded_by?: string;
+  created_at: string;
+  updated_at: string;
+  // Joined fields
+  workstream?: Workstream;
+  uploader?: User;
 }

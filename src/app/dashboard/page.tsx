@@ -10,29 +10,57 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { StatusBadge, PriorityBadge, RiskBadge } from '@/components/ui/badge';
+import { WorkstreamBadgeWithData } from '@/components/ui/workstream-badge';
 import { Avatar } from '@/components/ui/avatar';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDate, isOverdue, getDaysUntil } from '@/lib/utils';
+import { formatDate, isOverdue, getDaysUntil, getRelativeTime, buildWorkstreamOptions, getWorkstreamDisplayName } from '@/lib/utils';
 import {
   ClipboardDocumentListIcon,
   ExclamationTriangleIcon,
   QuestionMarkCircleIcon,
   FlagIcon,
-  ArrowTrendingUpIcon,
   ClockIcon,
   CheckCircleIcon,
   ExclamationCircleIcon,
   PlusIcon,
   FunnelIcon,
+  UserIcon,
+  ArrowPathIcon,
+  BoltIcon,
+  EyeSlashIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
-import type { Action, Threat, TechnicalQuery, Milestone, Workstream, User } from '@/types/database';
+import { usePermission } from '@/hooks/use-user';
+import type { Action, Threat, TechnicalQuery, Milestone, Workstream, User, Update, Priority, RiskLevel, ActionStatus } from '@/types/database';
+
+type RecentlyUpdatedAction = Action & { owner?: User; workstream?: Workstream; last_change?: string; effective_date?: string; audit_id?: string };
+
+import { MegaphoneIcon } from '@heroicons/react/24/outline';
+
+type UpdateWithRelations = Update & {
+  workstream?: Workstream;
+  creator?: User;
+};
+
+type RecentUpdateItem = {
+  type: 'update' | 'threat' | 'milestone';
+  id: string;
+  content: string;
+  posted_at: string;
+  workstream?: Workstream;
+  creator?: User;
+  // Threat-specific
+  threat_title?: string;
+  current_risk?: RiskLevel;
+  // Milestone-specific
+  milestone_title?: string;
+};
 
 interface DashboardStats {
   totalActions: number;
   completedActions: number;
-  overdueActions: number;
+  openActions: number;
   criticalActions: number;
   totalThreats: number;
   highRiskThreats: number;
@@ -42,6 +70,7 @@ interface DashboardStats {
 
 export default function DashboardPage() {
   const { workstreams, setWorkstreams } = useAppStore();
+  const { canEdit, canAdmin } = usePermission();
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [selectedWorkstream, setSelectedWorkstream] = useState<string>('all');
@@ -49,20 +78,21 @@ export default function DashboardPage() {
   const [allThreats, setAllThreats] = useState<{ id: string; current_risk: string; workstream_id: string }[]>([]);
   const [allQueries, setAllQueries] = useState<{ id: string; responded_at: string | null }[]>([]);
   const [allMilestones, setAllMilestones] = useState<{ id: string; target_date: string; status: string; workstream_id: string | null }[]>([]);
-  const [recentActions, setRecentActions] = useState<(Action & { owner?: User; workstream?: Workstream })[]>([]);
+  const [myActions, setMyActions] = useState<(Action & { owner?: User; workstream?: Workstream })[]>([]);
+  const [recentlyUpdated, setRecentlyUpdated] = useState<RecentlyUpdatedAction[]>([]);
   const [recentThreats, setRecentThreats] = useState<(Threat & { workstream?: Workstream })[]>([]);
   const [pendingQueries, setPendingQueries] = useState<(TechnicalQuery & { assignee?: User })[]>([]);
   const [upcomingMilestones, setUpcomingMilestones] = useState<(Milestone & { workstream?: Workstream })[]>([]);
+  const [recentUpdateItems, setRecentUpdateItems] = useState<RecentUpdateItem[]>([]);
 
-  // Workstream filter options
-  const workstreamOptions = useMemo(() => [
-    { value: 'all', label: 'All Workstreams' },
-    ...workstreams.map(ws => ({
-      value: ws.id,
-      label: ws.name,
-      icon: <div className="w-3 h-3 rounded-full" style={{ backgroundColor: ws.color }} />,
-    })),
-  ], [workstreams]);
+  // Workstream filter options with hierarchy
+  const workstreamOptions = useMemo(() =>
+    buildWorkstreamOptions(workstreams, {
+      mapOption: (ws) => ({
+        icon: <div className="w-3 h-3 rounded-full" style={{ backgroundColor: ws.color }} />,
+      }),
+    }),
+  [workstreams]);
 
   // Calculate stats based on selected workstream
   const stats = useMemo<DashboardStats | null>(() => {
@@ -84,8 +114,8 @@ export default function DashboardPage() {
     return {
       totalActions: filteredActions.length,
       completedActions: filteredActions.filter(a => a.status === 'complete').length,
-      overdueActions: filteredActions.filter(a => a.due_date && new Date(a.due_date) < now && a.status !== 'complete' && a.status !== 'cancelled').length,
-      criticalActions: filteredActions.filter(a => a.priority === 'critical' && a.status !== 'complete' && a.status !== 'cancelled').length,
+      openActions: filteredActions.filter(a => a.status === 'pending' || a.status === 'in_progress' || a.status === 'on_hold').length,
+      criticalActions: filteredActions.filter(a => (a.priority === 'critical' || a.priority === 'high') && a.status !== 'complete' && a.status !== 'cancelled').length,
       totalThreats: filteredThreats.length,
       highRiskThreats: filteredThreats.filter(t => t.current_risk === 'high').length,
       pendingQueries: allQueries.filter(q => !q.responded_at).length, // Queries aren't workstream-specific in the same way
@@ -94,11 +124,18 @@ export default function DashboardPage() {
   }, [allActions, allThreats, allQueries, allMilestones, selectedWorkstream]);
 
   // Filter displayed items by workstream
-  const filteredRecentActions = useMemo(() =>
+  const filteredMyActions = useMemo(() =>
     selectedWorkstream === 'all'
-      ? recentActions
-      : recentActions.filter(a => a.workstream_id === selectedWorkstream),
-    [recentActions, selectedWorkstream]
+      ? myActions
+      : myActions.filter(a => a.workstream_id === selectedWorkstream),
+    [myActions, selectedWorkstream]
+  );
+
+  const filteredRecentlyUpdated = useMemo(() =>
+    selectedWorkstream === 'all'
+      ? recentlyUpdated
+      : recentlyUpdated.filter(a => a.workstream_id === selectedWorkstream),
+    [recentlyUpdated, selectedWorkstream]
   );
 
   const filteredRecentThreats = useMemo(() =>
@@ -186,32 +223,55 @@ export default function DashboardPage() {
         setAllMilestones(milestonesData as { id: string; target_date: string; status: string; workstream_id: string | null }[]);
 
         const now = new Date();
+        const actionSelect = `*, owner:users!actions_owner_id_fkey(id, full_name, avatar_url), workstream:workstreams(id, name, color, parent_id)`;
 
         // Fetch detailed data in parallel with timeout
         const detailResult = await Promise.race([
           Promise.all([
+            // My Actions - assigned to current user
+            userId
+              ? supabase
+                  .from('actions')
+                  .select(actionSelect)
+                  .eq('owner_id', userId)
+                  .in('status', ['pending', 'in_progress', 'on_hold'])
+                  .order('updated_at', { ascending: false })
+                  .limit(5)
+                  .then(r => r.data)
+              : Promise.resolve([]),
+            // Recently Updated Actions - fetch recent actions, will filter by effective date
             supabase
               .from('actions')
-              .select(`*, owner:users!actions_owner_id_fkey(id, full_name, avatar_url), workstream:workstreams(id, name, color)`)
-              .in('status', ['pending', 'in_progress'])
+              .select(actionSelect)
+              .gte('updated_at', new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString())
               .order('updated_at', { ascending: false })
-              .limit(5)
+              .limit(20)
               .then(r => r.data),
+            // Active Threats (status is 'open' or null for open threats)
             supabase
               .from('threats')
-              .select(`*, workstream:workstreams(id, name, color)`)
-              .in('current_risk', ['high', 'medium'])
+              .select(`*, workstream:workstreams(id, name, color, parent_id)`)
+              .neq('status', 'closed')
               .order('updated_at', { ascending: false })
               .limit(5)
               .then(r => r.data),
+            // Upcoming Milestones
             supabase
               .from('milestones')
-              .select(`*, workstream:workstreams(id, name, color)`)
+              .select(`*, workstream:workstreams(id, name, color, parent_id)`)
               .eq('status', 'pending')
               .gte('target_date', now.toISOString())
               .order('target_date', { ascending: true })
               .limit(5)
               .then(r => r.data),
+            // Recent Updates (gracefully handle if table doesn't exist yet)
+            supabase
+              .from('updates')
+              .select(`*, workstream:workstreams(id, name, color, parent_id), creator:users!updates_created_by_fkey(id, full_name, avatar_url)`)
+              .order('is_pinned', { ascending: false })
+              .order('posted_at', { ascending: false })
+              .limit(5)
+              .then(r => r.error ? [] : (r.data || [])),
           ]),
           new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
         ]);
@@ -219,10 +279,181 @@ export default function DashboardPage() {
         if (!mounted) return;
 
         if (detailResult) {
-          const [recentActionsData, recentThreatsData, upcomingMilestonesData] = detailResult;
-          if (recentActionsData) {
-            setRecentActions(recentActionsData as unknown as (Action & { owner?: User; workstream?: Workstream })[]);
+          const [myActionsData, recentlyUpdatedData, recentThreatsData, upcomingMilestonesData, recentUpdatesData] = detailResult;
+          if (myActionsData) {
+            setMyActions(myActionsData as unknown as (Action & { owner?: User; workstream?: Workstream })[]);
           }
+
+          const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+          // Fetch recent audit entries first, then get corresponding actions
+          // This ensures only actions with actual recent activity show up (not bulk imports)
+          let auditData: { id: string; action_id: string; change_type: string; old_value?: string; new_value?: string; created_at: string }[] | null = null;
+          const { data: auditWithFilter, error: filterError } = await supabase
+            .from('action_audit')
+            .select('id, action_id, change_type, old_value, new_value, created_at, hide_from_recent')
+            .gte('created_at', new Date(sevenDaysAgo).toISOString())
+            .eq('hide_from_recent', false)
+            .order('created_at', { ascending: false })
+            .limit(20);
+
+          if (filterError) {
+            const { data: auditWithoutFilter } = await supabase
+              .from('action_audit')
+              .select('id, action_id, change_type, old_value, new_value, created_at')
+              .gte('created_at', new Date(sevenDaysAgo).toISOString())
+              .order('created_at', { ascending: false })
+              .limit(20);
+            auditData = auditWithoutFilter;
+          } else {
+            auditData = auditWithFilter;
+          }
+
+          if (auditData && auditData.length > 0) {
+            // Get unique action IDs from audit entries (most recent first)
+            const seenActionIds = new Set<string>();
+            const latestAuditByAction = new Map<string, { id: string; change_type: string; old_value?: string; new_value?: string; created_at: string }>();
+
+            for (const entry of auditData) {
+              if (!seenActionIds.has(entry.action_id)) {
+                seenActionIds.add(entry.action_id);
+                latestAuditByAction.set(entry.action_id, entry);
+              }
+            }
+
+            // Fetch action details for the actions with recent audit entries
+            const actionIds = Array.from(seenActionIds).slice(0, 5);
+            const { data: actionsData } = await supabase
+              .from('actions')
+              .select(`*, owner:users!actions_owner_id_fkey(id, full_name, avatar_url), workstream:workstreams(id, name, color, parent_id)`)
+              .in('id', actionIds);
+
+            if (actionsData) {
+              // Build actions with audit info, sorted by audit entry time
+              const actionsWithChanges = actionIds
+                .map(actionId => {
+                  const action = actionsData.find(a => a.id === actionId);
+                  if (!action) return null;
+
+                  const audit = latestAuditByAction.get(actionId);
+                  let last_change = '';
+                  let audit_id: string | undefined;
+                  let effective_date = audit?.created_at || action.updated_at;
+
+                  if (audit) {
+                    audit_id = audit.id;
+                    switch (audit.change_type) {
+                      case 'status_changed':
+                        last_change = audit.new_value === 'complete' ? 'Marked complete' : `Status → ${audit.new_value?.replace('_', ' ')}`;
+                        break;
+                      case 'owner_changed':
+                        last_change = 'Owner changed';
+                        break;
+                      case 'priority_changed':
+                        last_change = `Priority → ${audit.new_value}`;
+                        break;
+                      case 'due_date_changed':
+                        last_change = 'Due date changed';
+                        break;
+                      case 'update_added':
+                        last_change = 'Update posted';
+                        break;
+                      case 'created':
+                        last_change = 'Created';
+                        break;
+                      default:
+                        last_change = 'Updated';
+                    }
+                  }
+
+                  return {
+                    ...action,
+                    last_change,
+                    audit_id,
+                    effective_date,
+                  } as RecentlyUpdatedAction;
+                })
+                .filter((a): a is RecentlyUpdatedAction => a !== null);
+
+              setRecentlyUpdated(actionsWithChanges);
+            } else {
+              setRecentlyUpdated([]);
+            }
+          } else {
+            setRecentlyUpdated([]);
+          }
+
+          // Combine updates and closed threats for the Recent Updates section
+          const updateItems: RecentUpdateItem[] = [];
+
+          // Add regular updates (skip milestone/threat completion updates as those are fetched separately)
+          if (recentUpdatesData) {
+            for (const update of recentUpdatesData as UpdateWithRelations[]) {
+              // Skip system-generated updates for milestones and threats
+              const lowerContent = update.content.toLowerCase();
+              if (lowerContent.startsWith('milestone complete') || lowerContent.startsWith('threat closed')) {
+                continue;
+              }
+              updateItems.push({
+                type: 'update',
+                id: update.id,
+                content: update.content,
+                posted_at: update.posted_at,
+                workstream: update.workstream,
+                creator: update.creator,
+              });
+            }
+          }
+
+          // Fetch and add recently closed threats
+          const { data: closedThreatsData } = await supabase
+            .from('threats')
+            .select(`*, workstream:workstreams(id, name, color, parent_id)`)
+            .eq('status', 'closed')
+            .gte('updated_at', new Date(sevenDaysAgo).toISOString())
+            .order('updated_at', { ascending: false })
+            .limit(5);
+
+          if (closedThreatsData) {
+            for (const threat of closedThreatsData as (Threat & { workstream?: Workstream })[]) {
+              updateItems.push({
+                type: 'threat',
+                id: threat.id,
+                content: `Threat closed: ${threat.title}`,
+                posted_at: threat.updated_at,
+                workstream: threat.workstream,
+                threat_title: threat.title,
+                current_risk: threat.current_risk as RiskLevel,
+              });
+            }
+          }
+
+          // Fetch and add recently completed milestones
+          const { data: completedMilestonesData } = await supabase
+            .from('milestones')
+            .select(`*, workstream:workstreams(id, name, color, parent_id)`)
+            .eq('status', 'completed')
+            .gte('updated_at', new Date(sevenDaysAgo).toISOString())
+            .order('updated_at', { ascending: false })
+            .limit(5);
+
+          if (completedMilestonesData) {
+            for (const milestone of completedMilestonesData as (Milestone & { workstream?: Workstream })[]) {
+              updateItems.push({
+                type: 'milestone',
+                id: milestone.id,
+                content: `Milestone complete: ${milestone.title}`,
+                posted_at: milestone.updated_at,
+                workstream: milestone.workstream,
+                milestone_title: milestone.title,
+              });
+            }
+          }
+
+          // Sort by posted_at and set
+          updateItems.sort((a, b) => new Date(b.posted_at).getTime() - new Date(a.posted_at).getTime());
+          setRecentUpdateItems(updateItems);
+
           if (recentThreatsData) {
             setRecentThreats(recentThreatsData as unknown as (Threat & { workstream?: Workstream })[]);
           }
@@ -278,6 +509,33 @@ export default function DashboardPage() {
   // Real-time updates disabled temporarily for stability
   // TODO: Re-enable with proper memoization
 
+  // Handler to hide an action from recently updated
+  const handleHideFromRecent = async (e: React.MouseEvent, action: RecentlyUpdatedAction) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!action.audit_id) {
+      toast.error('Cannot hide this entry');
+      return;
+    }
+
+    const supabase = createClient();
+    const { error } = await supabase
+      .from('action_audit')
+      .update({ hide_from_recent: true })
+      .eq('id', action.audit_id);
+
+    if (error) {
+      console.error('[Dashboard] Error hiding action:', error);
+      toast.error('Failed to hide action');
+      return;
+    }
+
+    // Remove from state
+    setRecentlyUpdated(prev => prev.filter(a => a.id !== action.id));
+    toast.success('Hidden from recent updates');
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -302,11 +560,6 @@ export default function DashboardPage() {
                 className="w-48"
               />
             </div>
-            <Link href="/executive">
-              <Button variant="outline" size="sm">
-                Executive View
-              </Button>
-            </Link>
           </div>
         }
       />
@@ -314,12 +567,12 @@ export default function DashboardPage() {
       <div className="p-6 space-y-6">
         {/* Stats Grid - Clickable Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Link href={`/actions?priority=critical${selectedWorkstream !== 'all' ? `&workstream=${selectedWorkstream}` : ''}`}>
+          <Link href={`/actions?priority=critical,high${selectedWorkstream !== 'all' ? `&workstream=${selectedWorkstream}` : ''}`}>
             <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white border-0 cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all">
               <CardContent className="pt-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-red-100 text-sm font-medium">Critical Actions</p>
+                    <p className="text-red-100 text-sm font-medium">High Priority Actions</p>
                     <p className="text-3xl font-bold mt-1">{stats?.criticalActions || 0}</p>
                   </div>
                   <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
@@ -330,32 +583,16 @@ export default function DashboardPage() {
             </Card>
           </Link>
 
-          <Link href={`/actions?status=overdue${selectedWorkstream !== 'all' ? `&workstream=${selectedWorkstream}` : ''}`}>
-            <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white border-0 cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all">
+          <Link href={`/actions?status=pending,in_progress,on_hold${selectedWorkstream !== 'all' ? `&workstream=${selectedWorkstream}` : ''}`}>
+            <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white border-0 cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all">
               <CardContent className="pt-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-orange-100 text-sm font-medium">Overdue Actions</p>
-                    <p className="text-3xl font-bold mt-1">{stats?.overdueActions || 0}</p>
+                    <p className="text-blue-100 text-sm font-medium">Open Actions</p>
+                    <p className="text-3xl font-bold mt-1">{stats?.openActions || 0}</p>
                   </div>
                   <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
-                    <ClockIcon className="w-6 h-6" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
-
-          <Link href={`/threats?risk=high${selectedWorkstream !== 'all' ? `&workstream=${selectedWorkstream}` : ''}`}>
-            <Card className="bg-gradient-to-br from-amber-500 to-amber-600 text-white border-0 cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all">
-              <CardContent className="pt-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-amber-100 text-sm font-medium">High Risk Threats</p>
-                    <p className="text-3xl font-bold mt-1">{stats?.highRiskThreats || 0}</p>
-                  </div>
-                  <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
-                    <ExclamationTriangleIcon className="w-6 h-6" />
+                    <ClipboardDocumentListIcon className="w-6 h-6" />
                   </div>
                 </div>
               </CardContent>
@@ -379,66 +616,256 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
           </Link>
+
+          <Link href={`/threats?risk=high${selectedWorkstream !== 'all' ? `&workstream=${selectedWorkstream}` : ''}`}>
+            <Card className="bg-gradient-to-br from-amber-500 to-amber-600 text-white border-0 cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all">
+              <CardContent className="pt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-amber-100 text-sm font-medium">High Risk Threats</p>
+                    <p className="text-3xl font-bold mt-1">{stats?.highRiskThreats || 0}</p>
+                  </div>
+                  <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
+                    <ExclamationTriangleIcon className="w-6 h-6" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
         </div>
 
-        {/* Progress by Workstream */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ArrowTrendingUpIcon className="w-5 h-5 text-gray-400" />
-              Progress by Workstream
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {workstreams.length === 0 ? (
-              <EmptyState
-                title="No workstreams configured"
-                description="Create workstreams to organize your crisis response."
-                action={{
-                  label: 'Create Workstream',
-                  onClick: () => window.location.href = '/admin',
-                }}
-              />
-            ) : (
-              <div className="space-y-4">
-                {workstreams.map((workstream) => (
-                  <WorkstreamProgress key={workstream.id} workstream={workstream} />
+        {/* Quick Actions - only show for users who can edit */}
+        {canEdit && (
+          <div className="flex flex-wrap gap-3">
+            <Link href="/actions/new">
+              <Button>
+                <PlusIcon className="w-4 h-4 mr-2" />
+                New Action
+              </Button>
+            </Link>
+            <Link href="/threats/new">
+              <Button variant="secondary">
+                <PlusIcon className="w-4 h-4 mr-2" />
+                Log Threat
+              </Button>
+            </Link>
+            <Link href="/queries/new">
+              <Button variant="secondary">
+                <PlusIcon className="w-4 h-4 mr-2" />
+                Submit Query
+              </Button>
+            </Link>
+            <Link href="/decisions/new">
+              <Button variant="secondary">
+                <PlusIcon className="w-4 h-4 mr-2" />
+                Record Decision
+              </Button>
+            </Link>
+            <Link href="/updates/new">
+              <Button variant="secondary">
+                <MegaphoneIcon className="w-4 h-4 mr-2" />
+                Post Update
+              </Button>
+            </Link>
+          </div>
+        )}
+
+        {/* Updates Ticker */}
+        {recentUpdateItems.length > 0 && (
+          <Card className="bg-gradient-to-r from-red-50 to-orange-50 border-red-100">
+            <CardHeader
+              actions={
+                <Link href="/updates">
+                  <Button variant="ghost" size="sm">View All Updates</Button>
+                </Link>
+              }
+            >
+              <CardTitle className="flex items-center gap-2">
+                <MegaphoneIcon className="w-5 h-5 text-red-500" />
+                Recent Updates
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {recentUpdateItems.slice(0, 3).map((item) => (
+                  <div
+                    key={`${item.type}-${item.id}`}
+                    className="flex items-start gap-3 p-3 bg-white rounded-lg border border-red-100"
+                  >
+                    {item.type === 'threat' && (
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+                        <CheckCircleIcon className="w-4 h-4 text-green-600" />
+                      </div>
+                    )}
+                    {item.type === 'milestone' && (
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+                        <CheckCircleIcon className="w-4 h-4 text-green-600" />
+                      </div>
+                    )}
+                    {item.type === 'update' && (
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                        <MegaphoneIcon className="w-4 h-4 text-blue-600" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      {item.type === 'threat' ? (
+                        <Link href={`/threats/${item.id}`} className="block hover:underline">
+                          <p className="text-sm text-gray-900">
+                            <span className="font-medium">Threat closed:</span> {item.threat_title}
+                          </p>
+                        </Link>
+                      ) : item.type === 'milestone' ? (
+                        <Link href={`/milestones/${item.id}`} className="block hover:underline">
+                          <p className="text-sm text-gray-900">
+                            <span className="font-medium">Milestone complete:</span> {item.milestone_title}
+                          </p>
+                        </Link>
+                      ) : (
+                        <p className="text-sm text-gray-900 whitespace-pre-wrap">{item.content}</p>
+                      )}
+                      <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
+                        {item.type === 'update' && item.creator && (
+                          <>
+                            <Avatar src={item.creator.avatar_url} name={item.creator.full_name} size="xs" />
+                            <span>{item.creator.full_name}</span>
+                            <span className="text-gray-300">•</span>
+                          </>
+                        )}
+                        <span>{getRelativeTime(item.posted_at)}</span>
+                        {item.workstream && (
+                          <>
+                            <span className="text-gray-300">•</span>
+                            <WorkstreamBadgeWithData
+                              workstream={item.workstream}
+                              allWorkstreams={workstreams}
+                              shape="rounded"
+                              showIndicator={false}
+                            />
+                          </>
+                        )}
+                        {item.type === 'threat' && item.current_risk && (
+                          <>
+                            <span className="text-gray-300">•</span>
+                            <RiskBadge risk={item.current_risk} />
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 ))}
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Main Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Recent Actions */}
+          {/* Recently Updated Actions */}
           <Card>
             <CardHeader
               actions={
-                <Link href="/actions">
+                <Link href="/actions/recent">
                   <Button variant="ghost" size="sm">View All</Button>
                 </Link>
               }
             >
               <CardTitle className="flex items-center gap-2">
-                <ClipboardDocumentListIcon className="w-5 h-5 text-gray-400" />
-                Active Actions
+                <ArrowPathIcon className="w-5 h-5 text-gray-400" />
+                Recently Updated Actions
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {filteredRecentActions.length === 0 ? (
+              {filteredRecentlyUpdated.length === 0 ? (
                 <EmptyState
-                  icon={<ClipboardDocumentListIcon className="w-6 h-6" />}
-                  title="No active actions"
-                  description="All actions are complete or no actions created yet."
-                  action={{
-                    label: 'Create Action',
-                    onClick: () => window.location.href = '/actions/new',
-                  }}
+                  icon={<ArrowPathIcon className="w-6 h-6" />}
+                  title="No recent activity"
+                  description="No actions have been updated recently."
                 />
               ) : (
                 <div className="space-y-3">
-                  {filteredRecentActions.map((action) => (
+                  {filteredRecentlyUpdated.map((action) => (
+                    <Link
+                      key={action.id}
+                      href={`/actions/${action.id}`}
+                      className="group block p-3 rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-sm font-medium text-gray-900 truncate">{action.title}</h4>
+                            <PriorityBadge priority={action.priority} />
+                          </div>
+                          <div className="flex items-center gap-2 mt-1">
+                            {action.workstream && (
+                              <WorkstreamBadgeWithData
+                                workstream={action.workstream}
+                                allWorkstreams={workstreams}
+                                shape="rounded"
+                                showIndicator={false}
+                              />
+                            )}
+                            <StatusBadge status={action.status} />
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          {canAdmin && action.audit_id && (
+                            <button
+                              onClick={(e) => handleHideFromRecent(e, action)}
+                              className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-all"
+                              title="Hide from recent updates"
+                            >
+                              <EyeSlashIcon className="w-4 h-4" />
+                            </button>
+                          )}
+                          <div className="flex flex-col items-end gap-1">
+                            {action.owner && (
+                              <Avatar src={action.owner.avatar_url} name={action.owner.full_name} size="xs" />
+                            )}
+                            <span className="text-xs text-gray-500">
+                              {action.last_change && <span className="font-medium text-gray-600">{action.last_change}</span>}
+                              {action.last_change && ' · '}
+                              {getRelativeTime(action.effective_date || action.updated_at)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* My Actions */}
+          <Card>
+            <CardHeader
+              actions={
+                <Link href={`/actions?owner=${currentUser?.id || ''}`}>
+                  <Button variant="ghost" size="sm">View All</Button>
+                </Link>
+              }
+            >
+              <CardTitle className="flex items-center gap-2">
+                <UserIcon className="w-5 h-5 text-gray-400" />
+                Actions Assigned to Me
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {!currentUser ? (
+                <EmptyState
+                  icon={<UserIcon className="w-6 h-6" />}
+                  title="Sign in to see your actions"
+                  description="Your assigned actions will appear here."
+                />
+              ) : filteredMyActions.length === 0 ? (
+                <EmptyState
+                  icon={<UserIcon className="w-6 h-6" />}
+                  title="No actions assigned"
+                  description="You have no active actions assigned to you."
+                />
+              ) : (
+                <div className="space-y-3">
+                  {filteredMyActions.map((action) => (
                     <Link
                       key={action.id}
                       href={`/actions/${action.id}`}
@@ -452,29 +879,21 @@ export default function DashboardPage() {
                           </div>
                           <div className="flex items-center gap-2 mt-1">
                             {action.workstream && (
-                              <span
-                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                                style={{
-                                  backgroundColor: `${action.workstream.color}20`,
-                                  color: action.workstream.color,
-                                }}
-                              >
-                                {action.workstream.name}
-                              </span>
+                              <WorkstreamBadgeWithData
+                                workstream={action.workstream}
+                                allWorkstreams={workstreams}
+                                shape="rounded"
+                                showIndicator={false}
+                              />
                             )}
                             <StatusBadge status={action.status} />
                           </div>
                         </div>
-                        <div className="flex flex-col items-end gap-1">
-                          {action.owner && (
-                            <Avatar src={action.owner.avatar_url} name={action.owner.full_name} size="xs" />
-                          )}
-                          {action.due_date && (
-                            <span className={`text-xs ${isOverdue(action.due_date) ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
-                              {isOverdue(action.due_date) ? 'Overdue' : `Due ${getDaysUntil(action.due_date)}d`}
-                            </span>
-                          )}
-                        </div>
+                        {action.due_date && (
+                          <span className={`text-xs ${isOverdue(action.due_date) ? 'text-red-600 font-medium' : getDaysUntil(action.due_date) === 0 ? 'text-amber-600 font-medium' : 'text-gray-500'}`}>
+                            {getDaysUntil(action.due_date) === 0 ? 'Due today' : isOverdue(action.due_date) ? 'Overdue' : `Due ${getDaysUntil(action.due_date)}d`}
+                          </span>
+                        )}
                       </div>
                     </Link>
                   ))}
@@ -483,7 +902,7 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Threats */}
+          {/* Active Threats */}
           <Card>
             <CardHeader
               actions={
@@ -502,7 +921,7 @@ export default function DashboardPage() {
                 <EmptyState
                   icon={<ExclamationTriangleIcon className="w-6 h-6" />}
                   title="No active threats"
-                  description="No high or medium risk threats identified."
+                  description="No open threats identified."
                   action={{
                     label: 'Log Threat',
                     onClick: () => window.location.href = '/threats/new',
@@ -521,21 +940,16 @@ export default function DashboardPage() {
                           <h4 className="text-sm font-medium text-gray-900 truncate">{threat.title}</h4>
                           <div className="flex items-center gap-2 mt-1">
                             {threat.workstream && (
-                              <span
-                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                                style={{
-                                  backgroundColor: `${threat.workstream.color}20`,
-                                  color: threat.workstream.color,
-                                }}
-                              >
-                                {threat.workstream.name}
-                              </span>
+                              <WorkstreamBadgeWithData
+                                workstream={threat.workstream}
+                                allWorkstreams={workstreams}
+                                shape="rounded"
+                                showIndicator={false}
+                              />
                             )}
-                            {threat.expected_delay && (
-                              <span className="text-xs text-gray-500">
-                                Delay: {threat.expected_delay}
-                              </span>
-                            )}
+                            <span className="text-xs text-gray-500">
+                              {getRelativeTime(threat.updated_at)}
+                            </span>
                           </div>
                         </div>
                         <RiskBadge risk={threat.current_risk} />
@@ -623,15 +1037,13 @@ export default function DashboardPage() {
                         <div className="flex-1 min-w-0">
                           <h4 className="text-sm font-medium text-gray-900 truncate">{milestone.title}</h4>
                           {milestone.workstream && (
-                            <span
-                              className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium mt-1"
-                              style={{
-                                backgroundColor: `${milestone.workstream.color}20`,
-                                color: milestone.workstream.color,
-                              }}
-                            >
-                              {milestone.workstream.name}
-                            </span>
+                            <WorkstreamBadgeWithData
+                              workstream={milestone.workstream}
+                              allWorkstreams={workstreams}
+                              shape="rounded"
+                              showIndicator={false}
+                              className="mt-1"
+                            />
                           )}
                         </div>
                         <div className="text-right">
@@ -650,98 +1062,8 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         </div>
-
-        {/* Quick Actions */}
-        <div className="flex flex-wrap gap-3">
-          <Link href="/actions/new">
-            <Button>
-              <PlusIcon className="w-4 h-4 mr-2" />
-              New Action
-            </Button>
-          </Link>
-          <Link href="/threats/new">
-            <Button variant="secondary">
-              <PlusIcon className="w-4 h-4 mr-2" />
-              Log Threat
-            </Button>
-          </Link>
-          <Link href="/queries/new">
-            <Button variant="secondary">
-              <PlusIcon className="w-4 h-4 mr-2" />
-              Submit Query
-            </Button>
-          </Link>
-          <Link href="/decisions/new">
-            <Button variant="secondary">
-              <PlusIcon className="w-4 h-4 mr-2" />
-              Record Decision
-            </Button>
-          </Link>
-        </div>
       </div>
     </div>
   );
 }
 
-function WorkstreamProgress({ workstream }: { workstream: Workstream }) {
-  const [stats, setStats] = useState({ total: 0, completed: 0 });
-
-  useEffect(() => {
-    let mounted = true;
-
-    const fetchStats = async () => {
-      const supabase = createClient();
-
-      try {
-        // Add timeout to prevent hanging
-        const result = await Promise.race([
-          supabase.from('actions').select('status').eq('workstream_id', workstream.id),
-          new Promise<{ data: null }>((resolve) => setTimeout(() => resolve({ data: null }), 5000)),
-        ]);
-
-        if (result.data && mounted) {
-          setStats({
-            total: result.data.length,
-            completed: result.data.filter(a => a.status === 'complete').length,
-          });
-        }
-      } catch (error) {
-        console.error('[WorkstreamProgress] Error:', error);
-      }
-    };
-
-    fetchStats();
-
-    return () => {
-      mounted = false;
-    };
-  }, [workstream.id]);
-
-  const percentage = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div
-            className="w-3 h-3 rounded-full"
-            style={{ backgroundColor: workstream.color }}
-          />
-          <span className="text-sm font-medium text-gray-700">{workstream.name}</span>
-        </div>
-        <span className="text-sm text-gray-500">
-          {stats.completed}/{stats.total} ({percentage}%)
-        </span>
-      </div>
-      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-        <div
-          className="h-full rounded-full transition-all duration-500"
-          style={{
-            width: `${percentage}%`,
-            backgroundColor: workstream.color,
-          }}
-        />
-      </div>
-    </div>
-  );
-}

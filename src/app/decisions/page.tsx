@@ -10,14 +10,16 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { Avatar } from '@/components/ui/avatar';
+import { WorkstreamBadgeWithData } from '@/components/ui/workstream-badge';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDate, getRelativeTime } from '@/lib/utils';
+import { formatDate, getRelativeTime, buildWorkstreamOptions, getWorkstreamDisplayName } from '@/lib/utils';
 import {
   PlusIcon,
   DocumentTextIcon,
   FunnelIcon,
 } from '@heroicons/react/24/outline';
+import { usePermission } from '@/hooks/use-user';
 import type { Decision, Workstream, User } from '@/types/database';
 
 type DecisionWithRelations = Decision & {
@@ -27,6 +29,7 @@ type DecisionWithRelations = Decision & {
 
 export default function DecisionsPage() {
   const { workstreams } = useAppStore();
+  const { canEdit } = usePermission();
   const [loading, setLoading] = useState(true);
   const [decisions, setDecisions] = useState<DecisionWithRelations[]>([]);
   const [workstreamFilter, setWorkstreamFilter] = useState<string>('all');
@@ -64,10 +67,7 @@ export default function DecisionsPage() {
     ? decisions
     : decisions.filter(d => d.workstream_id === workstreamFilter);
 
-  const workstreamOptions = [
-    { value: 'all', label: 'All Workstreams' },
-    ...workstreams.map(w => ({ value: w.id, label: w.name })),
-  ];
+  const workstreamOptions = buildWorkstreamOptions(workstreams);
 
   if (loading) {
     return (
@@ -86,12 +86,14 @@ export default function DecisionsPage() {
         title="Decision Log"
         subtitle={`${filteredDecisions.length} decision${filteredDecisions.length !== 1 ? 's' : ''} recorded`}
         actions={
-          <Link href="/decisions/new">
-            <Button size="sm">
-              <PlusIcon className="w-4 h-4 mr-2" />
-              Record Decision
-            </Button>
-          </Link>
+          canEdit && (
+            <Link href="/decisions/new">
+              <Button size="sm">
+                <PlusIcon className="w-4 h-4 mr-2" />
+                Record Decision
+              </Button>
+            </Link>
+          )
         }
       />
 
@@ -128,7 +130,7 @@ export default function DecisionsPage() {
         ) : (
           <div className="space-y-4">
             {filteredDecisions.map((decision, index) => (
-              <DecisionCard key={decision.id} decision={decision} isFirst={index === 0} />
+              <DecisionCard key={decision.id} decision={decision} isFirst={index === 0} workstreams={workstreams} />
             ))}
           </div>
         )}
@@ -137,7 +139,7 @@ export default function DecisionsPage() {
   );
 }
 
-function DecisionCard({ decision, isFirst }: { decision: DecisionWithRelations; isFirst: boolean }) {
+function DecisionCard({ decision, isFirst, workstreams }: { decision: DecisionWithRelations; isFirst: boolean; workstreams: Workstream[] }) {
   return (
     <div className="relative pl-8">
       {/* Timeline line */}
@@ -154,15 +156,12 @@ function DecisionCard({ decision, isFirst }: { decision: DecisionWithRelations; 
                 <div className="flex items-center gap-2 mb-1">
                   <h3 className="text-base font-medium text-gray-900">{decision.title}</h3>
                   {decision.workstream && (
-                    <span
-                      className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                      style={{
-                        backgroundColor: `${decision.workstream.color}20`,
-                        color: decision.workstream.color,
-                      }}
-                    >
-                      {decision.workstream.name}
-                    </span>
+                    <WorkstreamBadgeWithData
+                      workstream={decision.workstream}
+                      allWorkstreams={workstreams}
+                      shape="rounded"
+                      showIndicator={false}
+                    />
                   )}
                 </div>
                 <p className="text-sm text-gray-600 line-clamp-2">{decision.description}</p>

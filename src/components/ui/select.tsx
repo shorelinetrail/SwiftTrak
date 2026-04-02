@@ -80,8 +80,9 @@ export const Select = forwardRef<HTMLDivElement, SelectProps>(
                 <Listbox.Button
                   ref={buttonRef}
                   className={cn(
-                    'relative w-full cursor-pointer rounded-lg border bg-white py-2 pl-3 pr-10 text-left',
-                    'focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500',
+                    'relative w-full cursor-pointer rounded-lg border bg-white py-2.5 pl-3 pr-10 text-left',
+                    'text-base sm:text-sm min-h-[44px] touch-manipulation',
+                    'focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1',
                     disabled && 'bg-gray-50 cursor-not-allowed',
                     error ? 'border-red-500' : 'border-gray-300'
                   )}
@@ -124,7 +125,7 @@ export const Select = forwardRef<HTMLDivElement, SelectProps>(
                           value={option.value}
                           className={({ active }) =>
                             cn(
-                              'relative cursor-pointer select-none py-2 pl-10 pr-4',
+                              'relative cursor-pointer select-none py-3 pl-10 pr-4 touch-manipulation',
                               active ? 'bg-red-50 text-red-900' : 'text-gray-900'
                             )
                           }
@@ -164,3 +165,153 @@ export const Select = forwardRef<HTMLDivElement, SelectProps>(
 );
 
 Select.displayName = 'Select';
+
+// Multi-select component for filters
+interface MultiSelectProps {
+  label?: string;
+  options: SelectOption[];
+  value: string[];
+  onChange: (value: string[]) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  className?: string;
+}
+
+export function MultiSelect({
+  label,
+  options,
+  value,
+  onChange,
+  placeholder = 'Select...',
+  disabled,
+  className,
+}: MultiSelectProps) {
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
+  const [mounted, setMounted] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const updatePosition = useCallback(() => {
+    if (buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setDropdownPosition({
+        top: rect.bottom + window.scrollY + 4,
+        left: rect.left + window.scrollX,
+        width: rect.width,
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    updatePosition();
+
+    const handlePositionUpdate = () => updatePosition();
+    window.addEventListener('scroll', handlePositionUpdate, true);
+    window.addEventListener('resize', handlePositionUpdate);
+
+    return () => {
+      window.removeEventListener('scroll', handlePositionUpdate, true);
+      window.removeEventListener('resize', handlePositionUpdate);
+    };
+  }, [isOpen, updatePosition]);
+
+  const toggleOption = (optionValue: string) => {
+    if (value.includes(optionValue)) {
+      onChange(value.filter(v => v !== optionValue));
+    } else {
+      onChange([...value, optionValue]);
+    }
+  };
+
+  const selectedLabels = options
+    .filter(o => value.includes(o.value))
+    .map(o => o.label);
+
+  const displayText = selectedLabels.length === 0
+    ? placeholder
+    : selectedLabels.length === 1
+    ? selectedLabels[0]
+    : `${selectedLabels.length} selected`;
+
+  return (
+    <div className={cn('space-y-1', className)}>
+      {label && (
+        <label className="block text-sm font-medium text-gray-700">{label}</label>
+      )}
+      <div className="relative">
+        <button
+          ref={buttonRef}
+          type="button"
+          disabled={disabled}
+          onClick={() => setIsOpen(!isOpen)}
+          className={cn(
+            'relative w-full cursor-pointer rounded-lg border bg-white py-2.5 pl-3 pr-10 text-left',
+            'text-base sm:text-sm min-h-[44px] touch-manipulation',
+            'focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500',
+            disabled && 'bg-gray-50 cursor-not-allowed',
+            'border-gray-300'
+          )}
+        >
+          <span className={cn('block truncate', value.length === 0 && 'text-gray-400')}>
+            {displayText}
+          </span>
+          <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+            <ChevronUpDownIcon className="h-5 w-5 text-gray-400" />
+          </span>
+        </button>
+
+        {mounted && isOpen && createPortal(
+          <>
+            {/* Backdrop to close dropdown */}
+            <div
+              className="fixed inset-0 z-[9998]"
+              onClick={() => setIsOpen(false)}
+            />
+            <div
+              className="fixed z-[9999] max-h-60 overflow-auto rounded-lg bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5"
+              style={{
+                top: dropdownPosition.top,
+                left: dropdownPosition.left,
+                width: dropdownPosition.width,
+              }}
+            >
+              {options.map((option) => {
+                const isSelected = value.includes(option.value);
+                return (
+                  <div
+                    key={option.value}
+                    onClick={() => toggleOption(option.value)}
+                    className={cn(
+                      'relative cursor-pointer select-none py-3 pl-10 pr-4 touch-manipulation',
+                      'hover:bg-red-50 hover:text-red-900',
+                      isSelected && 'bg-red-50/50'
+                    )}
+                  >
+                    <span className={cn('block truncate', isSelected && 'font-medium')}>
+                      <span className="flex items-center gap-2">
+                        {option.icon}
+                        {option.label}
+                      </span>
+                    </span>
+                    {isSelected && (
+                      <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-red-600">
+                        <CheckIcon className="h-5 w-5" />
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>,
+          document.body
+        )}
+      </div>
+    </div>
+  );
+}

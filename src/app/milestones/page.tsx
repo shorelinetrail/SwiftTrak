@@ -10,9 +10,10 @@ import { Header } from '@/components/layout/header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/badge';
+import { WorkstreamBadgeWithData } from '@/components/ui/workstream-badge';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDate, getDaysUntil, cn } from '@/lib/utils';
+import { formatDate, getDaysUntil, cn, getWorkstreamDisplayName } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import {
   PlusIcon,
@@ -20,6 +21,7 @@ import {
   CheckCircleIcon,
   ClockIcon,
   ExclamationCircleIcon,
+  PencilIcon,
 } from '@heroicons/react/24/outline';
 import type { Milestone, Workstream, User } from '@/types/database';
 
@@ -105,12 +107,14 @@ export default function MilestonesPage() {
         title="Key Milestones"
         subtitle={`${pendingMilestones.length} pending, ${completedMilestones.length} completed`}
         actions={
-          <Link href="/milestones/new">
-            <Button size="sm">
-              <PlusIcon className="w-4 h-4 mr-2" />
-              Add Milestone
-            </Button>
-          </Link>
+          canEdit && (
+            <Link href="/milestones/new">
+              <Button size="sm">
+                <PlusIcon className="w-4 h-4 mr-2" />
+                Add Milestone
+              </Button>
+            </Link>
+          )
         }
       />
 
@@ -161,7 +165,9 @@ export default function MilestonesPage() {
                 <MilestoneCard
                   key={milestone.id}
                   milestone={milestone}
+                  workstreams={workstreams}
                   onToggleComplete={canEdit ? () => handleToggleComplete(milestone) : undefined}
+                  canEdit={canEdit}
                 />
               ))}
             </div>
@@ -177,7 +183,9 @@ export default function MilestonesPage() {
                 <MilestoneCard
                   key={milestone.id}
                   milestone={milestone}
+                  workstreams={workstreams}
                   onToggleComplete={canEdit ? () => handleToggleComplete(milestone) : undefined}
+                  canEdit={canEdit}
                 />
               ))}
             </div>
@@ -202,10 +210,14 @@ export default function MilestonesPage() {
 
 function MilestoneCard({
   milestone,
+  workstreams,
   onToggleComplete,
+  canEdit,
 }: {
   milestone: MilestoneWithRelations;
+  workstreams: Workstream[];
   onToggleComplete?: () => void;
+  canEdit?: boolean;
 }) {
   const isCompleted = milestone.status === 'completed';
   const isPast = new Date(milestone.target_date) < new Date();
@@ -245,15 +257,12 @@ function MilestoneCard({
                 {milestone.title}
               </h3>
               {milestone.workstream && (
-                <span
-                  className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                  style={{
-                    backgroundColor: `${milestone.workstream.color}20`,
-                    color: milestone.workstream.color,
-                  }}
-                >
-                  {milestone.workstream.name}
-                </span>
+                <WorkstreamBadgeWithData
+                  workstream={milestone.workstream}
+                  allWorkstreams={workstreams}
+                  shape="rounded"
+                  showIndicator={false}
+                />
               )}
             </div>
             {milestone.description && (
@@ -261,25 +270,34 @@ function MilestoneCard({
             )}
           </div>
 
-          <div className="text-right">
-            <p className={cn(
-              'text-sm font-medium',
-              isCompleted ? 'text-green-600' : isPast ? 'text-red-600' : 'text-gray-900'
-            )}>
-              {formatDate(milestone.target_date, { month: 'short', day: 'numeric', year: 'numeric' })}
-            </p>
-            {!isCompleted && (
+          <div className="flex items-center gap-4">
+            <div className="text-right">
               <p className={cn(
-                'text-xs',
-                isPast ? 'text-red-500' : 'text-gray-500'
+                'text-sm font-medium',
+                isCompleted ? 'text-green-600' : isPast ? 'text-red-600' : 'text-gray-900'
               )}>
-                {isPast ? `${Math.abs(daysUntil)} days overdue` : `${daysUntil} days`}
+                {formatDate(milestone.target_date, { month: 'short', day: 'numeric', year: 'numeric' })}
               </p>
-            )}
-            {isCompleted && milestone.completed_at && (
-              <p className="text-xs text-green-600">
-                Completed {formatDate(milestone.completed_at, { month: 'short', day: 'numeric' })}
-              </p>
+              {!isCompleted && (
+                <p className={cn(
+                  'text-xs',
+                  isPast ? 'text-red-500' : daysUntil === 0 ? 'text-amber-600' : 'text-gray-500'
+                )}>
+                  {daysUntil === 0 ? 'Due today' : isPast ? `${Math.abs(daysUntil)} days overdue` : `${daysUntil} days`}
+                </p>
+              )}
+              {isCompleted && milestone.completed_at && (
+                <p className="text-xs text-green-600">
+                  Completed {formatDate(milestone.completed_at, { month: 'short', day: 'numeric' })}
+                </p>
+              )}
+            </div>
+            {canEdit && (
+              <Link href={`/milestones/${milestone.id}`}>
+                <Button variant="ghost" size="sm" title="Edit milestone">
+                  <PencilIcon className="w-4 h-4" />
+                </Button>
+              </Link>
             )}
           </div>
         </div>

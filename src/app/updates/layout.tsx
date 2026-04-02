@@ -1,6 +1,6 @@
 import { MainLayout } from '@/components/layout/main-layout';
 
-export default function ExecutiveLayout({
+export default function UpdatesLayout({
   children,
 }: {
   children: React.ReactNode;
