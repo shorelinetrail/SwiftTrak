@@ -173,7 +173,8 @@ export const PhotoGallery = memo(function PhotoGallery({
   }
 
   const handleClick = (photoId: string, flatIndex: number, e: React.MouseEvent) => {
-    if (selectionMode && onSelectionChange) {
+    // Shift/Ctrl+click always triggers selection (even outside selectionMode)
+    if ((e.shiftKey || e.ctrlKey || e.metaKey) && onSelectionChange) {
       const newSelection = new Set(selectedIds);
 
       if (e.shiftKey && lastSelectedIndexRef.current !== null) {
@@ -183,14 +184,23 @@ export const PhotoGallery = memo(function PhotoGallery({
           newSelection.add(photos[i].id);
         }
       } else {
+        // Ctrl/Cmd+click: toggle individual
         if (newSelection.has(photoId)) {
           newSelection.delete(photoId);
         } else {
           newSelection.add(photoId);
         }
-        lastSelectedIndexRef.current = flatIndex;
       }
-
+      lastSelectedIndexRef.current = flatIndex;
+      onSelectionChange(newSelection);
+    } else if (selectionMode && onSelectionChange) {
+      const newSelection = new Set(selectedIds);
+      if (newSelection.has(photoId)) {
+        newSelection.delete(photoId);
+      } else {
+        newSelection.add(photoId);
+      }
+      lastSelectedIndexRef.current = flatIndex;
       onSelectionChange(newSelection);
     } else {
       setLightboxIndex(flatIndex);
@@ -234,15 +244,12 @@ export const PhotoGallery = memo(function PhotoGallery({
                         <input
                           type="checkbox"
                           checked={isSelected}
-                          onChange={() => {
-                            if (onSelectionChange) {
-                              const next = new Set(selectedIds);
-                              if (isSelected) next.delete(photo.id);
-                              else next.add(photo.id);
-                              onSelectionChange(next);
-                            }
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleClick(photo.id, flatIndex, e as unknown as React.MouseEvent);
                           }}
-                          className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                          readOnly
+                          className="rounded border-gray-300 text-red-600 focus:ring-red-500 cursor-pointer"
                         />
                       </td>
                     )}
