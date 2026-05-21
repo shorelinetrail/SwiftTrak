@@ -6,9 +6,23 @@ const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID!;
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY!;
 const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || 'swift-trak';
 
+// Client for server-side operations (send commands)
 const r2Client = new S3Client({
   region: 'auto',
   endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: R2_ACCESS_KEY_ID,
+    secretAccessKey: R2_SECRET_ACCESS_KEY,
+  },
+  forcePathStyle: true,
+});
+
+// Client for presigned URLs — endpoint includes the bucket so the
+// generated URL is path-style (account.r2.../bucket/key) and avoids
+// the virtual-hosted subdomain that has no SSL cert.
+const r2PresignClient = new S3Client({
+  region: 'auto',
+  endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${R2_BUCKET_NAME}`,
   credentials: {
     accessKeyId: R2_ACCESS_KEY_ID,
     secretAccessKey: R2_SECRET_ACCESS_KEY,
@@ -34,7 +48,7 @@ export async function getPresignedUploadUrl(
     Key: key,
     ContentType: contentType,
   });
-  return getSignedUrl(r2Client, command, { expiresIn });
+  return getSignedUrl(r2PresignClient, command, { expiresIn });
 }
 
 export async function getPresignedDownloadUrl(
@@ -49,7 +63,7 @@ export async function getPresignedDownloadUrl(
       ResponseContentDisposition: `attachment; filename="${downloadFilename}"`,
     }),
   });
-  return getSignedUrl(r2Client, command, { expiresIn });
+  return getSignedUrl(r2PresignClient, command, { expiresIn });
 }
 
 export async function getPresignedDownloadUrls(
@@ -57,7 +71,6 @@ export async function getPresignedDownloadUrls(
   expiresIn = 3600
 ): Promise<Map<string, string>> {
   const results = new Map<string, string>();
-  // Process in parallel batches of 50
   const BATCH_SIZE = 50;
   for (let i = 0; i < keys.length; i += BATCH_SIZE) {
     const batch = keys.slice(i, i + BATCH_SIZE);
