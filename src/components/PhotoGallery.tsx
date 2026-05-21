@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { PhotoLightbox } from './PhotoLightbox';
 import { EmptyState } from '@/components/ui/empty-state';
 import { formatDate } from '@/lib/utils';
+import toast from 'react-hot-toast';
 import {
   PhotoIcon,
   CheckIcon,
@@ -13,6 +14,7 @@ import {
   PlayIcon,
   FilmIcon,
   ArrowDownTrayIcon,
+  LinkIcon,
 } from '@heroicons/react/24/outline';
 import type { WorkstreamPhoto } from '@/types/database';
 
@@ -221,7 +223,7 @@ export const PhotoGallery = memo(function PhotoGallery({
                 <th className="text-left py-3 px-2 font-medium text-gray-500">Uploaded By</th>
                 <th className="text-left py-3 px-2 font-medium text-gray-500">Date</th>
                 <th className="text-left py-3 px-2 font-medium text-gray-500">Caption</th>
-                <th className="text-right py-3 px-2 w-10" />
+                <th className="text-right py-3 px-2 w-20" />
               </tr>
             </thead>
             <tbody>
@@ -313,16 +315,40 @@ export const PhotoGallery = memo(function PhotoGallery({
                       {photo.caption || '-'}
                     </td>
                     <td className="py-2 px-2 text-right" onClick={(e) => e.stopPropagation()}>
-                      {photo.url && (
-                        <a
-                          href={photo.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={async () => {
+                            try {
+                              const res = await fetch('/api/photos/share', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ id: photo.id, expiryDays: 7 }),
+                              });
+                              if (!res.ok) throw new Error();
+                              const { url } = await res.json();
+                              await navigator.clipboard.writeText(url);
+                              toast.success('Share link copied (7 days)');
+                            } catch {
+                              toast.error('Failed to generate link');
+                            }
+                          }}
                           className="text-gray-400 hover:text-red-600"
+                          title="Copy share link"
                         >
-                          <ArrowDownTrayIcon className="w-4 h-4" />
-                        </a>
-                      )}
+                          <LinkIcon className="w-4 h-4" />
+                        </button>
+                        {photo.url && (
+                          <a
+                            href={photo.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-gray-400 hover:text-red-600"
+                            title="Download"
+                          >
+                            <ArrowDownTrayIcon className="w-4 h-4" />
+                          </a>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );

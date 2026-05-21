@@ -13,6 +13,7 @@ import {
   DocumentIcon,
   EyeIcon,
   EyeSlashIcon,
+  LinkIcon,
 } from '@heroicons/react/24/outline';
 import { formatDate } from '@/lib/utils';
 
@@ -99,6 +100,7 @@ export function PhotoLightbox({
   const [captionText, setCaptionText] = useState('');
   const [isSavingCaption, setIsSavingCaption] = useState(false);
   const [isTogglingHidden, setIsTogglingHidden] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
 
   const currentPhoto = photos[currentIndex];
 
@@ -241,6 +243,26 @@ export function PhotoLightbox({
     }
   };
 
+  const handleShare = async () => {
+    if (isSharing) return;
+    setIsSharing(true);
+    try {
+      const response = await fetch('/api/photos/share', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: currentPhoto.id, expiryDays: 7 }),
+      });
+      if (!response.ok) throw new Error('Failed to generate link');
+      const { url } = await response.json();
+      await navigator.clipboard.writeText(url);
+      alert('Share link copied to clipboard (expires in 7 days)');
+    } catch {
+      alert('Failed to generate share link');
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
   if (!currentPhoto?.url) {
     return null;
   }
@@ -291,6 +313,19 @@ export function PhotoLightbox({
             )}
           </button>
         )}
+
+        {/* Share link button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            handleShare();
+          }}
+          disabled={isSharing}
+          className="w-10 h-10 bg-black/50 hover:bg-black/70 rounded-full flex items-center justify-center text-white transition-colors disabled:opacity-50"
+          title="Copy share link"
+        >
+          <LinkIcon className="w-5 h-5" />
+        </button>
 
         {/* Download button */}
         <button
