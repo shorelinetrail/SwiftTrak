@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { getPresignedDownloadUrl } from '@/lib/r2';
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest) {
 
     const { data: photo, error } = await adminClient
       .from('workstream_photos')
-      .select('storage_path, original_filename')
+      .select('storage_path, original_filename, storage_backend')
       .eq('id', id)
       .single();
 
@@ -29,22 +30,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Photo not found' }, { status: 404 });
     }
 
-    // Cap at 30 days
     const days = Math.min(Math.max(1, expiryDays), 30);
     const expirySeconds = days * 24 * 60 * 60;
 
-    const { data: signedData, error: signError } = await adminClient.storage
-      .from('photos')
-      .createSignedUrl(photo.storage_path, expirySeconds, {
-        download: photo.original_filename,
-      });
+    let url: string;
 
-    if (signError || !signedData?.signedUrl) {
-      return NextResponse.json({ error: 'Failed to generate link' }, { status: 500 });
+    if (photo.storage_backend === 'r2') {
+      url = await getPresignedDownloadUrl(
+        photo.storage_path,
+        expirySeconds,
+        photo.original_filename
+      );
+    } else {
+      const { data: signedData, error: signError } = await adminClient.storage
+        .from('photos')
+        .createSignedUrl(photo.storage_path, expirySeconds, {
+          download: photo.original_filename,
+        });
+
+      if (signError || !signedData?.signedUrl) {
+        return NextResponse.json({ error: 'Failed to generate link' }, { status: 500 });
+      }
+      url = signedData.signedUrl;
     }
 
     return NextResponse.json({
-      url: signedData.signedUrl,
+      url,
       filename: photo.original_filename,
       expiresIn: days,
     });

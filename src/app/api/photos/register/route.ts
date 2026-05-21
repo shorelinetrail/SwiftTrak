@@ -71,6 +71,7 @@ export async function POST(request: NextRequest) {
         width: width || null,
         height: height || null,
         uploaded_by: userId,
+        storage_backend: 'r2',
       })
       .select()
       .single();

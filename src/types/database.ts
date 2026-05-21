@@ -215,6 +215,7 @@ export interface WorkstreamPhoto {
   width?: number;
   height?: number;
   is_hidden?: boolean;
+  storage_backend?: 'supabase' | 'r2';
   uploaded_by?: string;
   created_at: string;
   updated_at: string;

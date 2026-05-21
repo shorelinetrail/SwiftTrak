@@ -1,29 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { getPresignedDownloadUrls, deleteR2Objects } from '@/lib/r2';
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const workstreamId = searchParams.get('workstreamId');
-    const includeHidden = searchParams.get('includeHidden') === 'true';
     const hiddenOnly = searchParams.get('hiddenOnly') === 'true';
 
     const supabase = await createClient();
-
-    // Check if user is authenticated
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Use admin client for queries and signed URL generation
     const adminClient = createAdminClient();
-
-    // Get user profile to check if admin
     const { data: profile } = await adminClient
       .from('users')
       .select('id, role')
@@ -45,68 +37,65 @@ export async function GET(request: NextRequest) {
       query = query.eq('workstream_id', workstreamId);
     }
 
-    // Filter based on hidden status
-    // Note: is_hidden column may not exist if migration hasn't run yet
-    // Only apply filter when explicitly requested to avoid breaking queries
     if (hiddenOnly && isAdmin) {
-      // Admin requesting only hidden photos
       query = query.eq('is_hidden', true);
     }
-    // If includeHidden is false and column exists, hidden photos will still show
-    // This is intentional - run the migration to enable hidden photo filtering
 
     const { data, error } = await query;
-
     if (error) {
       console.error('Error fetching photos:', error);
-      return NextResponse.json(
-        { error: 'Failed to fetch photos' },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: 'Failed to fetch photos' }, { status: 500 });
     }
 
-    // Generate signed URLs in batch (single request instead of N individual calls)
-    const SIGNED_URL_EXPIRY = 60 * 60; // 1 hour
-
+    const SIGNED_URL_EXPIRY = 60 * 60;
     const photos = data || [];
-    const mainPaths = photos.map((p) => p.storage_path);
-    const thumbPaths = photos
+
+    // Split by storage backend
+    const r2Photos = photos.filter((p) => p.storage_backend === 'r2');
+    const supabasePhotos = photos.filter((p) => p.storage_backend !== 'r2');
+
+    // Generate R2 signed URLs
+    const r2Keys = [
+      ...r2Photos.map((p) => p.storage_path),
+      ...r2Photos.filter((p) => p.thumbnail_path).map((p) => p.thumbnail_path as string),
+    ];
+    const r2UrlMap = r2Keys.length > 0
+      ? await getPresignedDownloadUrls(r2Keys, SIGNED_URL_EXPIRY)
+      : new Map<string, string>();
+
+    // Generate Supabase signed URLs
+    const supabaseMainPaths = supabasePhotos.map((p) => p.storage_path);
+    const supabaseThumbPaths = supabasePhotos
       .filter((p) => p.thumbnail_path)
       .map((p) => p.thumbnail_path as string);
 
-    // Batch sign all URLs in just 1-2 requests
     const [mainSigned, thumbSigned] = await Promise.all([
-      mainPaths.length > 0
-        ? adminClient.storage.from('photos').createSignedUrls(mainPaths, SIGNED_URL_EXPIRY)
+      supabaseMainPaths.length > 0
+        ? adminClient.storage.from('photos').createSignedUrls(supabaseMainPaths, SIGNED_URL_EXPIRY)
         : { data: [], error: null },
-      thumbPaths.length > 0
-        ? adminClient.storage.from('photos').createSignedUrls(thumbPaths, SIGNED_URL_EXPIRY)
+      supabaseThumbPaths.length > 0
+        ? adminClient.storage.from('photos').createSignedUrls(supabaseThumbPaths, SIGNED_URL_EXPIRY)
         : { data: [], error: null },
     ]);
 
-    // Build lookup maps for O(1) access
-    const mainUrlMap = new Map<string, string>();
+    const supabaseUrlMap = new Map<string, string>();
     if (mainSigned.data) {
       for (const item of mainSigned.data) {
-        if (item.signedUrl && item.path) {
-          mainUrlMap.set(item.path, item.signedUrl);
-        }
+        if (item.signedUrl && item.path) supabaseUrlMap.set(item.path, item.signedUrl);
       }
     }
-
-    const thumbUrlMap = new Map<string, string>();
     if (thumbSigned.data) {
       for (const item of thumbSigned.data) {
-        if (item.signedUrl && item.path) {
-          thumbUrlMap.set(item.path, item.signedUrl);
-        }
+        if (item.signedUrl && item.path) supabaseUrlMap.set(item.path, item.signedUrl);
       }
     }
 
+    // Merge: pick the right URL map per photo
     const photosWithSignedUrls = photos.map((photo) => {
-      const mainUrl = mainUrlMap.get(photo.storage_path) || null;
+      const urlMap = photo.storage_backend === 'r2' ? r2UrlMap : supabaseUrlMap;
+      const mainUrl = urlMap.get(photo.storage_path) || null;
       const thumbUrl = photo.thumbnail_path
-        ? thumbUrlMap.get(photo.thumbnail_path) || null
+        ? urlMap.get(photo.thumbnail_path) || null
         : null;
       return {
         ...photo,
@@ -118,14 +107,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(photosWithSignedUrls);
   } catch (error) {
     console.error('Photos API error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
-// Delete a photo
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -143,8 +128,6 @@ export async function DELETE(request: NextRequest) {
     }
 
     const adminClient = createAdminClient();
-
-    // Get the photo to check ownership and get storage paths
     const { data: photo, error: fetchError } = await adminClient
       .from('workstream_photos')
       .select('*, uploader:users!workstream_photos_uploaded_by_fkey(id)')
@@ -155,7 +138,6 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Photo not found' }, { status: 404 });
     }
 
-    // Check permission: must be owner or admin
     const { data: profile } = await adminClient
       .from('users')
       .select('id, role')
@@ -169,15 +151,16 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
     }
 
-    // Delete from storage
-    const filesToDelete = [photo.storage_path];
-    if (photo.thumbnail_path) {
-      filesToDelete.push(photo.thumbnail_path);
+    // Delete from the correct storage backend
+    const keysToDelete = [photo.storage_path];
+    if (photo.thumbnail_path) keysToDelete.push(photo.thumbnail_path);
+
+    if (photo.storage_backend === 'r2') {
+      await deleteR2Objects(keysToDelete);
+    } else {
+      await adminClient.storage.from('photos').remove(keysToDelete);
     }
 
-    await adminClient.storage.from('photos').remove(filesToDelete);
-
-    // Delete from database
     const { error: deleteError } = await adminClient
       .from('workstream_photos')
       .delete()
@@ -195,7 +178,6 @@ export async function DELETE(request: NextRequest) {
   }
 }
 
-// Update photo (caption, is_hidden)
 export async function PATCH(request: NextRequest) {
   try {
     const supabase = await createClient();
@@ -214,7 +196,6 @@ export async function PATCH(request: NextRequest) {
 
     const adminClient = createAdminClient();
 
-    // Get the photo to check ownership
     const { data: photo, error: fetchError } = await adminClient
       .from('workstream_photos')
       .select('uploaded_by')
@@ -225,7 +206,6 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Photo not found' }, { status: 404 });
     }
 
-    // Check permission: must be owner or admin
     const { data: profile } = await adminClient
       .from('users')
       .select('id, role')
@@ -239,25 +219,17 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
     }
 
-    // Only admins can hide/unhide photos
     if (is_hidden !== undefined && !isAdmin) {
       return NextResponse.json({ error: 'Only admins can hide/unhide photos' }, { status: 403 });
     }
 
-    // Build update object
     const updateData: { caption?: string; is_hidden?: boolean; updated_at: string } = {
       updated_at: new Date().toISOString(),
     };
 
-    if (caption !== undefined) {
-      updateData.caption = caption;
-    }
+    if (caption !== undefined) updateData.caption = caption;
+    if (is_hidden !== undefined) updateData.is_hidden = is_hidden;
 
-    if (is_hidden !== undefined) {
-      updateData.is_hidden = is_hidden;
-    }
-
-    // Update photo
     const { data: updated, error: updateError } = await adminClient
       .from('workstream_photos')
       .update(updateData)

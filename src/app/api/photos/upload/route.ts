@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { getR2Client, getBucketName, deleteR2Objects } from '@/lib/r2';
 
 export async function POST(request: NextRequest) {
   try {
-    // Get authenticated user
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
@@ -12,7 +13,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Check user has edit permission
     const adminClient = createAdminClient();
     const { data: profile } = await adminClient
       .from('users')
@@ -21,7 +21,6 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (!profile) {
-      // Try by id for backwards compatibility
       const { data: profileById } = await adminClient
         .from('users')
         .select('id, role')
@@ -37,7 +36,6 @@ export async function POST(request: NextRequest) {
 
     const userId = profile?.id || user.id;
 
-    // Parse form data
     const formData = await request.formData();
     const file = formData.get('file') as File;
     const thumbnail = formData.get('thumbnail') as File;
@@ -49,13 +47,12 @@ export async function POST(request: NextRequest) {
     const takenAt = formData.get('takenAt') as string | null;
 
     if (!file || !workstreamId || !originalFilename) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // Generate unique file paths
+    const r2 = getR2Client();
+    const bucket = getBucketName();
+
     const timestamp = Date.now();
     const randomStr = Math.random().toString(36).substring(2, 8);
     const sanitizedFilename = originalFilename.replace(/[^a-zA-Z0-9.-]/g, '_');
@@ -63,37 +60,27 @@ export async function POST(request: NextRequest) {
     const storagePath = `${basePath}_${sanitizedFilename}`;
     const thumbnailPath = thumbnail ? `${basePath}_thumb_${sanitizedFilename}` : null;
 
-    // Upload main file to Supabase Storage
+    // Upload main file to R2
     const fileBuffer = await file.arrayBuffer();
-    const contentType = file.type || 'application/octet-stream';
-    const { error: uploadError } = await adminClient.storage
-      .from('photos')
-      .upload(storagePath, fileBuffer, {
-        contentType,
-        upsert: false,
-      });
-
-    if (uploadError) {
-      console.error('Upload error:', uploadError);
-      return NextResponse.json(
-        { error: 'Failed to upload file' },
-        { status: 500 }
-      );
-    }
+    await r2.send(new PutObjectCommand({
+      Bucket: bucket,
+      Key: storagePath,
+      Body: Buffer.from(fileBuffer),
+      ContentType: file.type || 'application/octet-stream',
+    }));
 
     // Upload thumbnail if provided
     if (thumbnail && thumbnailPath) {
-      const thumbBuffer = await thumbnail.arrayBuffer();
-      const { error: thumbError } = await adminClient.storage
-        .from('photos')
-        .upload(thumbnailPath, thumbBuffer, {
-          contentType: 'image/jpeg',
-          upsert: false,
-        });
-
-      if (thumbError) {
+      try {
+        const thumbBuffer = await thumbnail.arrayBuffer();
+        await r2.send(new PutObjectCommand({
+          Bucket: bucket,
+          Key: thumbnailPath,
+          Body: Buffer.from(thumbBuffer),
+          ContentType: 'image/jpeg',
+        }));
+      } catch (thumbError) {
         console.error('Thumbnail upload error:', thumbError);
-        // Continue without thumbnail
       }
     }
 
@@ -110,29 +97,20 @@ export async function POST(request: NextRequest) {
         width,
         height,
         uploaded_by: userId,
+        storage_backend: 'r2',
       })
       .select()
       .single();
 
     if (dbError) {
       console.error('Database error:', dbError);
-      // Try to clean up uploaded files
-      await adminClient.storage.from('photos').remove([storagePath]);
-      if (thumbnailPath) {
-        await adminClient.storage.from('photos').remove([thumbnailPath]);
-      }
-      return NextResponse.json(
-        { error: 'Failed to save photo record' },
-        { status: 500 }
-      );
+      await deleteR2Objects([storagePath, ...(thumbnailPath ? [thumbnailPath] : [])]);
+      return NextResponse.json({ error: 'Failed to save photo record' }, { status: 500 });
     }
 
     return NextResponse.json(photo);
   } catch (error) {
     console.error('Photo upload error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

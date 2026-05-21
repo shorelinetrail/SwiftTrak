@@ -2,7 +2,6 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { createClient } from '@/lib/supabase/client';
 import {
   PhotoIcon,
   XMarkIcon,
@@ -345,28 +344,37 @@ export function PhotoUploader({ workstreamId, onUploadComplete }: PhotoUploaderP
       const useDirectUpload = file.size > TARGET_SIZE || !shouldCompress;
 
       if (useDirectUpload) {
-        // Direct upload to Supabase Storage
-        const supabase = createClient();
-
-        const timestamp = Date.now();
-        const randomStr = Math.random().toString(36).substring(2, 8);
-        const sanitizedFilename = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-        const storagePath = `${workstreamId}/${timestamp}_${randomStr}_${sanitizedFilename}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from('photos')
-          .upload(storagePath, uploadBlob, {
+        // Get presigned upload URL from R2
+        const presignResponse = await fetch('/api/photos/presign', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: file.name,
             contentType: file.type || 'application/octet-stream',
-            upsert: false,
-          });
+            workstreamId,
+          }),
+        });
 
-        if (uploadError) {
-          throw new Error(uploadError.message || 'Failed to upload file');
+        if (!presignResponse.ok) {
+          throw new Error('Failed to get upload URL');
+        }
+
+        const { uploadUrl, key: storagePath } = await presignResponse.json();
+
+        // Upload directly to R2 via presigned URL
+        const uploadResponse = await fetch(uploadUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': file.type || 'application/octet-stream' },
+          body: uploadBlob,
+        });
+
+        if (!uploadResponse.ok) {
+          throw new Error('Failed to upload file');
         }
 
         updateState(index, { progress: 80 });
 
-        // Create database record via API
+        // Register metadata in database
         const response = await fetch('/api/photos/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -382,8 +390,6 @@ export function PhotoUploader({ workstreamId, onUploadComplete }: PhotoUploaderP
         });
 
         if (!response.ok) {
-          // Try to clean up the uploaded file
-          await supabase.storage.from('photos').remove([storagePath]);
           const error = await response.json();
           throw new Error(error.error || 'Failed to register file');
         }
