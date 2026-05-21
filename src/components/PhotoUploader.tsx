@@ -340,7 +340,7 @@ export function PhotoUploader({ workstreamId, onUploadComplete }: PhotoUploaderP
       // Step 4: Upload file
       updateState(index, { status: 'uploading', progress: 60 });
 
-      // For large files or non-images, upload directly to Supabase
+      // For large files or non-images, upload directly to R2 via presigned URL
       const useDirectUpload = file.size > TARGET_SIZE || !shouldCompress;
 
       if (useDirectUpload) {
