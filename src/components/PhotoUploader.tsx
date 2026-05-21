@@ -255,7 +255,7 @@ export function PhotoUploader({ workstreamId, onUploadComplete }: PhotoUploaderP
     Array.from(newFiles).forEach((file) => {
       // Check file size
       if (file.size > MAX_FILE_SIZE) {
-        console.warn(`File ${file.name} exceeds 50MB limit`);
+        console.warn(`File ${file.name} exceeds ${MAX_FILE_SIZE / (1024 * 1024)}MB limit`);
         return;
       }
 
@@ -482,7 +482,7 @@ export function PhotoUploader({ workstreamId, onUploadComplete }: PhotoUploaderP
           <span className="font-medium text-red-600">Click to upload</span> or drag and drop
         </p>
         <p className="text-xs text-gray-500 mt-1">
-          Images, documents, and other files up to 50MB each
+          Images, documents, and other files up to {MAX_FILE_SIZE / (1024 * 1024)}MB each
         </p>
       </div>
 
