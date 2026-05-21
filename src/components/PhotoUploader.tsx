@@ -26,7 +26,7 @@ interface PhotoUploaderProps {
   onUploadComplete?: (photos: { id: string; storage_path: string }[]) => void;
 }
 
-const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB (larger for videos)
+const MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024; // 10GB
 const MAX_IMAGE_SIZE_FOR_COMPRESSION = 10 * 1024 * 1024; // 10MB - compress images under this
 const MAX_DIMENSION = 2048;
 const TARGET_SIZE = 3.5 * 1024 * 1024; // 3.5MB for API upload
@@ -255,7 +255,7 @@ export function PhotoUploader({ workstreamId, onUploadComplete }: PhotoUploaderP
     Array.from(newFiles).forEach((file) => {
       // Check file size
       if (file.size > MAX_FILE_SIZE) {
-        console.warn(`File ${file.name} exceeds ${MAX_FILE_SIZE / (1024 * 1024)}MB limit`);
+        console.warn(`File ${file.name} exceeds ${MAX_FILE_SIZE / (1024 * 1024 * 1024)}GB limit`);
         return;
       }
 
@@ -482,7 +482,7 @@ export function PhotoUploader({ workstreamId, onUploadComplete }: PhotoUploaderP
           <span className="font-medium text-red-600">Click to upload</span> or drag and drop
         </p>
         <p className="text-xs text-gray-500 mt-1">
-          Images, documents, and other files up to {MAX_FILE_SIZE / (1024 * 1024)}MB each
+          Images, documents, and other files up to {MAX_FILE_SIZE / (1024 * 1024 * 1024)}GB each
         </p>
       </div>
 
