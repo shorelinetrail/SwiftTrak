@@ -5,24 +5,11 @@ const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID!;
 const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID!;
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY!;
 const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || 'swift-trak';
+const R2_ENDPOINT = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
 
-// Client for server-side operations (send commands)
 const r2Client = new S3Client({
   region: 'auto',
-  endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-  credentials: {
-    accessKeyId: R2_ACCESS_KEY_ID,
-    secretAccessKey: R2_SECRET_ACCESS_KEY,
-  },
-  forcePathStyle: true,
-});
-
-// Client for presigned URLs — endpoint includes the bucket so the
-// generated URL is path-style (account.r2.../bucket/key) and avoids
-// the virtual-hosted subdomain that has no SSL cert.
-const r2PresignClient = new S3Client({
-  region: 'auto',
-  endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${R2_BUCKET_NAME}`,
+  endpoint: R2_ENDPOINT,
   credentials: {
     accessKeyId: R2_ACCESS_KEY_ID,
     secretAccessKey: R2_SECRET_ACCESS_KEY,
@@ -38,6 +25,16 @@ export function getBucketName() {
   return R2_BUCKET_NAME;
 }
 
+// The SDK may generate virtual-hosted URLs (bucket.endpoint) despite
+// forcePathStyle. This rewrites them to path-style (endpoint/bucket).
+function ensurePathStyle(url: string): string {
+  const bucketSubdomain = `https://${R2_BUCKET_NAME}.${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
+  if (url.startsWith(bucketSubdomain)) {
+    return url.replace(bucketSubdomain, `${R2_ENDPOINT}/${R2_BUCKET_NAME}`);
+  }
+  return url;
+}
+
 export async function getPresignedUploadUrl(
   key: string,
   contentType: string,
@@ -48,7 +45,8 @@ export async function getPresignedUploadUrl(
     Key: key,
     ContentType: contentType,
   });
-  return getSignedUrl(r2PresignClient, command, { expiresIn });
+  const url = await getSignedUrl(r2Client, command, { expiresIn });
+  return ensurePathStyle(url);
 }
 
 export async function getPresignedDownloadUrl(
@@ -63,7 +61,8 @@ export async function getPresignedDownloadUrl(
       ResponseContentDisposition: `attachment; filename="${downloadFilename}"`,
     }),
   });
-  return getSignedUrl(r2PresignClient, command, { expiresIn });
+  const url = await getSignedUrl(r2Client, command, { expiresIn });
+  return ensurePathStyle(url);
 }
 
 export async function getPresignedDownloadUrls(
