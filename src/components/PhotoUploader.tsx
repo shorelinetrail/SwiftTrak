@@ -338,7 +338,7 @@ export function PhotoUploader({ workstreamId, onUploadComplete }: PhotoUploaderP
       }
 
       // Step 4: Upload file
-      updateState(index, { status: 'uploading', progress: 60 });
+      updateState(index, { status: 'uploading', progress: 15 });
 
       // For large files or non-images, upload directly to R2 via presigned URL
       const useDirectUpload = file.size > TARGET_SIZE || !shouldCompress;
@@ -361,18 +361,35 @@ export function PhotoUploader({ workstreamId, onUploadComplete }: PhotoUploaderP
 
         const { uploadUrl, key: storagePath } = await presignResponse.json();
 
-        // Upload directly to R2 via presigned URL
-        const uploadResponse = await fetch(uploadUrl, {
-          method: 'PUT',
-          headers: { 'Content-Type': file.type || 'application/octet-stream' },
-          body: uploadBlob,
+        // Upload directly to R2 via presigned URL with progress tracking
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', uploadUrl);
+          xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              // Map upload progress to 20-90% range (leaving room for presign + register steps)
+              const uploadPercent = Math.round(20 + (e.loaded / e.total) * 70);
+              updateState(index, { progress: uploadPercent });
+            }
+          };
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve();
+            } else {
+              reject(new Error('Failed to upload file'));
+            }
+          };
+
+          xhr.onerror = () => reject(new Error('Upload network error'));
+          xhr.onabort = () => reject(new Error('Upload cancelled'));
+
+          xhr.send(uploadBlob);
         });
 
-        if (!uploadResponse.ok) {
-          throw new Error('Failed to upload file');
-        }
-
-        updateState(index, { progress: 80 });
+        updateState(index, { progress: 92 });
 
         // Register metadata in database
         const response = await fetch('/api/photos/register', {
@@ -528,17 +545,25 @@ export function PhotoUploader({ workstreamId, onUploadComplete }: PhotoUploaderP
                 </div>
               )}
 
-              {/* Status overlay */}
+              {/* Status overlay with progress bar */}
               {uploadStates[index].status !== 'pending' && uploadStates[index].status !== 'complete' && (
-                <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                  <div className="text-white text-center">
-                    <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto" />
-                    <p className="text-xs mt-2">
-                      {uploadStates[index].status === 'extracting' && 'Reading EXIF...'}
-                      {uploadStates[index].status === 'compressing' && 'Compressing...'}
-                      {uploadStates[index].status === 'uploading' && 'Uploading...'}
-                    </p>
+                <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center px-3">
+                  <p className="text-white text-xs mb-2">
+                    {uploadStates[index].status === 'extracting' && 'Reading EXIF...'}
+                    {uploadStates[index].status === 'compressing' && 'Compressing...'}
+                    {uploadStates[index].status === 'uploading' && `${uploadStates[index].progress}%`}
+                  </p>
+                  <div className="w-full bg-white/20 rounded-full h-1.5">
+                    <div
+                      className="bg-white h-1.5 rounded-full transition-all duration-300"
+                      style={{ width: `${uploadStates[index].progress}%` }}
+                    />
                   </div>
+                  {uploadStates[index].status === 'uploading' && (
+                    <p className="text-white/60 text-[10px] mt-1">
+                      {(file.size / (1024 * 1024)).toFixed(0)} MB
+                    </p>
+                  )}
                 </div>
               )}
 
