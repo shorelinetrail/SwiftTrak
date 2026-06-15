@@ -68,7 +68,7 @@ export async function updateSession(request: NextRequest) {
   );
 
   // Define public routes that don't require authentication
-  const publicRoutes = ['/auth/login', '/auth/callback', '/auth/signup', '/stakeholder', '/debug'];
+  const publicRoutes = ['/auth/login', '/auth/callback', '/auth/signup', '/stakeholder', '/upload', '/debug'];
   const isPublicRoute = publicRoutes.some((route) =>
     request.nextUrl.pathname.startsWith(route)
   );
@@ -77,6 +77,7 @@ export async function updateSession(request: NextRequest) {
   const isStaticOrApi =
     request.nextUrl.pathname.startsWith('/_next') ||
     request.nextUrl.pathname.startsWith('/api/health') ||
+    request.nextUrl.pathname.startsWith('/api/upload-links/') ||
     request.nextUrl.pathname === '/favicon.ico';
 
   // Skip auth check for public routes and static assets

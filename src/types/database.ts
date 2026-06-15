@@ -244,6 +244,23 @@ export interface StakeholderLink {
   created_at: string;
 }
 
+export interface UploadLink {
+  id: string;
+  token: string;
+  name: string;
+  workstream_id: string;
+  created_by: string;
+  expires_at?: string;
+  max_files?: number;
+  upload_count: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  // Joined fields
+  workstream?: Workstream;
+  creator?: User;
+}
+
 export interface Notification {
   id: string;
   user_id: string;

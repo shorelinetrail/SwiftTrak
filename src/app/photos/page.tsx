@@ -31,10 +31,12 @@ import {
   ArrowPathIcon,
   ListBulletIcon,
   ViewColumnsIcon,
+  LinkIcon,
+  ClipboardDocumentIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { bulkDownloadFiles, type DownloadProgress } from '@/lib/bulk-download';
-import type { WorkstreamPhoto, Workstream, User } from '@/types/database';
+import type { WorkstreamPhoto, Workstream, User, UploadLink } from '@/types/database';
 
 // File type detection
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'];
@@ -77,6 +79,14 @@ export default function PhotosPage() {
   const [isBulkProcessing, setIsBulkProcessing] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Upload links
+  const [uploadLinksModalOpen, setUploadLinksModalOpen] = useState(false);
+  const [uploadLinks, setUploadLinks] = useState<UploadLink[]>([]);
+  const [newLinkName, setNewLinkName] = useState('');
+  const [newLinkWorkstream, setNewLinkWorkstream] = useState('');
+  const [newLinkExpiry, setNewLinkExpiry] = useState('');
+  const [creatingLink, setCreatingLink] = useState(false);
 
   const fetchPhotos = useCallback(async () => {
     const url = workstreamFilter === 'all'
@@ -328,6 +338,58 @@ export default function PhotosPage() {
     setSelectedIds(new Set());
   };
 
+  const fetchUploadLinks = async () => {
+    try {
+      const res = await fetch('/api/upload-links');
+      if (res.ok) setUploadLinks(await res.json());
+    } catch { /* ignore */ }
+  };
+
+  const handleCreateLink = async () => {
+    if (!newLinkName.trim() || !newLinkWorkstream) return;
+    setCreatingLink(true);
+    try {
+      const res = await fetch('/api/upload-links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newLinkName.trim(),
+          workstream_id: newLinkWorkstream,
+          expires_at: newLinkExpiry || null,
+        }),
+      });
+      if (res.ok) {
+        setNewLinkName('');
+        setNewLinkWorkstream('');
+        setNewLinkExpiry('');
+        fetchUploadLinks();
+        toast.success('Upload link created');
+      } else {
+        toast.error('Failed to create link');
+      }
+    } catch {
+      toast.error('Failed to create link');
+    } finally {
+      setCreatingLink(false);
+    }
+  };
+
+  const handleDeleteLink = async (id: string) => {
+    try {
+      await fetch(`/api/upload-links?id=${id}`, { method: 'DELETE' });
+      fetchUploadLinks();
+      toast.success('Link deleted');
+    } catch {
+      toast.error('Failed to delete link');
+    }
+  };
+
+  const copyUploadLink = (token: string) => {
+    const url = `${window.location.origin}/upload/${token}`;
+    navigator.clipboard.writeText(url);
+    toast.success('Upload link copied to clipboard');
+  };
+
   const handleRefresh = async () => {
     setRefreshing(true);
     await Promise.all([fetchPhotos(), fetchHiddenPhotos()]);
@@ -479,6 +541,16 @@ export default function PhotosPage() {
                 >
                   <CheckIcon className="w-4 h-4 mr-2" />
                   Select
+                </Button>
+              )}
+              {canEdit && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => { setUploadLinksModalOpen(true); fetchUploadLinks(); }}
+                >
+                  <LinkIcon className="w-4 h-4 mr-2" />
+                  Upload Links
                 </Button>
               )}
               {canEdit && (
@@ -684,6 +756,110 @@ export default function PhotosPage() {
               {isBulkProcessing ? 'Updating...' : 'Apply Caption'}
             </Button>
           </div>
+        </div>
+      </Modal>
+
+      {/* Upload Links Modal */}
+      <Modal
+        open={uploadLinksModalOpen}
+        onClose={() => setUploadLinksModalOpen(false)}
+        title="Upload Links"
+        size="lg"
+      >
+        <div className="space-y-6">
+          {/* Create new link */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-gray-900">Create New Link</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Link Name"
+                value={newLinkName}
+                onChange={(e) => setNewLinkName(e.target.value)}
+                placeholder="e.g. Site photos from contractor"
+              />
+              <Select
+                label="Workstream"
+                options={workstreamOptions.filter(o => o.value !== 'all')}
+                value={newLinkWorkstream}
+                onChange={setNewLinkWorkstream}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Expires (optional)"
+                type="date"
+                value={newLinkExpiry}
+                onChange={(e) => setNewLinkExpiry(e.target.value)}
+              />
+              <div />
+            </div>
+            <Button
+              size="sm"
+              onClick={handleCreateLink}
+              disabled={!newLinkName.trim() || !newLinkWorkstream || creatingLink}
+              loading={creatingLink}
+            >
+              <LinkIcon className="w-4 h-4 mr-2" />
+              Create Link
+            </Button>
+          </div>
+
+          {/* Existing links */}
+          {uploadLinks.length > 0 && (
+            <div className="border-t pt-4">
+              <h4 className="text-sm font-medium text-gray-900 mb-3">
+                Active Links ({uploadLinks.length})
+              </h4>
+              <div className="space-y-2">
+                {uploadLinks.map((link) => {
+                  const isExpired = link.expires_at && new Date(link.expires_at) < new Date();
+                  const isMaxed = link.max_files && link.upload_count >= link.max_files;
+                  return (
+                    <div
+                      key={link.id}
+                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {link.name}
+                        </p>
+                        <div className="flex items-center gap-3 text-xs text-gray-500 mt-0.5">
+                          {link.workstream && (
+                            <span style={{ color: link.workstream.color }}>
+                              {link.workstream.name}
+                            </span>
+                          )}
+                          <span>{link.upload_count} uploads</span>
+                          {link.expires_at && (
+                            <span className={isExpired ? 'text-red-500' : ''}>
+                              {isExpired ? 'Expired' : `Expires ${new Date(link.expires_at).toLocaleDateString()}`}
+                            </span>
+                          )}
+                          {isMaxed && <span className="text-amber-600">Limit reached</span>}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 ml-3">
+                        <button
+                          onClick={() => copyUploadLink(link.token)}
+                          className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg"
+                          title="Copy link"
+                        >
+                          <ClipboardDocumentIcon className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteLink(link.id)}
+                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                          title="Delete link"
+                        >
+                          <TrashIcon className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </Modal>
     </div>
